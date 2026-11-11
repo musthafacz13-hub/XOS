@@ -279,7 +279,7 @@ export function calculateEstimatedSalary(
   const netSalary = Math.max(0, Number((grossSalary + totalAllowances - totalDeductions).toFixed(2)));
 
   return {
-    salaryType,
+    salaryType: salaryType || 'daily_wage',
     baseAmount,
     presentDays: stats.presentDays,
     absentDays: stats.absentDays,
@@ -331,6 +331,91 @@ export function calculateFinancialTotals(
   };
 }
 
+// DAILY SALARY CALCULATIONS
+export interface DailySalaryCalculationResult {
+  workingHours: number;
+  extraHours: number;
+  dailyEarnedSalary: number;
+}
+
+export function calculateDailyEarnedSalary(
+  status: 'Present' | 'Absent' | 'Leave' | 'Holiday',
+  workingHours: number,
+  config: Partial<SalaryConfig> = {}
+): DailySalaryCalculationResult {
+  if (status !== 'Present') {
+    return {
+      workingHours: 0,
+      extraHours: 0,
+      dailyEarnedSalary: 0
+    };
+  }
+
+  const standardHours = typeof config.standardWorkingHours === 'number' && config.standardWorkingHours > 0 
+    ? config.standardWorkingHours 
+    : (typeof config.expectedWorkingHoursPerDay === 'number' && config.expectedWorkingHoursPerDay > 0 ? config.expectedWorkingHoursPerDay : 8);
+  
+  const dailyBase = typeof config.dailyBaseSalary === 'number' ? config.dailyBaseSalary : (config.baseAmount || 500);
+  const extraRate = typeof config.extraHourRate === 'number' ? config.extraHourRate : 100;
+
+  const extraHours = Math.max(0, Number((workingHours - standardHours).toFixed(2)));
+  const dailyEarnedSalary = Number((dailyBase + (extraHours * extraRate)).toFixed(2));
+
+  return {
+    workingHours: Number(workingHours.toFixed(2)),
+    extraHours,
+    dailyEarnedSalary
+  };
+}
+
+export function calculateMonthlySalarySummary(
+  attendanceRecords: AttendanceRecord[],
+  payouts: SalaryPayout[],
+  config: SalaryConfig,
+  monthStr: string = getMonthString()
+) {
+  const monthRecords = attendanceRecords.filter(r => r.date && r.date.startsWith(monthStr));
+
+  let presentDays = 0;
+  let leaveDays = 0;
+  let absentDays = 0;
+  let totalWorkingHours = 0;
+  let totalExtraHours = 0;
+  let totalEarned = 0;
+
+  monthRecords.forEach(r => {
+    if (r.status === 'Present') {
+      presentDays += 1;
+      const hours = r.calculatedHours || 0;
+      const res = calculateDailyEarnedSalary('Present', hours, config);
+      totalWorkingHours += hours;
+      totalExtraHours += (typeof r.extraHours === 'number' ? r.extraHours : res.extraHours);
+      totalEarned += (typeof r.dailyEarnedSalary === 'number' ? r.dailyEarnedSalary : res.dailyEarnedSalary);
+    } else if (r.status === 'Leave') {
+      leaveDays += 1;
+    } else if (r.status === 'Absent') {
+      absentDays += 1;
+    }
+  });
+
+  const monthPayouts = payouts.filter(p => p.periodMonth === monthStr);
+  const salaryReceived = monthPayouts.reduce((sum, p) => sum + (p.netSalary || 0), 0);
+  const remainingSalary = Math.max(0, Number((totalEarned - salaryReceived).toFixed(2)));
+
+  return {
+    periodMonth: monthStr,
+    earnedSalary: Number(totalEarned.toFixed(2)),
+    salaryReceived: Number(salaryReceived.toFixed(2)),
+    remainingSalary,
+    presentDays,
+    leaveDays,
+    absentDays,
+    totalWorkingHours: Number(totalWorkingHours.toFixed(1)),
+    totalExtraHours: Number(totalExtraHours.toFixed(1)),
+    recordCount: monthRecords.length
+  };
+}
+
 export function calculateGoalStats(goals: Goal[]) {
   const activeGoals = goals.filter(g => g.status === 'In Progress' || g.status === 'Not Started');
   const completedGoals = goals.filter(g => g.status === 'Completed');
@@ -345,7 +430,7 @@ export function calculateGoalStats(goals: Goal[]) {
   };
 }
 
-// DEBT CALCULATIONS
+// RECEIVABLES / DEBT CALCULATIONS (Money Owed to Me)
 export function calculateTotalRepaid(debtId: string, repayments: DebtRepayment[]): number {
   return repayments
     .filter(r => r.debt_id === debtId)
@@ -369,7 +454,7 @@ export function calculateDebtSummary(debts: Debt[], repayments: DebtRepayment[])
   debts.forEach(d => {
     const outstanding = calculateDebtOutstanding(d, repayments);
 
-    if (d.type === 'lent') {
+    if (d.type === 'lent' || !d.type) {
       totalLent += d.original_amount;
       outstandingReceivable += outstanding;
     } else {

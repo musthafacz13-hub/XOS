@@ -140,6 +140,68 @@ export const GoalsView: React.FC = () => {
         </button>
       </div>
 
+      {/* Main Summary & Quick Actions Dashboard Header */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+        {/* Main Metric: Active Goals */}
+        <div className="p-5 rounded-2xl bg-[#111111] text-white shadow-xs flex flex-col justify-between">
+          <div>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+              Active Milestones
+            </span>
+            <div className="text-3xl font-extrabold font-mono tracking-tight text-white mt-1 tabular-nums">
+              {data.goals.filter(g => g.status !== 'Completed').length}
+            </div>
+            <p className="text-xs text-neutral-400 mt-1">
+              Out of {data.goals.length} total target records
+            </p>
+          </div>
+        </div>
+
+        {/* Completion Rate */}
+        <div className="p-5 rounded-2xl bg-white border border-black/[0.08] shadow-xs flex flex-col justify-between">
+          <div>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+              Overall Completion Progress
+            </span>
+            <div className="text-3xl font-bold font-mono text-emerald-600 mt-1 tabular-nums">
+              {data.goals.length > 0 ? Math.round((data.goals.filter(g => g.status === 'Completed').length / data.goals.length) * 100) : 0}%
+            </div>
+            <p className="text-xs text-neutral-400 mt-1">
+              {data.goals.filter(g => g.status === 'Completed').length} targets accomplished
+            </p>
+          </div>
+        </div>
+
+        {/* Quick Actions Card */}
+        <div className="p-5 rounded-2xl bg-white border border-black/[0.08] shadow-xs flex flex-col justify-between space-y-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+            Goal Quick Actions
+          </span>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => {
+                setType('goal');
+                openCreateModal();
+              }}
+              type="button"
+              className="w-full py-2 bg-[#111111] text-white text-xs font-semibold rounded-xl hover:bg-black transition-colors cursor-pointer text-center"
+            >
+              + Create Actionable Goal
+            </button>
+            <button
+              onClick={() => {
+                setType('dream');
+                openCreateModal();
+              }}
+              type="button"
+              className="w-full py-2 bg-neutral-100 text-[#111111] border border-neutral-200 text-xs font-semibold rounded-xl hover:bg-neutral-200 transition-colors cursor-pointer text-center"
+            >
+              + Add Bucket List Dream
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Tabs & Search Controls */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 bg-neutral-50 p-2 rounded-2xl border border-neutral-200">
         {/* Segmented Tab Filter */}

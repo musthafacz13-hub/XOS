@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
 import { DateRangeFilter } from '../../types';
-import { calculateAttendanceStats, calculateEstimatedSalary, calculateFinancialTotals, filterRecordsByDateRange } from '../../utils/calculations';
+import { calculateAttendanceStats, calculateEstimatedSalary, calculateFinancialTotals, calculateMonthlySalarySummary, calculateDebtSummary, filterRecordsByDateRange } from '../../utils/calculations';
 import { formatCurrency, formatHumanDate, getMonthString } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
 
@@ -45,7 +45,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const currentMonthStr = getMonthString();
   const attendanceStats = calculateAttendanceStats(data.attendance, currentMonthStr);
-  const estimatedSalary = calculateEstimatedSalary(data.settings.salaryConfig, data.attendance, currentMonthStr);
+  const monthlySalarySummary = calculateMonthlySalarySummary(data.attendance, data.salaryPayouts, data.settings.salaryConfig, currentMonthStr);
+  const debtSummary = calculateDebtSummary(data.debts, data.debtRepayments);
 
   const activeGoals = data.goals.filter(g => g.status === 'In Progress' || g.status === 'Not Started');
   const recentExpenses = [...data.expenses].sort((a, b) => (b.date > a.date ? 1 : -1)).slice(0, 5);
@@ -157,72 +158,101 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           switch (widget.id) {
             case 'balance_overview':
               return (
-                <div key={widget.id} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                  {/* Card 1: Available Balance */}
-                  <div className="p-5 rounded-2xl bg-[#111111] text-white flex flex-col justify-between space-y-3 shadow-xs">
-                    <div className="flex items-center justify-between text-neutral-400">
-                      <span className="text-[11px] font-semibold tracking-wider uppercase">Total Available Balance</span>
-                      <Wallet className="w-4 h-4 text-[#87CEEB]" />
-                    </div>
-                    <div>
-                      <div className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight text-white tabular-nums">
-                        {formatCurrency(globalTotals.availableBalance, data.settings.currency)}
+                <div key={widget.id} className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4">
+                  {/* Card 1: Prominent Dark Summary Panel (Left Column) */}
+                  <div className="lg:col-span-1 p-5 sm:p-6 rounded-2xl bg-[#111111] text-white flex flex-col justify-between space-y-4 shadow-xs">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-neutral-400">
+                        <span className="text-[11px] font-semibold tracking-wider uppercase">Available Money</span>
+                        <Wallet className="w-5 h-5 text-[#87CEEB]" />
                       </div>
-                      <p className="text-[11px] text-neutral-400 mt-1 font-normal">
-                        Liquid cash flow (Income - Expenses - Savings)
-                      </p>
+                      <div>
+                        <div className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight text-white tabular-nums">
+                          {formatCurrency(globalTotals.availableBalance, data.settings.currency)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => onOpenQuickAction('expense')}
+                        type="button"
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-[#87CEEB] text-[#111111] text-xs font-bold rounded-xl hover:bg-[#70c2e3] transition-colors cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-[#111111]" />
+                        <span>+ Log New Expense</span>
+                      </button>
                     </div>
                   </div>
 
-                  {/* Card 2: Period Income */}
-                  <div className="p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-3 shadow-xs">
-                    <div className="flex items-center justify-between text-neutral-500">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider">
-                        Income ({dateFilter.preset.replace('_', ' ')})
-                      </span>
-                      <ArrowUpRight className="w-4 h-4 text-emerald-600" />
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">
-                        {formatCurrency(financialTotals.totalIncome, data.settings.currency)}
+                  {/* Right Column: 4 Key Metric Cards Grid */}
+                  <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                    {/* Card 2: Period Income */}
+                    <div className="p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-3 shadow-xs">
+                      <div className="flex items-center justify-between text-neutral-500">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider">
+                          Income
+                        </span>
+                        <ArrowUpRight className="w-4 h-4 text-emerald-600" />
                       </div>
-                      <p className="text-[11px] text-neutral-500 font-normal mt-1">
-                        {filteredIncomes.length} {filteredIncomes.length === 1 ? 'record' : 'records'} logged
-                      </p>
+                      <div>
+                        <div className="text-2xl font-bold font-mono text-emerald-600 tabular-nums">
+                          {formatCurrency(financialTotals.totalIncome, data.settings.currency)}
+                        </div>
+                        <p className="text-[11px] text-neutral-500 font-normal mt-1">
+                          {filteredIncomes.length} revenue entries
+                        </p>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Card 3: Period Expense */}
-                  <div className="p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-3 shadow-xs">
-                    <div className="flex items-center justify-between text-neutral-500">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider">
-                        Expenses ({dateFilter.preset.replace('_', ' ')})
-                      </span>
-                      <ArrowDownRight className="w-4 h-4 text-rose-600" />
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">
-                        {formatCurrency(financialTotals.totalExpenses, data.settings.currency)}
+                    {/* Card 3: Period Expense */}
+                    <div className="p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-3 shadow-xs">
+                      <div className="flex items-center justify-between text-neutral-500">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider">
+                          Expenses
+                        </span>
+                        <ArrowDownRight className="w-4 h-4 text-[#111111]" />
                       </div>
-                      <p className="text-[11px] text-neutral-500 font-normal mt-1">
-                        {filteredExpenses.length} {filteredExpenses.length === 1 ? 'transaction' : 'transactions'}
-                      </p>
+                      <div>
+                        <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">
+                          {formatCurrency(financialTotals.totalExpenses, data.settings.currency)}
+                        </div>
+                        <p className="text-[11px] text-neutral-500 font-normal mt-1">
+                          {filteredExpenses.length} transactions
+                        </p>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Card 4: Total Savings */}
-                  <div className="p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-3 shadow-xs">
-                    <div className="flex items-center justify-between text-neutral-500">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider">Total Savings</span>
-                      <PiggyBank className="w-4 h-4 text-amber-600" />
-                    </div>
-                    <div>
-                      <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">
-                        {formatCurrency(globalTotals.currentSavingsBalance, data.settings.currency)}
+                    {/* Card 4: Remaining Salary Due */}
+                    <div className="p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-3 shadow-xs">
+                      <div className="flex items-center justify-between text-neutral-500">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider">Remaining Salary</span>
+                        <TrendingUp className="w-4 h-4 text-sky-600" />
                       </div>
-                      <p className="text-[11px] text-neutral-500 font-normal mt-1">
-                        In {data.savingsGoals.length} {data.savingsGoals.length === 1 ? 'reserve fund' : 'reserve funds'}
-                      </p>
+                      <div>
+                        <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">
+                          {formatCurrency(monthlySalarySummary.remainingSalary, data.settings.currency)}
+                        </div>
+                        <p className="text-[11px] text-neutral-500 font-normal mt-1">
+                          Earned: {formatCurrency(monthlySalarySummary.earnedSalary, data.settings.currency)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Card 5: Money Owed to Me */}
+                    <div className="p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-3 shadow-xs">
+                      <div className="flex items-center justify-between text-neutral-500">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider">Owed to Me</span>
+                        <ArrowUpRight className="w-4 h-4 text-[#87CEEB]" />
+                      </div>
+                      <div>
+                        <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">
+                          {formatCurrency(debtSummary.outstandingReceivable, data.settings.currency)}
+                        </div>
+                        <p className="text-[11px] text-neutral-400 font-normal mt-1">
+                          Lent receivables
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -277,23 +307,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           {attendanceStats.totalHours}h
                         </div>
                         <p className="text-xs text-neutral-500 pt-1 border-t border-neutral-200 truncate">
-                          Type: {data.settings.salaryConfig.salaryType.replace('_', ' ')}
+                          Type: {(data.settings.salaryConfig.salaryType || 'daily_wage').replace('_', ' ')}
                         </p>
                       </div>
 
                       {/* Estimated Salary */}
                       <div className="p-4 rounded-xl bg-neutral-50 space-y-1.5 border border-neutral-100">
-                        <span className="text-[11px] font-semibold text-neutral-500 uppercase">Est. Net Salary ({currentMonthStr})</span>
+                        <span className="text-[11px] font-semibold text-neutral-500 uppercase">Earned Salary ({currentMonthStr})</span>
                         <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">
-                          {formatCurrency(estimatedSalary.netSalary, data.settings.currency)}
+                          {formatCurrency(monthlySalarySummary.earnedSalary, data.settings.currency)}
                         </div>
                         <div className="flex items-center justify-between text-xs text-neutral-500 pt-1 border-t border-neutral-200">
-                          <span>Gross: ${estimatedSalary.grossSalary}</span>
+                          <span>Received: {formatCurrency(monthlySalarySummary.salaryReceived, data.settings.currency)}</span>
                           <button
                             onClick={() => onNavigateTab('salary')}
                             className="font-semibold text-neutral-900 underline hover:text-black cursor-pointer"
                           >
-                            Rules
+                            Salary →
                           </button>
                         </div>
                       </div>

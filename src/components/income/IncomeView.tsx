@@ -27,6 +27,7 @@ export const IncomeView: React.FC = () => {
   const [amount, setAmount] = useState('');
   const [source, setSource] = useState<IncomeSource>('Salary');
   const [date, setDate] = useState(getTodayString());
+  const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [notes, setNotes] = useState('');
 
   // Escape key handler for modal
@@ -46,6 +47,7 @@ export const IncomeView: React.FC = () => {
     setAmount('');
     setSource('Salary');
     setDate(getTodayString());
+    setTime(new Date().toTimeString().slice(0, 5));
     setNotes('');
     setIsModalOpen(true);
   };
@@ -56,6 +58,7 @@ export const IncomeView: React.FC = () => {
     setAmount(String(inc.amount));
     setSource(inc.source);
     setDate(inc.date);
+    setTime(inc.time || '12:00');
     setNotes(inc.notes || '');
     setIsModalOpen(true);
   };
@@ -69,6 +72,7 @@ export const IncomeView: React.FC = () => {
       amount: parseFloat(amount),
       source,
       date,
+      time,
       notes: notes.trim()
     };
 
@@ -128,63 +132,70 @@ export const IncomeView: React.FC = () => {
         </button>
       </div>
 
-      {/* Top Stat Summary & Breakdown (Only when income exists) */}
-      {data.incomes.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
-          <div className="p-5 rounded-2xl bg-[#111111] text-white flex flex-col justify-between space-y-3 shadow-xs">
-            <div>
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                Filtered Revenue
-              </span>
-              <div className="text-3xl font-extrabold font-mono tracking-tight text-white mt-1 tabular-nums">
+      {/* Main Dashboard Summary Area */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4">
+        {/* Prominent Dark Summary Panel */}
+        <div className="p-5 rounded-2xl bg-[#111111] text-white flex flex-col justify-between space-y-4 shadow-xs">
+          <div>
+            <div className="flex items-center justify-between text-neutral-400">
+              <span className="text-[11px] font-semibold uppercase tracking-wider">Total Revenue</span>
+              <span className="text-[11px] font-mono text-[#87CEEB] tabular-nums">{filteredIncomes.length} entries</span>
+            </div>
+            <div className="mt-3">
+              <div className="text-3xl font-extrabold font-mono tracking-tight text-white tabular-nums">
                 {formatCurrency(totalIncomeSum, data.settings.currency)}
               </div>
               <p className="text-xs text-neutral-400 mt-1">
-                Across {filteredIncomes.length} {filteredIncomes.length === 1 ? 'entry' : 'entries'}
+                Across {sourceChartData.length} active revenue sources
               </p>
             </div>
-
-            <div className="pt-3 border-t border-neutral-800 flex items-center gap-2 text-xs text-neutral-400">
-              <ShieldCheck className="w-4 h-4 text-[#87CEEB] shrink-0" />
-              <span>Salary double-counting protection active</span>
-            </div>
           </div>
 
-          <div className="lg:col-span-2 p-5 rounded-2xl bg-white border border-black/[0.08] space-y-3 shadow-xs">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-[#111111] flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-[#87CEEB]" />
-                Revenue Streams Breakdown
-              </h3>
-              <span className="text-xs text-neutral-400">By Source</span>
-            </div>
-
-            {sourceChartData.length === 0 ? (
-              <div className="h-40 flex items-center justify-center text-xs text-neutral-400">
-                No revenue entries match current filters.
-              </div>
-            ) : (
-              <div className="h-40 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={sourceChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip
-                      formatter={(val: any) => [formatCurrency(Number(val || 0), data.settings.currency), 'Amount']}
-                      contentStyle={{ backgroundColor: '#111111', color: '#ffffff', borderRadius: '12px', fontSize: '12px', border: 'none' }}
-                    />
-                    <Bar dataKey="amount" radius={[6, 6, 0, 0]}>
-                      {sourceChartData.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={BAR_COLORS[index % BAR_COLORS.length]} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
+          <button
+            onClick={openCreateModal}
+            type="button"
+            className="w-full py-2.5 bg-[#87CEEB] text-[#111111] text-xs font-bold rounded-xl hover:bg-sky-300 transition-colors text-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white flex items-center justify-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Log Revenue Entry</span>
+          </button>
         </div>
-      )}
+
+        {/* Revenue Streams Breakdown Chart */}
+        <div className="lg:col-span-3 p-5 rounded-2xl bg-white border border-black/[0.08] space-y-3 shadow-xs">
+          <div className="flex items-center justify-between border-b border-black/[0.06] pb-2.5">
+            <h3 className="font-bold text-sm text-[#111111] flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-[#87CEEB]" />
+              Revenue Streams Breakdown by Source
+            </h3>
+            <span className="text-xs text-neutral-400">By Income Source</span>
+          </div>
+
+          {sourceChartData.length === 0 ? (
+            <div className="h-36 flex items-center justify-center text-xs text-neutral-400">
+              No revenue entries logged yet. Click "Log Revenue Entry" above to record income.
+            </div>
+          ) : (
+            <div className="h-36 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={sourceChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    formatter={(val: any) => [formatCurrency(Number(val || 0), data.settings.currency), 'Amount']}
+                    contentStyle={{ backgroundColor: '#111111', color: '#ffffff', borderRadius: '12px', fontSize: '12px', border: 'none' }}
+                  />
+                  <Bar dataKey="amount" radius={[6, 6, 0, 0]}>
+                    {sourceChartData.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={BAR_COLORS[index % BAR_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Controls Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-neutral-50 p-2.5 rounded-2xl border border-neutral-200">
@@ -242,7 +253,7 @@ export const IncomeView: React.FC = () => {
                       +{formatCurrency(inc.amount, data.settings.currency)}
                     </span>
                     <span className="text-[10px] text-neutral-400 font-mono block">
-                      {formatHumanDate(inc.date)}
+                      {formatHumanDate(inc.date)} {inc.time ? `· ${inc.time}` : ''}
                     </span>
                   </div>
                 </div>
@@ -309,7 +320,7 @@ export const IncomeView: React.FC = () => {
                       {inc.source}
                     </td>
                     <td className="py-3 px-4 font-mono text-neutral-600 tabular-nums">
-                      {formatHumanDate(inc.date)}
+                      {formatHumanDate(inc.date)} {inc.time ? `(${inc.time})` : ''}
                     </td>
                     <td className="py-3 px-4 text-right font-mono font-bold text-[#111111] tabular-nums">
                       +{formatCurrency(inc.amount, data.settings.currency)}
@@ -391,7 +402,7 @@ export const IncomeView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-neutral-700 mb-1">Source</label>
                   <select
@@ -411,6 +422,15 @@ export const IncomeView: React.FC = () => {
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Time (HH:mm)</label>
+                  <input
+                    type="time"
+                    value={time}
+                    onChange={(e) => setTime(e.target.value)}
+                    className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
                   />
                 </div>
               </div>

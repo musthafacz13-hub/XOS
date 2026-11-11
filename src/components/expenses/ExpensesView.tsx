@@ -28,6 +28,7 @@ export const ExpensesView: React.FC = () => {
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState<ExpenseCategory>('Food & Dining');
   const [date, setDate] = useState(getTodayString());
+  const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Credit Card');
   const [notes, setNotes] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
@@ -50,6 +51,7 @@ export const ExpensesView: React.FC = () => {
     setAmount('');
     setCategory('Food & Dining');
     setDate(getTodayString());
+    setTime(new Date().toTimeString().slice(0, 5));
     setPaymentMethod('Credit Card');
     setNotes('');
     setIsRecurring(false);
@@ -63,6 +65,7 @@ export const ExpensesView: React.FC = () => {
     setAmount(String(exp.amount));
     setCategory(exp.category);
     setDate(exp.date);
+    setTime(exp.time || '12:00');
     setPaymentMethod(exp.paymentMethod);
     setNotes(exp.notes || '');
     setIsRecurring(!!exp.isRecurring);
@@ -79,6 +82,7 @@ export const ExpensesView: React.FC = () => {
       amount: parseFloat(amount),
       category,
       date,
+      time,
       paymentMethod,
       notes: notes.trim(),
       isRecurring,
@@ -142,70 +146,77 @@ export const ExpensesView: React.FC = () => {
         </button>
       </div>
 
-      {/* Top Stat Summary & Breakdown (Only when expenses exist) */}
-      {data.expenses.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
-          <div className="p-5 rounded-2xl bg-[#111111] text-white flex flex-col justify-between space-y-3 shadow-xs">
-            <div>
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                Filtered Total Spending
-              </span>
-              <div className="text-3xl font-extrabold font-mono tracking-tight text-white mt-1 tabular-nums">
+      {/* Main Dashboard Summary Area */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4">
+        {/* Prominent Dark Summary Panel */}
+        <div className="p-5 rounded-2xl bg-[#111111] text-white flex flex-col justify-between space-y-4 shadow-xs">
+          <div>
+            <div className="flex items-center justify-between text-neutral-400">
+              <span className="text-[11px] font-semibold uppercase tracking-wider">Total Expenses</span>
+              <span className="text-[11px] font-mono text-[#87CEEB] tabular-nums">{filteredExpenses.length} transactions</span>
+            </div>
+            <div className="mt-3">
+              <div className="text-3xl font-extrabold font-mono tracking-tight text-white tabular-nums">
                 {formatCurrency(totalExpenseSum, data.settings.currency)}
               </div>
               <p className="text-xs text-neutral-400 mt-1">
-                Across {filteredExpenses.length} {filteredExpenses.length === 1 ? 'transaction' : 'transactions'}
+                Across {categoryChartData.length} active spending categories
               </p>
             </div>
-
-            <div className="pt-3 border-t border-neutral-800 flex items-center justify-between text-xs text-neutral-400">
-              <span>Active categories</span>
-              <span className="font-mono text-white">{categoryChartData.length}</span>
-            </div>
           </div>
 
-          <div className="lg:col-span-2 p-5 rounded-2xl bg-white border border-black/[0.08] space-y-3 shadow-xs">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-[#111111] flex items-center gap-2">
-                <PieChartIcon className="w-4 h-4 text-[#87CEEB]" />
-                Spending by Category
-              </h3>
-              <span className="text-xs text-neutral-400">Category split</span>
-            </div>
-
-            {categoryChartData.length === 0 ? (
-              <div className="h-40 flex items-center justify-center text-xs text-neutral-400">
-                No transactions match current filters.
-              </div>
-            ) : (
-              <div className="h-40 w-full flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={categoryChartData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={40}
-                      outerRadius={60}
-                      paddingAngle={2}
-                      dataKey="value"
-                    >
-                      {categoryChartData.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(val: any) => [formatCurrency(Number(val || 0), data.settings.currency), 'Amount']}
-                      contentStyle={{ backgroundColor: '#111111', color: '#ffffff', borderRadius: '12px', fontSize: '12px', border: 'none' }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: '11px' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
+          <button
+            onClick={openCreateModal}
+            type="button"
+            className="w-full py-2.5 bg-[#87CEEB] text-[#111111] text-xs font-bold rounded-xl hover:bg-sky-300 transition-colors text-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white flex items-center justify-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Log New Expense</span>
+          </button>
         </div>
-      )}
+
+        {/* Category Spending Breakdown Chart */}
+        <div className="lg:col-span-3 p-5 rounded-2xl bg-white border border-black/[0.08] space-y-3 shadow-xs">
+          <div className="flex items-center justify-between border-b border-black/[0.06] pb-2.5">
+            <h3 className="font-bold text-sm text-[#111111] flex items-center gap-2">
+              <PieChartIcon className="w-4 h-4 text-[#87CEEB]" />
+              Expense Distribution by Category
+            </h3>
+            <span className="text-xs text-neutral-400">Visual Breakdown</span>
+          </div>
+
+          {categoryChartData.length === 0 ? (
+            <div className="h-36 flex items-center justify-center text-xs text-neutral-400">
+              No expense transactions logged yet. Click "Log New Expense" above to get started.
+            </div>
+          ) : (
+            <div className="h-36 w-full flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={categoryChartData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={35}
+                    outerRadius={55}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {categoryChartData.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(val: any) => [formatCurrency(Number(val || 0), data.settings.currency), 'Amount']}
+                    contentStyle={{ backgroundColor: '#111111', color: '#ffffff', borderRadius: '12px', fontSize: '12px', border: 'none' }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '11px' }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Controls Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-neutral-50 p-2.5 rounded-2xl border border-neutral-200">
@@ -278,7 +289,7 @@ export const ExpensesView: React.FC = () => {
                       {formatCurrency(exp.amount, data.settings.currency)}
                     </span>
                     <span className="text-[10px] text-neutral-400 font-mono block">
-                      {formatHumanDate(exp.date)}
+                      {formatHumanDate(exp.date)} {exp.time ? `· ${exp.time}` : ''}
                     </span>
                   </div>
                 </div>
@@ -341,7 +352,7 @@ export const ExpensesView: React.FC = () => {
                       )}
                     </td>
                     <td className="py-3 px-4 font-mono text-neutral-600 tabular-nums">
-                      {formatHumanDate(exp.date)}
+                      {formatHumanDate(exp.date)} {exp.time ? `(${exp.time})` : ''}
                     </td>
                     <td className="py-3 px-4 text-neutral-600">
                       {exp.paymentMethod}
@@ -426,7 +437,7 @@ export const ExpensesView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-neutral-700 mb-1">Category</label>
                   <select
@@ -446,6 +457,15 @@ export const ExpensesView: React.FC = () => {
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Time (HH:mm)</label>
+                  <input
+                    type="time"
+                    value={time}
+                    onChange={(e) => setTime(e.target.value)}
+                    className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
                   />
                 </div>
               </div>

@@ -481,7 +481,7 @@ export async function generateXOSReportPDF(
   if (includeSalary) {
     const salaryCfg = data.settings.salaryConfig;
     const salarySubtitle = salaryCfg
-      ? `Model: ${salaryCfg.salaryType.replace('_', ' ').toUpperCase()} | Base: ${formatCurrency(salaryCfg.baseAmount || 0, currencyCode)}`
+      ? `Model: ${(salaryCfg.salaryType || 'daily_wage').replace('_', ' ').toUpperCase()} | Base: ${formatCurrency(salaryCfg.baseAmount || 0, currencyCode)}`
       : undefined;
 
     drawSectionHeader('Salary Information & Payout Records', salarySubtitle);

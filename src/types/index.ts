@@ -31,17 +31,20 @@ export interface Deduction {
 export type FixedMonthlyAbsencePolicy = 'no_deduction' | 'deduct_unpaid_absent';
 
 export interface SalaryConfig {
-  salaryType: SalaryType;
-  baseAmount: number; // monthly fixed, daily rate, or hourly rate
+  dailyBaseSalary: number; // default: 500
+  standardWorkingHours: number; // default: 8
+  extraHourRate: number; // default: 100
   currency: CurrencyCode;
-  expectedWorkingDaysPerMonth: number;
-  expectedWorkingHoursPerDay: number;
-  weeklyHolidays: string[]; // e.g. ['Sunday'] or ['Saturday', 'Sunday']
-  paidLeaveAllowancePerMonth: number; // e.g. 2 days
-  overtimeRateMultiplier: number; // e.g. 1.5
-  allowances: Allowance[];
-  deductions: Deduction[];
-  paymentDateOfMonth: number; // e.g. 1 or 28 or 30
+  salaryType?: SalaryType;
+  baseAmount?: number;
+  expectedWorkingDaysPerMonth?: number;
+  expectedWorkingHoursPerDay?: number;
+  weeklyHolidays?: string[];
+  paidLeaveAllowancePerMonth?: number;
+  overtimeRateMultiplier?: number;
+  allowances?: Allowance[];
+  deductions?: Deduction[];
+  paymentDateOfMonth?: number;
   fixedMonthlyAbsencePolicy?: FixedMonthlyAbsencePolicy;
   includeOvertimeInMonthly?: boolean;
 }
@@ -116,6 +119,7 @@ export interface Expense {
   amount: number;
   category: ExpenseCategory;
   date: string; // YYYY-MM-DD
+  time?: string; // HH:mm
   paymentMethod: PaymentMethod;
   notes?: string;
   isRecurring?: boolean;
@@ -131,6 +135,7 @@ export interface Income {
   amount: number;
   source: IncomeSource;
   date: string; // YYYY-MM-DD
+  time?: string; // HH:mm
   notes?: string;
   salaryPayoutId?: string; // Links to salary payout if recorded from salary module
   createdAt: string;
@@ -145,8 +150,10 @@ export interface AttendanceRecord {
   checkInTime?: string; // HH:mm
   checkOutTime?: string; // HH:mm
   breakDurationMinutes?: number;
+  calculatedHours?: number; // Total working hours
+  extraHours?: number; // max(0, calculatedHours - standardWorkingHours)
+  dailyEarnedSalary?: number; // 500 + (extraHours * 100) (0 for Leave/Absent)
   notes?: string;
-  calculatedHours?: number;
 }
 
 export interface SalaryPayout {

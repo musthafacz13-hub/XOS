@@ -87,3 +87,14 @@ export function calculateWorkingHours(checkIn?: string, checkOut?: string, break
   const durationMinutes = Math.max(0, endMinutes - startMinutes - (breakMins || 0));
   return Number((durationMinutes / 60).toFixed(2));
 }
+
+export function getPayoutDateForMonth(yearMonth: string, paymentDay: number = 1): string {
+  if (!yearMonth || !yearMonth.includes('-')) return getTodayString();
+  const [yStr, mStr] = yearMonth.split('-');
+  const year = parseInt(yStr, 10);
+  const month = parseInt(mStr, 10);
+  if (isNaN(year) || isNaN(month) || month < 1 || month > 12) return getTodayString();
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const clampedDay = Math.min(Math.max(1, Math.round(paymentDay || 1)), daysInMonth);
+  return `${year}-${String(month).padStart(2, '0')}-${String(clampedDay).padStart(2, '0')}`;
+}

@@ -11,6 +11,8 @@ import {
   UserSettings 
 } from '../types';
 import { DEFAULT_USER_SETTINGS, generateDemoDataset } from '../data/initialData';
+import { calculateWorkingHours, getTodayString } from '../utils/formatters';
+import { calculateDailyEarnedSalary } from '../utils/calculations';
 
 /**
  * ARCHITECTURAL MANDATE:
@@ -137,8 +139,13 @@ export const repository = {
   },
 
   addExpense(expense: Omit<Expense, 'id' | 'createdAt'>): Expense {
+    if (expense.amount <= 0) {
+      throw new Error("Expense amount must be greater than zero.");
+    }
+    const currentTime = new Date().toTimeString().slice(0, 5);
     const newExpense: Expense = {
       ...expense,
+      time: expense.time || currentTime,
       id: 'e_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
       createdAt: new Date().toISOString().split('T')[0]
     };
@@ -168,8 +175,13 @@ export const repository = {
   },
 
   addIncome(income: Omit<Income, 'id' | 'createdAt'>): Income {
+    if (income.amount <= 0) {
+      throw new Error("Income amount must be greater than zero.");
+    }
+    const currentTime = new Date().toTimeString().slice(0, 5);
     const newIncome: Income = {
       ...income,
+      time: income.time || currentTime,
       id: 'i_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
       createdAt: new Date().toISOString().split('T')[0]
     };
@@ -187,7 +199,6 @@ export const repository = {
     const targetIncome = memoryState.incomes.find(i => i.id === id);
 
     // If this income was linked to a salary payout, update the payout's sync status
-    // while safely preserving the salary payout record itself
     let payoutsUpdated = false;
     const updatedPayouts = memoryState.salaryPayouts.map(p => {
       if (p.syncedToIncomeId === id || (targetIncome?.salaryPayoutId && p.id === targetIncome.salaryPayoutId)) {
@@ -217,12 +228,31 @@ export const repository = {
   },
 
   upsertAttendanceRecord(record: Omit<AttendanceRecord, 'id'> & { id?: string }): AttendanceRecord {
+    const todayStr = getTodayString();
+    if (record.date > todayStr) {
+      throw new Error("Attendance cannot be logged for future dates.");
+    }
+
+    let hours = record.calculatedHours || 0;
+    if (record.status === 'Present' && record.checkInTime && record.checkOutTime) {
+      hours = calculateWorkingHours(record.checkInTime, record.checkOutTime, record.breakDurationMinutes || 0);
+    }
+    const dailyRes = calculateDailyEarnedSalary(record.status, hours, memoryState.settings.salaryConfig);
+
+    const processedRecordPayload = {
+      ...record,
+      status: record.status,
+      calculatedHours: record.status === 'Present' ? hours : 0,
+      extraHours: record.status === 'Present' ? dailyRes.extraHours : 0,
+      dailyEarnedSalary: dailyRes.dailyEarnedSalary
+    };
+
     const existingIndex = memoryState.attendance.findIndex(r => r.date === record.date);
 
     if (existingIndex >= 0) {
       const updatedRecord: AttendanceRecord = {
         ...memoryState.attendance[existingIndex],
-        ...record,
+        ...processedRecordPayload,
         id: memoryState.attendance[existingIndex].id
       };
       memoryState.attendance[existingIndex] = updatedRecord;
@@ -230,7 +260,7 @@ export const repository = {
       return updatedRecord;
     } else {
       const newRecord: AttendanceRecord = {
-        ...record,
+        ...processedRecordPayload,
         id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4)
       };
       memoryState.attendance = [newRecord, ...memoryState.attendance];
@@ -300,6 +330,19 @@ export const repository = {
   },
 
   addSavingsTransaction(tx: Omit<SavingsTransaction, 'id' | 'createdAt'>): SavingsTransaction {
+    if (tx.amount <= 0) {
+      throw new Error("Transaction amount must be greater than zero.");
+    }
+
+    const targetGoal = memoryState.savingsGoals.find(g => g.id === tx.savingsGoalId);
+    if (!targetGoal) {
+      throw new Error("Savings goal fund not found.");
+    }
+
+    if (tx.type === 'withdrawal' && tx.amount > targetGoal.currentAmount) {
+      throw new Error(`Withdrawal amount exceeds available balance.`);
+    }
+
     const newTx: SavingsTransaction = {
       ...tx,
       id: 'stx_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -307,15 +350,11 @@ export const repository = {
     };
     memoryState.savingsTransactions = [newTx, ...memoryState.savingsTransactions];
 
-    // Recalculate and update the parent goal's currentAmount
-    const targetGoal = memoryState.savingsGoals.find(g => g.id === tx.savingsGoalId);
-    if (targetGoal) {
-      const delta = tx.type === 'deposit' ? tx.amount : -tx.amount;
-      const updatedAmount = Math.max(0, (targetGoal.currentAmount || 0) + delta);
-      memoryState.savingsGoals = memoryState.savingsGoals.map(g => 
-        g.id === targetGoal.id ? { ...g, currentAmount: updatedAmount } : g
-      );
-    }
+    const delta = tx.type === 'deposit' ? tx.amount : -tx.amount;
+    const updatedAmount = Math.max(0, (targetGoal.currentAmount || 0) + delta);
+    memoryState.savingsGoals = memoryState.savingsGoals.map(g => 
+      g.id === targetGoal.id ? { ...g, currentAmount: updatedAmount } : g
+    );
 
     notifyListeners();
     return newTx;
@@ -417,6 +456,7 @@ export const repository = {
   addDebt(debt: Omit<Debt, 'id' | 'status' | 'created_at'>): Debt {
     const newDebt: Debt = {
       ...debt,
+      type: 'lent',
       id: 'd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
       status: 'Pending',
       created_at: new Date().toISOString().split('T')[0]
@@ -456,6 +496,23 @@ export const repository = {
   },
 
   addDebtRepayment(repayment: Omit<DebtRepayment, 'id' | 'created_at'>): DebtRepayment {
+    if (repayment.amount <= 0) {
+      throw new Error("Repayment amount must be greater than zero.");
+    }
+    const targetDebt = memoryState.debts.find(d => d.id === repayment.debt_id);
+    if (!targetDebt) {
+      throw new Error("Debt record not found.");
+    }
+
+    const currentRepaid = memoryState.debtRepayments
+      .filter(r => r.debt_id === targetDebt.id)
+      .reduce((sum, r) => sum + r.amount, 0);
+
+    const remaining = Math.max(0, targetDebt.original_amount - currentRepaid);
+    if (repayment.amount > remaining + 0.001) {
+      throw new Error("Repayment amount cannot exceed remaining balance.");
+    }
+
     const newRepayment: DebtRepayment = {
       ...repayment,
       id: 'dr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -463,26 +520,19 @@ export const repository = {
     };
     memoryState.debtRepayments = [newRepayment, ...memoryState.debtRepayments];
 
-    // Sync status of the parent debt
-    const targetDebt = memoryState.debts.find(d => d.id === repayment.debt_id);
-    if (targetDebt) {
-      const totalRepaid = memoryState.debtRepayments
-        .filter(r => r.debt_id === targetDebt.id)
-        .reduce((sum, r) => sum + r.amount, 0);
-
-      let nextStatus: 'Pending' | 'Partial' | 'Paid' = 'Pending';
-      if (totalRepaid >= targetDebt.original_amount - 0.0001) {
-        nextStatus = 'Paid';
-      } else if (totalRepaid > 0) {
-        nextStatus = 'Partial';
-      }
-
-      memoryState.debts = memoryState.debts.map(d => 
-        d.id === targetDebt.id 
-          ? { ...d, status: nextStatus, updated_at: new Date().toISOString().split('T')[0] } 
-          : d
-      );
+    const totalRepaid = currentRepaid + repayment.amount;
+    let nextStatus: 'Pending' | 'Partial' | 'Paid' = 'Pending';
+    if (totalRepaid >= targetDebt.original_amount - 0.0001) {
+      nextStatus = 'Paid';
+    } else if (totalRepaid > 0) {
+      nextStatus = 'Partial';
     }
+
+    memoryState.debts = memoryState.debts.map(d => 
+      d.id === targetDebt.id 
+        ? { ...d, status: nextStatus, updated_at: new Date().toISOString().split('T')[0] } 
+        : d
+    );
 
     notifyListeners();
     return newRepayment;

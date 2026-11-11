@@ -46,6 +46,10 @@ export const WorkView: React.FC = () => {
   const monthlyStats = calculateAttendanceStats(data.attendance, currentMonthStr);
 
   const openLogModalForDate = (dStr: string) => {
+    if (dStr > todayStr) {
+      alert("Attendance cannot be logged for future dates.");
+      return;
+    }
     const existing = data.attendance.find(r => r.date === dStr);
     if (existing) {
       setEditingRecord(existing);
@@ -277,16 +281,20 @@ export const WorkView: React.FC = () => {
             const dayNum = parseInt(dStr.split('-')[2]);
             const rec = data.attendance.find(r => r.date === dStr);
             const isToday = dStr === todayStr;
+            const isFuture = dStr > todayStr;
 
             return (
               <button
                 key={dStr}
                 onClick={() => openLogModalForDate(dStr)}
+                disabled={isFuture}
                 type="button"
-                className={`h-12 sm:h-16 p-1 sm:p-2 rounded-xl border text-left flex flex-col justify-between transition-colors cursor-pointer ${
-                  isToday 
-                    ? 'ring-2 ring-[#87CEEB] border-[#87CEEB] bg-neutral-50' 
-                    : 'border-black/[0.06] hover:border-black/20 bg-white'
+                className={`h-12 sm:h-16 p-1 sm:p-2 rounded-xl border text-left flex flex-col justify-between transition-colors ${
+                  isFuture
+                    ? 'border-neutral-100 bg-neutral-100/50 text-neutral-300 cursor-not-allowed'
+                    : isToday 
+                    ? 'ring-2 ring-[#87CEEB] border-[#87CEEB] bg-neutral-50 cursor-pointer' 
+                    : 'border-black/[0.06] hover:border-black/20 bg-white cursor-pointer'
                 }`}
               >
                 <div className="flex items-center justify-between w-full">
@@ -466,6 +474,7 @@ export const WorkView: React.FC = () => {
                   <input
                     type="date"
                     required
+                    max={todayStr}
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"

@@ -126,6 +126,71 @@ export const SettingsView: React.FC = () => {
         </div>
       </div>
 
+      {/* Prominent Section Dashboard Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4">
+        {/* Prominent Dark Summary Panel (Left Column) */}
+        <div className="lg:col-span-1 p-5 sm:p-6 rounded-2xl bg-[#111111] text-white flex flex-col justify-between space-y-4 shadow-xs">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Workspace Profile</span>
+              <User className="w-5 h-5 text-[#87CEEB]" />
+            </div>
+            <div>
+              <div className="text-lg font-bold text-white truncate">
+                {profile.name.trim() || 'Session User'}
+              </div>
+              <p className="text-xs text-neutral-400 mt-0.5 truncate">
+                {profile.occupation.trim() || 'Independent Operator'}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <button
+              onClick={handleSaveProfileAndPrefs}
+              type="button"
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-[#87CEEB] text-[#111111] text-xs font-bold rounded-xl hover:bg-[#70c2e3] transition-colors cursor-pointer"
+            >
+              <Check className="w-3.5 h-3.5 text-[#111111]" />
+              <span>Save Settings</span>
+            </button>
+            <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800 text-[11px] text-neutral-400 flex items-center justify-between">
+              <span>Cloud Status</span>
+              <span className="text-emerald-400 font-medium">In-Memory Active</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Section Secondary Key Metric Cards (Right 3 Columns) */}
+        <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+          <div className="p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-2 shadow-xs">
+            <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Primary Currency</span>
+            <div className="text-2xl font-bold font-mono text-[#111111]">
+              {currency} ({CURRENCIES[currency]?.symbol || '$'})
+            </div>
+            <span className="text-[11px] text-neutral-400">{CURRENCIES[currency]?.name || currency}</span>
+          </div>
+
+          <div className="p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-2 shadow-xs">
+            <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Date & Week Formatting</span>
+            <div className="text-lg font-bold font-mono text-[#111111]">
+              {dateFormat}
+            </div>
+            <span className="text-[11px] text-neutral-400">Starts on {weekStartDay}</span>
+          </div>
+
+          <div className="p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-2 shadow-xs">
+            <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Configured Categories</span>
+            <div className="text-2xl font-bold font-mono text-[#111111]">
+              {expenseCategories.length + incomeSources.length}
+            </div>
+            <span className="text-[11px] text-neutral-400">
+              {expenseCategories.length} Expense · {incomeSources.length} Revenue
+            </span>
+          </div>
+        </div>
+      </div>
+
       <form onSubmit={handleSaveProfileAndPrefs} className="space-y-6">
         {/* Profile & Regional Settings */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
@@ -176,7 +241,7 @@ export const SettingsView: React.FC = () => {
           <div className="p-5 rounded-2xl bg-white border border-black/[0.08] space-y-4 shadow-xs">
             <h3 className="font-bold text-sm text-[#111111] border-b border-black/[0.06] pb-2.5 flex items-center gap-2">
               <DollarSign className="w-4 h-4 text-[#87CEEB]" />
-              Formatting & Regional Settings
+              Formatting & Salary Rates
             </h3>
 
             <div className="space-y-3">
@@ -208,7 +273,7 @@ export const SettingsView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Week Starting Day</label>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Week Start Day</label>
                   <select
                     value={weekStartDay}
                     onChange={(e) => setWeekStartDay(e.target.value as WeekStartDay)}
@@ -217,6 +282,54 @@ export const SettingsView: React.FC = () => {
                     <option value="Monday">Monday</option>
                     <option value="Sunday">Sunday</option>
                   </select>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-neutral-100 grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Daily Base Rate</label>
+                  <input
+                    type="number"
+                    value={data.settings.salaryConfig.dailyBaseSalary || 500}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value) || 0;
+                      data.saveSettings({
+                        ...data.settings,
+                        salaryConfig: { ...data.settings.salaryConfig, dailyBaseSalary: val }
+                      });
+                    }}
+                    className="w-full px-2 py-1.5 text-xs font-mono border border-neutral-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Standard Hours</label>
+                  <input
+                    type="number"
+                    value={data.settings.salaryConfig.standardWorkingHours || 8}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value) || 8;
+                      data.saveSettings({
+                        ...data.settings,
+                        salaryConfig: { ...data.settings.salaryConfig, standardWorkingHours: val }
+                      });
+                    }}
+                    className="w-full px-2 py-1.5 text-xs font-mono border border-neutral-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Extra Hr Rate</label>
+                  <input
+                    type="number"
+                    value={data.settings.salaryConfig.extraHourRate || 100}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value) || 0;
+                      data.saveSettings({
+                        ...data.settings,
+                        salaryConfig: { ...data.settings.salaryConfig, extraHourRate: val }
+                      });
+                    }}
+                    className="w-full px-2 py-1.5 text-xs font-mono border border-neutral-300 rounded-lg"
+                  />
                 </div>
               </div>
             </div>

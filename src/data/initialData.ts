@@ -12,12 +12,15 @@ import {
 import { getMonthString, getTodayString } from '../utils/formatters';
 
 export const DEFAULT_SALARY_CONFIG: SalaryConfig = {
-  salaryType: 'fixed_monthly',
-  baseAmount: 0,
-  currency: 'USD',
+  dailyBaseSalary: 500,
+  standardWorkingHours: 8,
+  extraHourRate: 100,
+  currency: 'INR',
+  salaryType: 'daily_wage',
+  baseAmount: 500,
   expectedWorkingDaysPerMonth: 22,
   expectedWorkingHoursPerDay: 8,
-  weeklyHolidays: ['Saturday', 'Sunday'],
+  weeklyHolidays: ['Sunday'],
   paidLeaveAllowancePerMonth: 0,
   overtimeRateMultiplier: 1.5,
   allowances: [],

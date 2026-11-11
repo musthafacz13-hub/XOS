@@ -100,19 +100,37 @@ export const SavingsView: React.FC = () => {
     setIsGoalModalOpen(false);
   };
 
+  const [txError, setTxError] = useState<string | null>(null);
+
   const handleTxSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setTxError(null);
     if (!selectedTxGoalId || !txAmount) return;
 
-    data.addSavingsTransaction({
-      savingsGoalId: selectedTxGoalId,
-      amount: parseFloat(txAmount),
-      type: txType,
-      date: getTodayString(),
-      note: txNote.trim() || (txType === 'deposit' ? 'Savings Contribution' : 'Savings Withdrawal')
-    });
+    const parsedAmount = parseFloat(txAmount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setTxError('Please enter a valid amount greater than 0.');
+      return;
+    }
 
-    setIsTxModalOpen(false);
+    const targetGoal = data.savingsGoals.find(g => g.id === selectedTxGoalId);
+    if (txType === 'withdrawal' && targetGoal && parsedAmount > (targetGoal.currentAmount || 0)) {
+      setTxError(`Withdrawal amount cannot exceed available balance of ${formatCurrency(targetGoal.currentAmount || 0, data.settings.currency)}.`);
+      return;
+    }
+
+    try {
+      data.addSavingsTransaction({
+        savingsGoalId: selectedTxGoalId,
+        amount: parsedAmount,
+        type: txType,
+        date: getTodayString(),
+        note: txNote.trim() || (txType === 'deposit' ? 'Savings Contribution' : 'Savings Withdrawal')
+      });
+      setIsTxModalOpen(false);
+    } catch (err) {
+      setTxError(err instanceof Error ? err.message : 'Failed to record transaction.');
+    }
   };
 
   const handleDeleteGoal = (id: string) => {
@@ -145,99 +163,152 @@ export const SavingsView: React.FC = () => {
         </button>
       </div>
 
-      {/* Top Banner & Non-Expense Notice */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
-        {/* Balance Card */}
-        <div className="p-5 sm:p-6 rounded-2xl bg-[#111111] text-white flex flex-col justify-between space-y-4 shadow-xs">
-          <div>
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Total Savings Reserves</span>
-            <div className="text-3xl font-extrabold font-mono tracking-tight text-white mt-1 tabular-nums">
-              {formatCurrency(totalSavingsBalance, data.settings.currency)}
+      {/* Prominent Section Dashboard Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4">
+        {/* Prominent Dark Summary Panel (Left Column) */}
+        <div className="lg:col-span-1 p-5 sm:p-6 rounded-2xl bg-[#111111] text-white flex flex-col justify-between space-y-4 shadow-xs">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Total Savings Reserves</span>
+              <PiggyBank className="w-5 h-5 text-[#87CEEB]" />
             </div>
-            <p className="text-xs text-neutral-400 mt-1">
-              Overall target: {formatCurrency(totalTargetSum, data.settings.currency)}
-            </p>
+            <div>
+              <div className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight text-white tabular-nums">
+                {formatCurrency(totalSavingsBalance, data.settings.currency)}
+              </div>
+              <p className="text-xs text-neutral-400 mt-1">
+                Overall target: {formatCurrency(totalTargetSum, data.settings.currency)}
+              </p>
+            </div>
           </div>
 
-          <div className="p-3 bg-neutral-900 rounded-xl border border-neutral-800 text-[11px] text-neutral-300 flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-[#87CEEB] shrink-0" />
-            <span>Savings transfers are stored separately and not counted as expenses.</span>
+          <div className="space-y-2.5">
+            <button
+              onClick={openCreateGoalModal}
+              type="button"
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-[#87CEEB] text-[#111111] text-xs font-bold rounded-xl hover:bg-[#70c2e3] transition-colors cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 text-[#111111]" />
+              <span>+ New Savings Fund</span>
+            </button>
+            <div className="p-2.5 bg-neutral-900 rounded-xl border border-neutral-800 text-[11px] text-neutral-300 flex items-center gap-2">
+              <ShieldAlert className="w-3.5 h-3.5 text-[#87CEEB] shrink-0" />
+              <span>Savings transfers are stored separately and not counted as expenses.</span>
+            </div>
           </div>
         </div>
 
-        {/* Funds Summary Cards or Inline Hint */}
-        <div className="lg:col-span-2">
-          {data.savingsGoals.length === 0 ? (
-            <div className="h-full flex items-center justify-center p-6 bg-neutral-50 rounded-2xl border border-neutral-200 text-center">
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-neutral-800">No active savings funds</p>
-                <p className="text-xs text-neutral-500">Create a fund above to start tracking allocations.</p>
-              </div>
+        {/* Section Secondary Key Metric Cards (Right 3 Columns) */}
+        <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+          <div className="p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-2 shadow-xs">
+            <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Active Reserve Funds</span>
+            <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">
+              {data.savingsGoals.length}
             </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {data.savingsGoals.map((sg) => {
-                const progressPct = sg.targetAmount > 0
-                  ? Math.min(100, Math.round(((sg.currentAmount || 0) / sg.targetAmount) * 100))
-                  : 0;
-                const remaining = Math.max(0, sg.targetAmount - (sg.currentAmount || 0));
+            <span className="text-[11px] text-neutral-400">Dedicated savings targets</span>
+          </div>
 
-                return (
-                  <div key={sg.id} className="p-5 rounded-2xl bg-white border border-black/[0.08] space-y-4 shadow-xs flex flex-col justify-between">
-                    <div className="space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <h3 className="font-bold text-sm text-[#111111] line-clamp-1">{sg.name}</h3>
-                        <div className="flex items-center gap-1">
-                          <button onClick={() => openEditGoalModal(sg)} className="p-1 text-neutral-400 hover:text-black cursor-pointer">
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => handleDeleteGoal(sg.id)} className="p-1 text-neutral-400 hover:text-rose-600 cursor-pointer">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
+          <div className="p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-2 shadow-xs">
+            <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Total Deposits Logged</span>
+            <div className="text-2xl font-bold font-mono text-emerald-600 tabular-nums">
+              {formatCurrency(
+                data.savingsTransactions.filter(t => t.type === 'deposit').reduce((sum, t) => sum + t.amount, 0),
+                data.settings.currency
+              )}
+            </div>
+            <span className="text-[11px] text-neutral-400">
+              {data.savingsTransactions.filter(t => t.type === 'deposit').length} deposit entries
+            </span>
+          </div>
 
-                      <div className="text-2xl font-extrabold font-mono text-[#111111] tabular-nums">
-                        {formatCurrency(sg.currentAmount || 0, data.settings.currency)}
-                      </div>
+          <div className="p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-2 shadow-xs">
+            <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Total Withdrawals</span>
+            <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">
+              {formatCurrency(
+                data.savingsTransactions.filter(t => t.type === 'withdrawal').reduce((sum, t) => sum + t.amount, 0),
+                data.settings.currency
+              )}
+            </div>
+            <span className="text-[11px] text-neutral-400">
+              {data.savingsTransactions.filter(t => t.type === 'withdrawal').length} withdrawal entries
+            </span>
+          </div>
+        </div>
+      </div>
 
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-xs text-neutral-500 font-mono tabular-nums">
-                          <span>{progressPct}% saved</span>
-                          <span>Target: {formatCurrency(sg.targetAmount, data.settings.currency)}</span>
-                        </div>
-                        <div className="w-full h-1.5 bg-neutral-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-[#87CEEB] transition-all duration-300" style={{ width: `${progressPct}%` }} />
-                        </div>
+      {/* Funds Grid Header */}
+      <div className="pt-2">
+        <h3 className="font-bold text-sm text-[#111111] mb-3">Active Savings Funds ({data.savingsGoals.length})</h3>
+        {data.savingsGoals.length === 0 ? (
+          <div className="p-6 bg-neutral-50 rounded-2xl border border-neutral-200 text-center">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-neutral-800">No active savings funds</p>
+              <p className="text-xs text-neutral-500">Create a fund above to start tracking allocations.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {data.savingsGoals.map((sg) => {
+              const progressPct = sg.targetAmount > 0
+                ? Math.min(100, Math.round(((sg.currentAmount || 0) / sg.targetAmount) * 100))
+                : 0;
+              const remaining = Math.max(0, sg.targetAmount - (sg.currentAmount || 0));
+
+              return (
+                <div key={sg.id} className="p-5 rounded-2xl bg-white border border-black/[0.08] space-y-4 shadow-xs flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-bold text-sm text-[#111111] line-clamp-1">{sg.name}</h3>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => openEditGoalModal(sg)} className="p-1 text-neutral-400 hover:text-black cursor-pointer">
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => handleDeleteGoal(sg.id)} className="p-1 text-neutral-400 hover:text-rose-600 cursor-pointer">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
 
-                    <div className="pt-3 border-t border-black/[0.06] flex items-center justify-between gap-2">
-                      <span className="text-[11px] text-neutral-400 font-mono tabular-nums">
-                        Remaining: {formatCurrency(remaining, data.settings.currency)}
-                      </span>
+                    <div className="text-2xl font-extrabold font-mono text-[#111111] tabular-nums">
+                      {formatCurrency(sg.currentAmount || 0, data.settings.currency)}
+                    </div>
 
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => openTxModal(sg.id, 'deposit')}
-                          className="px-2.5 py-1 text-xs font-semibold bg-neutral-100 text-neutral-900 border border-neutral-200 rounded-lg hover:bg-neutral-200 transition-colors cursor-pointer"
-                        >
-                          + Deposit
-                        </button>
-                        <button
-                          onClick={() => openTxModal(sg.id, 'withdrawal')}
-                          className="px-2.5 py-1 text-xs font-medium text-neutral-600 bg-neutral-50 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors cursor-pointer"
-                        >
-                          - Withdraw
-                        </button>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs text-neutral-500 font-mono tabular-nums">
+                        <span>{progressPct}% saved</span>
+                        <span>Target: {formatCurrency(sg.targetAmount, data.settings.currency)}</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-[#87CEEB] transition-all duration-300" style={{ width: `${progressPct}%` }} />
                       </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+
+                  <div className="pt-3 border-t border-black/[0.06] flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-neutral-400 font-mono tabular-nums">
+                      Remaining: {formatCurrency(remaining, data.settings.currency)}
+                    </span>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => openTxModal(sg.id, 'deposit')}
+                        className="px-2.5 py-1 text-xs font-semibold bg-neutral-100 text-neutral-900 border border-neutral-200 rounded-lg hover:bg-neutral-200 transition-colors cursor-pointer"
+                      >
+                        + Deposit
+                      </button>
+                      <button
+                        onClick={() => openTxModal(sg.id, 'withdrawal')}
+                        className="px-2.5 py-1 text-xs font-medium text-neutral-600 bg-neutral-50 border border-neutral-200 rounded-lg hover:bg-neutral-100 transition-colors cursor-pointer"
+                      >
+                        - Withdraw
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Savings Transactions Log Table or Empty State */}
@@ -488,6 +559,13 @@ export const SavingsView: React.FC = () => {
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {txError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{txError}</span>
+              </div>
+            )}
 
             <form onSubmit={handleTxSubmit} className="space-y-4">
               <div>

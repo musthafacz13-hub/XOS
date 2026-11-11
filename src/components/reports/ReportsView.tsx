@@ -137,32 +137,68 @@ export const ReportsView: React.FC = () => {
             )}
           </div>
 
-          {/* KPI Cards Strip */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] space-y-1 shadow-xs">
-              <span className="text-[11px] font-semibold text-neutral-500 uppercase">Period Revenue</span>
-              <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(totals.totalIncome, data.settings.currency)}</div>
-              <span className="text-[11px] text-neutral-400">{filteredIncomes.length} Entries Logged</span>
-            </div>
-
-            <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] space-y-1 shadow-xs">
-              <span className="text-[11px] font-semibold text-neutral-500 uppercase">Period Expenses</span>
-              <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(totals.totalExpenses, data.settings.currency)}</div>
-              <span className="text-[11px] text-neutral-400">{filteredExpenses.length} Transactions</span>
-            </div>
-
-            <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] space-y-1 shadow-xs">
-              <span className="text-[11px] font-semibold text-neutral-500 uppercase">Net Cash Flow</span>
-              <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">
-                {formatCurrency(totals.netCashFlow, data.settings.currency)}
+          {/* Prominent Section Dashboard Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4">
+            {/* Prominent Dark Summary Panel (Left Column) */}
+            <div className="lg:col-span-1 p-5 sm:p-6 rounded-2xl bg-[#111111] text-white flex flex-col justify-between space-y-4 shadow-xs">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Net Cash Flow</span>
+                  <BarChart3 className="w-5 h-5 text-[#87CEEB]" />
+                </div>
+                <div>
+                  <div className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight text-white tabular-nums">
+                    {formatCurrency(totals.netCashFlow, data.settings.currency)}
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-1">
+                    Period Income minus Expense
+                  </p>
+                </div>
               </div>
-              <span className="text-[11px] text-neutral-400">Income minus Expense</span>
+
+              <div className="space-y-2">
+                <button
+                  onClick={() => setIsPDFModalOpen(true)}
+                  type="button"
+                  className="w-full flex items-center justify-center gap-1.5 px-3.5 py-2 bg-[#87CEEB] text-[#111111] text-xs font-bold rounded-xl hover:bg-[#70c2e3] transition-colors cursor-pointer"
+                >
+                  <FileText className="w-4 h-4 text-[#111111]" />
+                  <span>Export PDF Report</span>
+                </button>
+              </div>
             </div>
 
-            <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] space-y-1 shadow-xs">
-              <span className="text-[11px] font-semibold text-neutral-500 uppercase">Total Reserves</span>
-              <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(totals.currentSavingsBalance, data.settings.currency)}</div>
-              <span className="text-[11px] text-neutral-400">Across {data.savingsGoals.length} Savings Funds</span>
+            {/* Section Key Metric Cards Grid (Right 3 Columns) */}
+            <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs">
+                <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Period Revenue</span>
+                <div className="text-2xl font-bold font-mono text-emerald-600 tabular-nums">{formatCurrency(totals.totalIncome, data.settings.currency)}</div>
+                <span className="text-[11px] text-neutral-400">{filteredIncomes.length} Entries Logged</span>
+              </div>
+
+              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs">
+                <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Period Expenses</span>
+                <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(totals.totalExpenses, data.settings.currency)}</div>
+                <span className="text-[11px] text-neutral-400">{filteredExpenses.length} Transactions</span>
+              </div>
+
+              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs">
+                <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Total Reserves</span>
+                <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(totals.currentSavingsBalance, data.settings.currency)}</div>
+                <span className="text-[11px] text-neutral-400">Across {data.savingsGoals.length} Funds</span>
+              </div>
+
+              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs">
+                <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Remaining Salary</span>
+                <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(salaryEst.netSalary, data.settings.currency)}</div>
+                <span className="text-[11px] text-neutral-400">Est. Salary Due</span>
+              </div>
+
+              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs sm:col-span-2 lg:col-span-1">
+                <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Money Owed to Me</span>
+                <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(data.debts.filter(d => d.type === 'lent').reduce((acc, d) => acc + d.original_amount, 0), data.settings.currency)}</div>
+                <span className="text-[11px] text-neutral-400">Total Receivables</span>
+              </div>
             </div>
           </div>
 

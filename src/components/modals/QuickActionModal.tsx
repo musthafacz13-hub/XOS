@@ -43,6 +43,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseCategory, setExpenseCategory] = useState<ExpenseCategory>('Food & Dining');
   const [expenseDate, setExpenseDate] = useState(getTodayString());
+  const [expenseTime, setExpenseTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [expensePaymentMethod, setExpensePaymentMethod] = useState<PaymentMethod>('Credit Card');
   const [expenseNotes, setExpenseNotes] = useState('');
 
@@ -51,6 +52,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   const [incomeAmount, setIncomeAmount] = useState('');
   const [incomeSource, setIncomeSource] = useState<IncomeSource>('Salary');
   const [incomeDate, setIncomeDate] = useState(getTodayString());
+  const [incomeTime, setIncomeTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [incomeNotes, setIncomeNotes] = useState('');
 
   // Attendance State
@@ -82,6 +84,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       amount: parseFloat(expenseAmount),
       category: expenseCategory,
       date: expenseDate,
+      time: expenseTime,
       paymentMethod: expensePaymentMethod,
       notes: expenseNotes.trim()
     });
@@ -96,6 +99,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       amount: parseFloat(incomeAmount),
       source: incomeSource,
       date: incomeDate,
+      time: incomeTime,
       notes: incomeNotes.trim()
     });
     onClose();
@@ -408,6 +412,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
                   <label className="block text-xs font-semibold text-neutral-700 mb-1">Date</label>
                   <input
                     type="date"
+                    max={getTodayString()}
                     value={attDate}
                     onChange={(e) => setAttDate(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
