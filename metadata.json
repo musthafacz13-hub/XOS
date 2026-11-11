@@ -1,0 +1,6 @@
+{
+  "name": "XOS — Personal Life Operating System",
+  "description": "A customizable Personal Life Operating System to manage goals, finances, work attendance, salary calculations, savings, and personal progress in one centralized workspace.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
