@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   LayoutDashboard, 
   Target, 
@@ -13,12 +13,15 @@ import {
   ChevronRight,
   Sparkles,
   LucideIcon,
-  HandCoins
+  HandCoins,
+  LogOut
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { UserSettings } from '../../types';
 import { WaterRippleContainer } from '../common/WaterRipple';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 import { MOTION_SPRINGS } from '../../utils/motion';
+import { useAuth } from '../../context/AuthContext';
 
 export type ActiveTab = 
   | 'dashboard' 
@@ -87,6 +90,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setCollapsed,
   settings
 }) => {
+  const { user, isDemoUser, signOut, exitDemoMode } = useAuth();
+  const [isSignOutDialogOpen, setIsSignOutDialogOpen] = useState(false);
+
   const userName = settings.profile.name.trim() || 'My Workspace';
   const userRole = settings.profile.occupation.trim() || 'Personal System';
   const avatarLetter = (userName.charAt(0) || 'X').toUpperCase();
@@ -274,7 +280,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span className={`text-[11px] truncate ${
                     activeTab === 'settings' ? 'text-neutral-300' : 'text-neutral-400'
                   }`}>
-                    {userRole}
+                    {user?.email || userRole}
                   </span>
                 </div>
               )}
@@ -297,7 +303,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
         </div>
+
+        {/* Quick Sign Out Action */}
+        {!collapsed && (
+          <button
+            type="button"
+            onClick={() => setIsSignOutDialogOpen(true)}
+            className="w-full flex items-center justify-between px-3 py-1.5 text-[11px] text-neutral-400 hover:text-neutral-900 rounded-lg transition-colors cursor-pointer hover:bg-black/[0.03]"
+          >
+            <span>{isDemoUser ? 'Exit Demo Session' : 'Sign Out'}</span>
+            <LogOut className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
+
+      {/* Sign Out Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={isSignOutDialogOpen}
+        title={isDemoUser ? "Exit Demo Session?" : "Sign Out of Workspace?"}
+        message={isDemoUser 
+          ? "Are you sure you want to exit the demo session? You will be returned to the Welcome screen."
+          : "Are you sure you want to sign out of your XOS workspace? Your active session will be securely terminated."
+        }
+        confirmLabel={isDemoUser ? "Exit Demo" : "Sign Out"}
+        isDestructive={false}
+        onConfirm={() => {
+          if (isDemoUser) {
+            exitDemoMode();
+          } else {
+            signOut();
+          }
+          setIsSignOutDialogOpen(false);
+        }}
+        onCancel={() => setIsSignOutDialogOpen(false)}
+      />
     </aside>
   );
 };

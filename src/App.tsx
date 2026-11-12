@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ActiveTab, Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
@@ -17,12 +17,64 @@ import { SavingsView } from './components/savings/SavingsView';
 import { ReportsView } from './components/reports/ReportsView';
 import { SettingsView } from './components/settings/SettingsView';
 
+// Authentication & Welcome Views
+import { WelcomeView } from './components/welcome/WelcomeView';
+import { LoginView } from './components/auth/LoginView';
+import { SignUpView } from './components/auth/SignUpView';
+import { MagicLinkView } from './components/auth/MagicLinkView';
+import { ForgotPasswordView } from './components/auth/ForgotPasswordView';
+import { ResetPasswordView } from './components/auth/ResetPasswordView';
+import { VerifyEmailView } from './components/auth/VerifyEmailView';
+import { AuthCallbackView } from './components/auth/AuthCallbackView';
+
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { useXOSData } from './hooks/useXOSData';
 import { DateRangeFilter } from './types';
 
-export default function App() {
-  const data = useXOSData();
+export type AuthRoute = 
+  | 'welcome' 
+  | 'login' 
+  | 'signup' 
+  | 'magic-link' 
+  | 'forgot-password' 
+  | 'reset-password' 
+  | 'verify-email' 
+  | 'callback';
 
+function XOSApplication() {
+  const data = useXOSData();
+  const { user, loading, isDemoUser, isPasswordRecovery } = useAuth();
+
+  // Authentication Navigation State
+  const [authRoute, setAuthRoute] = useState<AuthRoute>(() => {
+    if (typeof window === 'undefined') return 'welcome';
+    const hash = window.location.hash;
+    const search = window.location.search;
+    const pathname = window.location.pathname;
+
+    if (hash.includes('type=recovery') || search.includes('type=recovery')) {
+      return 'reset-password';
+    }
+    if (search.includes('code=') || hash.includes('access_token=') || pathname === '/auth/callback') {
+      return 'callback';
+    }
+    if (hash === '#login') return 'login';
+    if (hash === '#signup') return 'signup';
+    if (hash === '#magic-link') return 'magic-link';
+    if (hash === '#forgot-password') return 'forgot-password';
+    return 'welcome';
+  });
+
+  const [registeredEmail, setRegisteredEmail] = useState<string>('');
+
+  // Handle password recovery flag from AuthContext
+  useEffect(() => {
+    if (isPasswordRecovery) {
+      setAuthRoute('reset-password');
+    }
+  }, [isPasswordRecovery]);
+
+  // Workspace Navigation State
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [collapsed, setCollapsed] = useState(false);
   const [dateFilter, setDateFilter] = useState<DateRangeFilter>({ preset: 'this_month' });
@@ -36,6 +88,102 @@ export default function App() {
     setIsQuickActionOpen(true);
   };
 
+  // 1. Initial Session Loading Screen (Apple-minimalist splash)
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4">
+        <div className="flex flex-col items-center space-y-4">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.3 }}
+            className="w-12 h-12 rounded-2xl bg-[#111111] text-white flex items-center justify-center font-bold text-lg tracking-wider relative shadow-md"
+          >
+            <span>X</span>
+            <span className="w-2 h-2 rounded-full bg-[#87CEEB] absolute top-2 right-2 animate-pulse" />
+          </motion.div>
+          <div className="text-center space-y-1">
+            <span className="font-bold text-sm text-[#111111] tracking-tight block">XOS</span>
+            <span className="text-xs text-neutral-400 font-normal block">Initializing secure workspace...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Unauthenticated Routes (Unless exploring as Demo Guest)
+  const isAuthenticatedOrDemo = Boolean(user || isDemoUser);
+
+  if (!isAuthenticatedOrDemo || authRoute === 'callback' || authRoute === 'reset-password') {
+    return (
+      <AnimatePresence mode="wait">
+        {authRoute === 'welcome' && (
+          <WelcomeView 
+            key="welcome" 
+            onNavigate={(route) => setAuthRoute(route)} 
+          />
+        )}
+
+        {authRoute === 'login' && (
+          <LoginView
+            key="login"
+            onNavigate={(route) => setAuthRoute(route)}
+            onSuccess={() => setAuthRoute('welcome')}
+          />
+        )}
+
+        {authRoute === 'signup' && (
+          <SignUpView
+            key="signup"
+            onNavigate={(route) => setAuthRoute(route)}
+            onSuccess={() => setAuthRoute('welcome')}
+            onSetRegisteredEmail={setRegisteredEmail}
+          />
+        )}
+
+        {authRoute === 'magic-link' && (
+          <MagicLinkView
+            key="magic-link"
+            onNavigate={(route) => setAuthRoute(route)}
+          />
+        )}
+
+        {authRoute === 'forgot-password' && (
+          <ForgotPasswordView
+            key="forgot-password"
+            onNavigate={(route) => setAuthRoute(route)}
+          />
+        )}
+
+        {authRoute === 'reset-password' && (
+          <ResetPasswordView
+            key="reset-password"
+            onSuccess={() => setAuthRoute('welcome')}
+            onNavigateLogin={() => setAuthRoute('login')}
+          />
+        )}
+
+        {authRoute === 'verify-email' && (
+          <VerifyEmailView
+            key="verify-email"
+            email={registeredEmail}
+            onNavigateLogin={() => setAuthRoute('login')}
+          />
+        )}
+
+        {authRoute === 'callback' && (
+          <AuthCallbackView
+            key="callback"
+            onSuccess={() => setAuthRoute('welcome')}
+            onPasswordRecovery={() => setAuthRoute('reset-password')}
+            onNavigateLogin={() => setAuthRoute('login')}
+          />
+        )}
+      </AnimatePresence>
+    );
+  }
+
+  // 3. Authenticated / Demo Workspace (All 10 Sections Preserved)
   return (
     <div className="min-h-screen flex bg-white text-[#111111] antialiased">
       {/* Desktop Sidebar */}
@@ -105,5 +253,13 @@ export default function App() {
         />
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <XOSApplication />
+    </AuthProvider>
   );
 }

@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { User, DollarSign, Trash2, Database, Sparkles, RefreshCw, Check, FileText } from 'lucide-react';
+import { User, DollarSign, Trash2, Database, Sparkles, RefreshCw, Check, FileText, ShieldCheck, LogOut } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
 import { CURRENCIES } from '../../utils/formatters';
 import { CurrencyCode, DateFormat, UserProfile, WeekStartDay } from '../../types';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { PDFExportModal } from '../modals/PDFExportModal';
+import { useAuth } from '../../context/AuthContext';
 
 export const SettingsView: React.FC = () => {
   const data = useXOSData();
+  const { user, isDemoUser, isConfigured, signOut, exitDemoMode } = useAuth();
+  const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
 
   const [profile, setProfile] = useState<UserProfile>(data.settings.profile);
   const [currency, setCurrency] = useState<CurrencyCode>(data.settings.currency);
@@ -410,6 +413,47 @@ export const SettingsView: React.FC = () => {
         </div>
       </form>
 
+      {/* Authentication & Account Security Card */}
+      <div className="p-5 rounded-2xl bg-white border border-black/[0.08] space-y-4 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-black/[0.06] pb-3">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-[#87CEEB]" />
+            <h3 className="font-bold text-sm text-[#111111]">Authentication & Workspace Account</h3>
+          </div>
+          <span className="text-xs text-neutral-500 font-medium">
+            {user ? 'Authenticated Session' : isDemoUser ? 'Demo Guest Session' : 'Local Session'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 space-y-1">
+            <span className="text-[11px] font-semibold text-neutral-400 uppercase">Account Email</span>
+            <div className="font-semibold text-neutral-900 truncate">
+              {user?.email || (isDemoUser ? 'Guest User (Demo)' : 'Unlinked Session')}
+            </div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 space-y-1">
+            <span className="text-[11px] font-semibold text-neutral-400 uppercase">Security Backend</span>
+            <div className="font-semibold text-neutral-900 truncate">
+              {isConfigured ? 'Supabase Auth (RLS Active)' : 'Local-First Mode'}
+            </div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 space-y-1 flex flex-col justify-between">
+            <span className="text-[11px] font-semibold text-neutral-400 uppercase">Active Session</span>
+            <button
+              type="button"
+              onClick={() => setIsSignOutModalOpen(true)}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 hover:text-rose-800 transition-colors cursor-pointer self-start"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>{isDemoUser ? 'Exit Demo Session' : 'Sign Out of Account'}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Session Data & Export Management Section */}
       <div className="p-5 sm:p-6 rounded-2xl bg-[#111111] text-white space-y-4 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-neutral-800 pb-3">
@@ -505,6 +549,27 @@ export const SettingsView: React.FC = () => {
           setConfirmAction(null);
         }}
         onCancel={() => setConfirmAction(null)}
+      />
+
+      {/* Sign Out Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={isSignOutModalOpen}
+        title={isDemoUser ? "Exit Demo Session?" : "Sign Out of Workspace?"}
+        message={isDemoUser 
+          ? "Are you sure you want to exit the demo session? You will be returned to the Welcome screen."
+          : "Are you sure you want to sign out of your XOS workspace? Your active session will be securely terminated."
+        }
+        confirmLabel={isDemoUser ? "Exit Demo" : "Sign Out"}
+        isDestructive={false}
+        onConfirm={() => {
+          if (isDemoUser) {
+            exitDemoMode();
+          } else {
+            signOut();
+          }
+          setIsSignOutModalOpen(false);
+        }}
+        onCancel={() => setIsSignOutModalOpen(false)}
       />
 
       {/* PDF Export Options & Generator Modal */}

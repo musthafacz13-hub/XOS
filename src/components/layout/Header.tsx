@@ -1,10 +1,11 @@
 import React from 'react';
-import { Plus, Calendar } from 'lucide-react';
+import { Plus, Calendar, ShieldCheck, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
 import { DateFilterPreset, DateRangeFilter, UserSettings } from '../../types';
 import { ActiveTab, NAV_ITEMS } from './Sidebar';
 import { WaterRippleContainer } from '../common/WaterRipple';
 import { MOTION_SPRINGS } from '../../utils/motion';
+import { useAuth } from '../../context/AuthContext';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -27,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   setDateFilter,
   onOpenQuickAction
 }) => {
+  const { user, isDemoUser, isConfigured } = useAuth();
   const activeNavItem = NAV_ITEMS.find(item => item.id === activeTab);
   const title = activeNavItem ? activeNavItem.label : 'Dashboard';
 
@@ -60,12 +62,30 @@ export const Header: React.FC<HeaderProps> = ({
         <span className="hidden xl:inline-block text-neutral-300 font-light" aria-hidden="true">/</span>
         <div 
           className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/[0.04] border border-black/[0.05] text-[11px] font-medium text-neutral-700" 
-          title="Active in-memory session. Backend integration required for cross-device persistence."
+          title={user ? `Authenticated as ${user.email}` : "Session workspace active"}
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span>Session Active</span>
-          <span className="text-neutral-300">•</span>
-          <span className="text-neutral-500 font-normal">Cloud Sync Pending</span>
+          {user ? (
+            <>
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="font-semibold text-neutral-900 truncate max-w-[140px]">{user.email}</span>
+              <span className="text-neutral-300">•</span>
+              <span className="text-emerald-600 font-medium">Supabase Online</span>
+            </>
+          ) : isDemoUser ? (
+            <>
+              <Sparkles className="w-3.5 h-3.5 text-[#87CEEB]" />
+              <span className="font-semibold text-neutral-900">Demo Guest Session</span>
+              <span className="text-neutral-300">•</span>
+              <span className="text-neutral-500 font-normal">Local Mode</span>
+            </>
+          ) : (
+            <>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Workspace Active</span>
+              <span className="text-neutral-300">•</span>
+              <span className="text-neutral-500 font-normal">{isConfigured ? 'Connected' : 'Local Session'}</span>
+            </>
+          )}
         </div>
       </div>
 

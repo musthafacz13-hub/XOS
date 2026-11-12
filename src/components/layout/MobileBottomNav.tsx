@@ -14,12 +14,14 @@ import {
   Settings, 
   X,
   ChevronRight,
-  HandCoins
+  HandCoins,
+  LogOut
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ActiveTab } from './Sidebar';
 import { UserSettings } from '../../types';
 import { WaterRippleContainer } from '../common/WaterRipple';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 import { 
   sheetBackdropVariants, 
   sheetContentVariants, 
@@ -27,6 +29,7 @@ import {
   submenuItemVariants,
   MOTION_SPRINGS 
 } from '../../utils/motion';
+import { useAuth } from '../../context/AuthContext';
 
 interface MobileBottomNavProps {
   activeTab: ActiveTab;
@@ -38,8 +41,10 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   activeTab,
   setActiveTab
 }) => {
+  const { isDemoUser, signOut, exitDemoMode } = useAuth();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const [isMoneySheetOpen, setIsMoneySheetOpen] = useState(false);
+  const [isSignOutOpen, setIsSignOutOpen] = useState(false);
 
   const isMoneyActive = ['expenses', 'income', 'debt'].includes(activeTab);
   const isWorkActive = ['attendance'].includes(activeTab);
@@ -350,6 +355,36 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
                     </motion.button>
                   </WaterRippleContainer>
                 </motion.div>
+
+                {/* Sign Out / Exit Session */}
+                <motion.div variants={submenuItemVariants} className="pt-1">
+                  <WaterRippleContainer className="rounded-2xl">
+                    <motion.button
+                      whileTap={{ scale: 0.98 }}
+                      type="button"
+                      onClick={() => {
+                        setIsMoreOpen(false);
+                        setIsSignOutOpen(true);
+                      }}
+                      className="w-full flex items-center justify-between p-3.5 rounded-2xl border border-black/[0.06] bg-neutral-50 text-neutral-700 hover:bg-neutral-100 text-left cursor-pointer min-h-[52px] transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-neutral-200/70 text-neutral-700">
+                          <LogOut className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold leading-snug">
+                            {isDemoUser ? 'Exit Demo Session' : 'Sign Out of Workspace'}
+                          </div>
+                          <div className="text-[11px] text-neutral-400">
+                            Securely close your active session
+                          </div>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-neutral-400" />
+                    </motion.button>
+                  </WaterRippleContainer>
+                </motion.div>
               </motion.div>
             </motion.div>
           </motion.div>
@@ -490,6 +525,27 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           </WaterRippleContainer>
         </div>
       </nav>
+
+      {/* Mobile Sign Out Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={isSignOutOpen}
+        title={isDemoUser ? "Exit Demo Session?" : "Sign Out of Workspace?"}
+        message={isDemoUser 
+          ? "Are you sure you want to exit the demo session? You will be returned to the Welcome screen."
+          : "Are you sure you want to sign out of your XOS workspace? Your active session will be securely terminated."
+        }
+        confirmLabel={isDemoUser ? "Exit Demo" : "Sign Out"}
+        isDestructive={false}
+        onConfirm={() => {
+          if (isDemoUser) {
+            exitDemoMode();
+          } else {
+            signOut();
+          }
+          setIsSignOutOpen(false);
+        }}
+        onCancel={() => setIsSignOutOpen(false)}
+      />
     </>
   );
 };
