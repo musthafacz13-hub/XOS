@@ -36,7 +36,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     occupation: '',
     tagline: ''
   },
-  currency: 'USD',
+  currency: 'INR',
   dateFormat: 'YYYY-MM-DD',
   weekStartDay: 'Monday',
   salaryConfig: DEFAULT_SALARY_CONFIG,

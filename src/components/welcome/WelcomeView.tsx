@@ -101,8 +101,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({ onNavigate }) => {
           className="text-sm sm:text-base md:text-lg text-neutral-600 font-normal max-w-xl mt-4 sm:mt-5 leading-relaxed"
           style={{ textWrap: 'balance' }}
         >
-          A single, calm operating system uniting your personal finances, work attendance,
-          daily wages, and long-term ambitions into one clear command center.
+          Track your spending, log your daily work and earnings, build your savings, and stay on top of your goals—all in one simple, private workspace.
         </motion.p>
 
         {/* CTAs Group */}
@@ -149,7 +148,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({ onNavigate }) => {
             </div>
             <h3 className="font-bold text-sm text-[#111111] tracking-tight">Finances & Cash Flow</h3>
             <p className="text-xs text-neutral-500 leading-relaxed font-normal">
-              Unified expenses, multiple revenue streams, and debt receivables tracking.
+              Track your daily spending, log incoming payments, and keep an eye on money you are owed.
             </p>
           </div>
 
@@ -159,7 +158,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({ onNavigate }) => {
             </div>
             <h3 className="font-bold text-sm text-[#111111] tracking-tight">Work & Attendance</h3>
             <p className="text-xs text-neutral-500 leading-relaxed font-normal">
-              Daily check-ins, automatic working-hours logging, and overtime wage calculations.
+              Record daily check-ins, keep track of hours worked, and see your earned salary in real time.
             </p>
           </div>
 
@@ -169,7 +168,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({ onNavigate }) => {
             </div>
             <h3 className="font-bold text-sm text-[#111111] tracking-tight">Savings & Reserves</h3>
             <p className="text-xs text-neutral-500 leading-relaxed font-normal">
-              Isolated emergency buffers and asset funds kept strictly apart from spending.
+              Put money aside for emergencies and special plans, kept separate from everyday spending.
             </p>
           </div>
 
@@ -179,7 +178,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({ onNavigate }) => {
             </div>
             <h3 className="font-bold text-sm text-[#111111] tracking-tight">Goals & Ambitions</h3>
             <p className="text-xs text-neutral-500 leading-relaxed font-normal">
-              Progressive milestone tracking for financial targets and bucket-list dreams.
+              Set clear targets, break them down into milestones, and follow your progress step by step.
             </p>
           </div>
         </motion.div>

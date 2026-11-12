@@ -13,10 +13,12 @@ export const CURRENCIES: Record<CurrencyCode, { symbol: string; name: string }> 
   BRL: { symbol: 'R$', name: 'Brazilian Real (R$)' }
 };
 
-export function formatCurrency(amount: number, currencyCode: CurrencyCode = 'USD'): string {
-  const currency = CURRENCIES[currencyCode] || CURRENCIES.USD;
-  const formattedNumber = new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 2,
+export function formatCurrency(amount: number, currencyCode: CurrencyCode = 'INR'): string {
+  const currency = CURRENCIES[currencyCode] || CURRENCIES.INR;
+  const isINR = currencyCode === 'INR';
+  const hasDecimals = (amount || 0) % 1 !== 0;
+  const formattedNumber = new Intl.NumberFormat(isINR ? 'en-IN' : 'en-US', {
+    minimumFractionDigits: hasDecimals ? 2 : 0,
     maximumFractionDigits: 2,
   }).format(amount || 0);
 

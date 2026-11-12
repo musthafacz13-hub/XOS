@@ -13,6 +13,7 @@ import {
 import { DEFAULT_USER_SETTINGS, generateDemoDataset } from '../data/initialData';
 import { calculateWorkingHours, getTodayString } from '../utils/formatters';
 import { calculateDailyEarnedSalary } from '../utils/calculations';
+import { isSupabaseConfigured } from './supabase';
 
 /**
  * ARCHITECTURAL MANDATE:
@@ -67,11 +68,13 @@ export const repository = {
    */
   getBackendStatus() {
     return {
-      isBackendConfigured: false,
-      persistenceMode: 'in-memory' as const,
-      statusLabel: 'In-Memory Session Active',
-      syncStatus: 'Cloud Sync Pending',
-      backendNotice: 'Backend integration required for cross-device & permanent cloud storage.'
+      isBackendConfigured: isSupabaseConfigured,
+      persistenceMode: isSupabaseConfigured ? ('supabase' as const) : ('in-memory' as const),
+      statusLabel: isSupabaseConfigured ? 'Supabase Connected' : 'Local Session Active',
+      syncStatus: isSupabaseConfigured ? 'Connected' : 'Local-First Mode',
+      backendNotice: isSupabaseConfigured
+        ? 'Connected to your private Supabase database with Row Level Security active.'
+        : 'Operating in local workspace mode.'
     };
   },
 

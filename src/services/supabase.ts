@@ -3,9 +3,10 @@
  * Handles authentication, user session persistence, and API boundaries.
  */
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { apiOptimization } from './apiClient';
 
-const rawUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const rawAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const rawUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_URL : '') || '';
+const rawAnonKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) || (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_ANON_KEY : '') || '';
 
 // Clean validation checking if real credentials are provided
 export const isSupabaseConfigured = Boolean(
@@ -26,5 +27,8 @@ export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKe
     autoRefreshToken: true,
     detectSessionInUrl: true,
     storageKey: 'xos_auth_session'
+  },
+  global: {
+    fetch: apiOptimization.createOptimizedFetch(12000)
   }
 });

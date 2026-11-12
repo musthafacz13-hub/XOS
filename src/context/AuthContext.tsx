@@ -6,6 +6,7 @@ import React, { createContext, useContext, useEffect, useState, useMemo, useCall
 import type { User, Session, AuthError } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
 import { repository } from '../services/repository';
+import { apiOptimization } from '../services/apiClient';
 
 export interface AuthContextType {
   user: User | null;
@@ -72,8 +73,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
+    // Optimized initial session lookup with request coalescing
+    apiOptimization.coalesce('auth:initial_session', async () => {
+      return supabase.auth.getSession();
+    }).then(({ data: { session }, error }) => {
       if (!mounted) return;
       if (!error && session) {
         setSession(session);
@@ -143,28 +146,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         error: 'Supabase credentials are not yet configured in environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).' 
       };
     }
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password
-      });
+    const cleanEmail = email.trim();
+    // Coalesce duplicate in-flight login requests (e.g. double-click submit)
+    return apiOptimization.coalesce(`auth:login:${cleanEmail}`, async () => {
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password
+        });
 
-      if (error) {
-        return { error: sanitizeError(error) };
+        if (error) {
+          return { error: sanitizeError(error) };
+        }
+
+        if (data.session) {
+          setSession(data.session);
+          setUser(data.user);
+          syncProfileToXOS(data.user);
+          setIsDemoUser(false);
+          try { sessionStorage.removeItem(DEMO_USER_KEY); } catch {}
+          apiOptimization.invalidateCache();
+        }
+
+        return { error: null };
+      } catch (err) {
+        return { error: err instanceof Error ? sanitizeError(err) : 'Network request failed.' };
       }
-
-      if (data.session) {
-        setSession(data.session);
-        setUser(data.user);
-        syncProfileToXOS(data.user);
-        setIsDemoUser(false);
-        try { sessionStorage.removeItem(DEMO_USER_KEY); } catch {}
-      }
-
-      return { error: null };
-    } catch (err) {
-      return { error: err instanceof Error ? sanitizeError(err) : 'Network request failed.' };
-    }
+    });
   };
 
   const signUpWithEmail = async (email: string, password: string, fullName: string) => {
@@ -173,38 +181,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         error: 'Supabase credentials are not yet configured in environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).' 
       };
     }
-    try {
-      const redirectUrl = `${window.location.origin}/auth/callback`;
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          data: {
-            full_name: fullName.trim()
-          },
-          emailRedirectTo: redirectUrl
+    const cleanEmail = email.trim();
+    // Coalesce duplicate in-flight registration attempts
+    return apiOptimization.coalesce(`auth:signup:${cleanEmail}`, async () => {
+      try {
+        const redirectUrl = `${window.location.origin}/auth/callback`;
+        const { data, error } = await supabase.auth.signUp({
+          email: cleanEmail,
+          password,
+          options: {
+            data: {
+              full_name: fullName.trim()
+            },
+            emailRedirectTo: redirectUrl
+          }
+        });
+
+        if (error) {
+          return { error: sanitizeError(error) };
         }
-      });
 
-      if (error) {
-        return { error: sanitizeError(error) };
+        // If user created but session is null, email confirmation is required by Supabase settings
+        const needsEmailVerification = !data.session;
+
+        if (data.session && data.user) {
+          setSession(data.session);
+          setUser(data.user);
+          syncProfileToXOS(data.user);
+          setIsDemoUser(false);
+          try { sessionStorage.removeItem(DEMO_USER_KEY); } catch {}
+          apiOptimization.invalidateCache();
+        }
+
+        return { error: null, needsEmailVerification };
+      } catch (err) {
+        return { error: err instanceof Error ? sanitizeError(err) : 'Registration failed.' };
       }
-
-      // If user created but session is null, email confirmation is required by Supabase settings
-      const needsEmailVerification = !data.session;
-
-      if (data.session && data.user) {
-        setSession(data.session);
-        setUser(data.user);
-        syncProfileToXOS(data.user);
-        setIsDemoUser(false);
-        try { sessionStorage.removeItem(DEMO_USER_KEY); } catch {}
-      }
-
-      return { error: null, needsEmailVerification };
-    } catch (err) {
-      return { error: err instanceof Error ? sanitizeError(err) : 'Registration failed.' };
-    }
+    });
   };
 
   const loginWithMagicLink = async (email: string) => {
@@ -213,23 +226,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         error: 'Supabase credentials are not yet configured in environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).' 
       };
     }
-    try {
-      const redirectUrl = `${window.location.origin}/auth/callback`;
-      const { error } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: {
-          emailRedirectTo: redirectUrl
-        }
-      });
-
-      if (error) {
-        return { error: sanitizeError(error) };
-      }
-
-      return { error: null };
-    } catch (err) {
-      return { error: err instanceof Error ? sanitizeError(err) : 'Failed to send magic link.' };
+    const cleanEmail = email.trim();
+    
+    // Client-side rate-limit protection: prevent firing requests within 60s cooldown
+    const { allowed, remainingMs } = apiOptimization.checkCooldown(`auth:magiclink:${cleanEmail}`, 60000);
+    if (!allowed) {
+      const waitSec = Math.ceil(remainingMs / 1000);
+      return { error: `Too many requests. Please wait ${waitSec} second${waitSec > 1 ? 's' : ''} before requesting another magic link.` };
     }
+
+    return apiOptimization.coalesce(`auth:magiclink:${cleanEmail}`, async () => {
+      try {
+        const redirectUrl = `${window.location.origin}/auth/callback`;
+        const { error } = await supabase.auth.signInWithOtp({
+          email: cleanEmail,
+          options: {
+            emailRedirectTo: redirectUrl
+          }
+        });
+
+        if (error) {
+          return { error: sanitizeError(error) };
+        }
+
+        // Record cooldown timestamp only upon successful dispatch
+        apiOptimization.recordAction(`auth:magiclink:${cleanEmail}`);
+        return { error: null };
+      } catch (err) {
+        return { error: err instanceof Error ? sanitizeError(err) : 'Failed to send magic link.' };
+      }
+    });
   };
 
   const requestPasswordReset = async (email: string) => {
@@ -238,20 +264,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         error: 'Supabase credentials are not yet configured in environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).' 
       };
     }
-    try {
-      const redirectUrl = `${window.location.origin}/auth/callback?type=recovery`;
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: redirectUrl
-      });
+    const cleanEmail = email.trim();
 
-      if (error) {
-        return { error: sanitizeError(error) };
-      }
-
-      return { error: null };
-    } catch (err) {
-      return { error: err instanceof Error ? sanitizeError(err) : 'Failed to send reset link.' };
+    // Client-side rate-limit protection: prevent firing requests within 60s cooldown
+    const { allowed, remainingMs } = apiOptimization.checkCooldown(`auth:reset:${cleanEmail}`, 60000);
+    if (!allowed) {
+      const waitSec = Math.ceil(remainingMs / 1000);
+      return { error: `Too many requests. Please wait ${waitSec} second${waitSec > 1 ? 's' : ''} before requesting another reset link.` };
     }
+
+    return apiOptimization.coalesce(`auth:reset:${cleanEmail}`, async () => {
+      try {
+        const redirectUrl = `${window.location.origin}/auth/callback?type=recovery`;
+        const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+          redirectTo: redirectUrl
+        });
+
+        if (error) {
+          return { error: sanitizeError(error) };
+        }
+
+        // Record cooldown timestamp only upon successful dispatch
+        apiOptimization.recordAction(`auth:reset:${cleanEmail}`);
+        return { error: null };
+      } catch (err) {
+        return { error: err instanceof Error ? sanitizeError(err) : 'Failed to send reset link.' };
+      }
+    });
   };
 
   const updatePassword = async (newPassword: string) => {
@@ -260,20 +299,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         error: 'Supabase credentials are not yet configured in environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).' 
       };
     }
-    try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword
-      });
+    return apiOptimization.coalesce('auth:update_password', async () => {
+      try {
+        const { error } = await supabase.auth.updateUser({
+          password: newPassword
+        });
 
-      if (error) {
-        return { error: sanitizeError(error) };
+        if (error) {
+          return { error: sanitizeError(error) };
+        }
+
+        setIsPasswordRecovery(false);
+        return { error: null };
+      } catch (err) {
+        return { error: err instanceof Error ? sanitizeError(err) : 'Failed to update password.' };
       }
-
-      setIsPasswordRecovery(false);
-      return { error: null };
-    } catch (err) {
-      return { error: err instanceof Error ? sanitizeError(err) : 'Failed to update password.' };
-    }
+    });
   };
 
   const signOut = async () => {
@@ -287,6 +328,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(null);
       setSession(null);
       setIsDemoUser(false);
+      apiOptimization.invalidateCache();
       try {
         sessionStorage.removeItem(DEMO_USER_KEY);
       } catch {}
