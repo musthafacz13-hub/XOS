@@ -10,6 +10,7 @@ interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   isDestructive?: boolean;
+  tone?: 'default' | 'danger';
   isLoading?: boolean;
   error?: string | null;
   onConfirm: () => void | Promise<void>;
@@ -23,6 +24,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   isDestructive = true,
+  tone = 'default',
   isLoading = false,
   error = null,
   onConfirm,
@@ -40,6 +42,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     }
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, isLoading, onCancel]);
+
+  const isDangerTone = tone === 'danger';
 
   return (
     <AnimatePresence>
@@ -67,9 +71,13 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           >
             <div className="flex items-start gap-3.5">
               <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                isDestructive ? 'bg-neutral-100 text-[#111111]' : 'bg-[#87CEEB]/20 text-[#111111]'
+                isDangerTone
+                  ? 'bg-rose-50 text-rose-600'
+                  : isDestructive
+                    ? 'bg-neutral-100 text-[#111111]'
+                    : 'bg-[#87CEEB]/20 text-[#111111]'
               }`}>
-                <AlertCircle className="w-5 h-5 text-[#111111]" />
+                <AlertCircle className={`w-5 h-5 ${isDangerTone ? 'text-rose-600' : 'text-[#111111]'}`} />
               </div>
               <div className="flex-1 min-w-0">
                 <h3 id="confirm-dialog-title" className="text-sm sm:text-base font-bold text-[#111111] tracking-tight">
@@ -110,7 +118,11 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
                 type="button"
                 disabled={isLoading}
                 onClick={() => onConfirm()}
-                className="px-4 py-2 text-xs font-semibold text-white bg-[#111111] hover:bg-black active:scale-97 rounded-xl transition-all cursor-pointer min-h-[40px] shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB] disabled:opacity-50"
+                className={`px-4 py-2 text-xs font-semibold text-white active:scale-97 rounded-xl transition-all cursor-pointer min-h-[40px] shadow-xs focus-visible:outline-none focus-visible:ring-2 disabled:opacity-50 ${
+                  isDangerTone
+                    ? 'bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-500'
+                    : 'bg-[#111111] hover:bg-black focus-visible:ring-[#87CEEB]'
+                }`}
               >
                 {isLoading ? 'Processing...' : confirmLabel}
               </button>

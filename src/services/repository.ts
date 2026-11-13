@@ -38,6 +38,7 @@ import {
 } from '../utils/formatters';
 import { calculateDailyEarnedSalary } from '../utils/calculations';
 import { supabase, isSupabaseConfigured } from './supabase';
+import { apiOptimization } from './apiClient';
 
 export interface FetchTableError {
   table: string;
@@ -138,6 +139,46 @@ let activeSupabaseClient: SupabaseClient = supabase;
 let configuredOverride: boolean | null = null;
 let activeUserId: string | null = null;
 let fetchSequence = 0;
+let resetInFlightPromise: Promise<void> | null = null;
+
+function validateResetRpcResponse(rpcData: unknown): void {
+  if (rpcData === null || rpcData === undefined) {
+    throw new Error('Account reset failed: server did not return a confirmation.');
+  }
+  if (typeof rpcData === 'boolean') {
+    if (rpcData !== true) {
+      throw new Error('Account reset was rejected by the server.');
+    }
+    return;
+  }
+
+  const candidate = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+  if (candidate && typeof candidate === 'object') {
+    const record = candidate as Record<string, unknown>;
+    if ('success' in record) {
+      if (record.success !== true) {
+        const msg =
+          (typeof record.message === 'string' && record.message) ||
+          (typeof record.error === 'string' && record.error) ||
+          'Account reset failed on the server.';
+        throw new Error(msg);
+      }
+      return;
+    }
+    if ('ok' in record) {
+      if (record.ok !== true) {
+        const msg =
+          (typeof record.message === 'string' && record.message) ||
+          (typeof record.error === 'string' && record.error) ||
+          'Account reset failed on the server.';
+        throw new Error(msg);
+      }
+      return;
+    }
+  }
+
+  throw new Error('Account reset failed: invalid confirmation response from server.');
+}
 
 /**
  * Test-only hook allowing unit suites to inject a mocked Supabase client
@@ -2739,6 +2780,79 @@ export const repository = {
     memoryState.fetchErrors = [];
     memoryState.settings = { ...createDefaultSettings(), isDemoMode: false };
     notifyListeners();
+  },
+
+  /**
+   * Permanently reset the authenticated user's application data via the
+   * xos_reset_user_data() Supabase RPC while preserving auth session & profile.
+   */
+  async resetUserData(): Promise<void> {
+    if (resetInFlightPromise) {
+      return resetInFlightPromise;
+    }
+
+    resetInFlightPromise = (async () => {
+      const ctx = await requirePersistenceContext();
+
+      if (ctx.mode === 'local') {
+        const wasDemoMode = memoryState.settings.isDemoMode;
+        apiOptimization.invalidateCache();
+        this.clearAllData();
+        if (wasDemoMode) {
+          memoryState.settings.isDemoMode = true;
+          notifyListeners();
+        }
+        return;
+      }
+
+      const { data: rpcData, error: rpcError } = await ctx.client.rpc('xos_reset_user_data');
+      if (rpcError) {
+        throw new Error(rpcError.message || 'Database error: Could not reset account data.');
+      }
+
+      validateResetRpcResponse(rpcData);
+
+      const preservedEmail = memoryState.settings.profile.email || ctx.user.email || '';
+      const fallbackDisplayName =
+        (typeof ctx.user.user_metadata?.full_name === 'string' && ctx.user.user_metadata.full_name) ||
+        (ctx.user.email ? ctx.user.email.split('@')[0] : '') ||
+        'XOS User';
+
+      // Only after confirmed RPC success: clear caches and in-memory state
+      apiOptimization.invalidateCache();
+      fetchSequence += 1;
+      memoryState.goals = [];
+      memoryState.expenses = [];
+      memoryState.incomes = [];
+      memoryState.attendance = [];
+      memoryState.savingsGoals = [];
+      memoryState.savingsTransactions = [];
+      memoryState.salaryPayouts = [];
+      memoryState.debts = [];
+      memoryState.debtRepayments = [];
+      memoryState.fetchErrors = [];
+      memoryState.settings = createDefaultSettings();
+      if (preservedEmail) {
+        memoryState.settings.profile.email = preservedEmail;
+      }
+      notifyListeners();
+
+      // Re-fetch backend state so default settings and preserved profile hydrate cleanly
+      const fetchResult = await this.fetchAllUserData(ctx.user.id);
+      if (!fetchResult.stale) {
+        if (!memoryState.settings.profile.email && preservedEmail) {
+          memoryState.settings.profile.email = preservedEmail;
+        }
+        if (!memoryState.settings.profile.name && fallbackDisplayName) {
+          memoryState.settings.profile.name = fallbackDisplayName;
+        }
+        notifyListeners();
+      }
+    })().finally(() => {
+      resetInFlightPromise = null;
+    });
+
+    return resetInFlightPromise;
   },
 
   exportJSON(): string {

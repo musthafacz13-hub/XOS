@@ -62,6 +62,7 @@ export function useXOSData() {
 
     loadDemoData: () => repository.loadDemoData(),
     clearAllData: () => repository.clearAllData(),
+    resetUserData: () => repository.resetUserData(),
     exportJSON: () => repository.exportJSON(),
     importJSON: (s: string) => repository.importJSON(s)
   };

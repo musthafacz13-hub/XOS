@@ -37,6 +37,7 @@ import {
   serializeDebtDescription,
   deserializeDebtDescription
 } from '../services/repository';
+import { apiOptimization } from '../services/apiClient';
 import {
   parseCalendarDate,
   formatDate,
@@ -1714,8 +1715,168 @@ async function runPersistenceTests() {
     }
     console.log('✓ Test 22 passed.');
 
+    // =========================================================================
+    // TEST 23: Full Account Data Reset via xos_reset_user_data() RPC
+    // =========================================================================
+    console.log('Test 23: Full account data reset via xos_reset_user_data() RPC...');
+    {
+      let rpcCallCount = 0;
+      let tableDeleteCount = 0;
+      let rpcMode: 'error' | 'null' | 'false' | 'obj_false' | 'empty_obj' | 'obj_true' | 'bool_true' = 'obj_true';
+      let isResetOnBackend = false;
+
+      const dbState = {
+        expenses: [{ id: UUID_1, title: 'Old Expense', amount: 100, category: 'Food', expense_date: '2026-05-01', payment_method: 'Cash', is_recurring: false, created_at: '2026-05-01' }],
+        incomes: [{ id: UUID_2, title: 'Old Income', amount: 5000, source: 'Salary', income_date: '2026-05-01', created_at: '2026-05-01' }],
+        debts: [{ id: UUID_3, person_name: 'Bob', original_amount: 400, remaining_amount: 400, lent_date: '2026-05-01', description: '[RECEIVE] Lunch', status: 'outstanding', created_at: '2026-05-01' }],
+        debt_repayments: [{ id: UUID_4, debt_id: UUID_3, amount: 100, repayment_date: '2026-05-02', created_at: '2026-05-02' }],
+        attendance_records: [{ id: UUID_1, attendance_date: '2026-05-01', status: 'present', break_minutes: 0, hours_worked: 8, extra_hours: 0, calculated_salary: 500 }],
+        savings_goals: [{ id: UUID_2, name: 'Car', target_amount: 10000, current_balance: 500, created_at: '2026-05-01' }],
+        savings_transactions: [{ id: UUID_3, savings_goal_id: UUID_2, amount: 500, transaction_type: 'deposit', transaction_date: '2026-05-01', created_at: '2026-05-01' }],
+        salary_payouts: [{ id: UUID_4, period_start: '2026-05-01', period_end: '2026-05-31', amount_paid: 5000, paid_at: '2026-05-31T10:00:00Z', created_at: '2026-05-31' }],
+        goals: [{ id: UUID_1, title: 'Buy Car', description: '', category: 'Financial', target_amount: 10000, progress_percentage: 5, priority: 'high', status: 'in_progress', savings_goal_id: UUID_2, created_at: '2026-05-01' }],
+        user_settings: { user_id: USER_A, currency_code: 'USD', date_format: 'MM/DD/YYYY', week_starts_on: 0, expense_categories: ['CustomCat'], income_sources: ['CustomInc'] },
+        salary_configs: { user_id: USER_A, currency_code: 'USD', daily_base_salary: 900, standard_hours: 9, extra_hour_rate: 150 },
+        profiles: { id: USER_A, display_name: 'Preserved User', avatar_url: 'https://example.com/a.png' }
+      };
+
+      const makeResetClient = (sessionUid: string | null) =>
+        createMockSupabase(
+          sessionUid,
+          {
+            expenses: (ctx) => { if (ctx.op === 'delete') tableDeleteCount++; return { data: isResetOnBackend ? [] : dbState.expenses, error: null }; },
+            incomes: (ctx) => { if (ctx.op === 'delete') tableDeleteCount++; return { data: isResetOnBackend ? [] : dbState.incomes, error: null }; },
+            debts: (ctx) => { if (ctx.op === 'delete') tableDeleteCount++; return { data: isResetOnBackend ? [] : dbState.debts, error: null }; },
+            debt_repayments: (ctx) => { if (ctx.op === 'delete') tableDeleteCount++; return { data: isResetOnBackend ? [] : dbState.debt_repayments, error: null }; },
+            attendance_records: (ctx) => { if (ctx.op === 'delete') tableDeleteCount++; return { data: isResetOnBackend ? [] : dbState.attendance_records, error: null }; },
+            savings_goals: (ctx) => { if (ctx.op === 'delete') tableDeleteCount++; return { data: isResetOnBackend ? [] : dbState.savings_goals, error: null }; },
+            savings_transactions: (ctx) => { if (ctx.op === 'delete') tableDeleteCount++; return { data: isResetOnBackend ? [] : dbState.savings_transactions, error: null }; },
+            salary_payouts: (ctx) => { if (ctx.op === 'delete') tableDeleteCount++; return { data: isResetOnBackend ? [] : dbState.salary_payouts, error: null }; },
+            goals: (ctx) => { if (ctx.op === 'delete') tableDeleteCount++; return { data: isResetOnBackend ? [] : dbState.goals, error: null }; },
+            user_settings: (ctx) => {
+              if (ctx.op === 'delete') tableDeleteCount++;
+              return {
+                data: isResetOnBackend
+                  ? { user_id: USER_A, currency_code: 'INR', date_format: 'YYYY-MM-DD', week_starts_on: 1 }
+                  : dbState.user_settings,
+                error: null
+              };
+            },
+            salary_configs: (ctx) => {
+              if (ctx.op === 'delete') tableDeleteCount++;
+              return {
+                data: isResetOnBackend
+                  ? { user_id: USER_A, currency_code: 'INR', daily_base_salary: 500, standard_hours: 8, extra_hour_rate: 100 }
+                  : dbState.salary_configs,
+                error: null
+              };
+            },
+            profiles: (ctx) => {
+              if (ctx.op === 'delete') tableDeleteCount++;
+              return { data: dbState.profiles, error: null };
+            }
+          },
+          async (fn) => {
+            if (fn === 'xos_reset_user_data') {
+              rpcCallCount++;
+              await new Promise(resolve => setTimeout(resolve, 15));
+              if (rpcMode === 'error') return { data: null, error: { message: 'RLS/Auth rejected reset' } };
+              if (rpcMode === 'null') return { data: null, error: null };
+              if (rpcMode === 'false') return { data: false, error: null };
+              if (rpcMode === 'obj_false') return { data: { success: false, message: 'Server aborted reset' }, error: null };
+              if (rpcMode === 'empty_obj') return { data: {}, error: null };
+              isResetOnBackend = true;
+              return { data: rpcMode === 'bool_true' ? true : { success: true }, error: null };
+            }
+            return { data: null, error: { message: `Unexpected RPC ${fn}` } };
+          }
+        );
+
+      // Hydrate populated user data first
+      const resetClient = makeResetClient(USER_A);
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      configureRepositoryBackendForTests(resetClient, true);
+      await repository.fetchAllUserData(USER_A);
+      repository.saveSettings({
+        ...repository.getSettings(),
+        profile: { ...repository.getSettings().profile, email: 'musthafa@test.local' }
+      });
+
+      assert(repository.getExpenses().length === 1 && repository.getGoals().length === 1 && repository.getSettings().currency === 'USD', 'Pre-reset state is populated');
+
+      // Seed API cache to verify invalidation timing
+      let cacheComputeCount = 0;
+      await apiOptimization.fetchWithCache('reset-test-cache', async () => ++cacheComputeCount, 60000);
+      assert(cacheComputeCount === 1, 'Cache seeded');
+
+      // 1) Unauthenticated session must reject without calling RPC or clearing state/cache
+      (resetClient as any).__setSessionUserId(null);
+      let unauthRejected = false;
+      try {
+        await repository.resetUserData();
+      } catch {
+        unauthRejected = true;
+      }
+      assert(unauthRejected && rpcCallCount === 0, 'Unauthenticated reset rejected before calling RPC');
+      assert(repository.getExpenses().length === 1, 'State preserved when session missing');
+
+      // Restore authenticated session
+      (resetClient as any).__setSessionUserId(USER_A);
+
+      // 2) RPC errors and falsy/invalid success confirmations must reject WITHOUT clearing cache or local state
+      for (const badMode of ['error', 'null', 'false', 'obj_false', 'empty_obj'] as const) {
+        rpcMode = badMode;
+        let failed = false;
+        try {
+          await repository.resetUserData();
+        } catch {
+          failed = true;
+        }
+        assert(failed, `Reset mode '${badMode}' must throw`);
+        assert(repository.getExpenses().length === 1 && repository.getGoals().length === 1, `Mode '${badMode}' preserved in-memory state`);
+        await apiOptimization.fetchWithCache('reset-test-cache', async () => ++cacheComputeCount, 60000);
+        assert(cacheComputeCount === 1, `Mode '${badMode}' did NOT invalidate cache on failure`);
+      }
+
+      // 3) Duplicate concurrent triggers while in-flight coalesce to ONE RPC call
+      rpcMode = 'obj_true';
+      rpcCallCount = 0;
+      await Promise.all([repository.resetUserData(), repository.resetUserData()]);
+      assert(rpcCallCount === 1, `Concurrent resetUserData calls coalesced into 1 RPC call (got ${rpcCallCount})`);
+      assert(tableDeleteCount === 0, `Frontend issued ZERO direct table DELETE calls (got ${tableDeleteCount})`);
+
+      // Verify cache was invalidated on confirmed reset success
+      await apiOptimization.fetchWithCache('reset-test-cache', async () => ++cacheComputeCount, 60000);
+      assert(cacheComputeCount === 2, 'API cache invalidated after confirmed reset success');
+
+      // Verify all module collections are cleared and backend default settings + preserved profile hydrated
+      assert(repository.getExpenses().length === 0, 'Expenses cleared');
+      assert(repository.getIncomes().length === 0, 'Incomes cleared');
+      assert(repository.getAttendance().length === 0, 'Attendance cleared');
+      assert(repository.getDebts().length === 0, 'Debts cleared');
+      assert(repository.getDebtRepayments().length === 0, 'Debt repayments cleared');
+      assert(repository.getGoals().length === 0, 'Goals cleared');
+      assert(repository.getSavingsGoals().length === 0, 'Savings goals cleared');
+      assert(repository.getSavingsTransactions().length === 0, 'Savings transactions cleared');
+      assert(repository.getSalaryPayouts().length === 0, 'Salary payouts cleared');
+      assert(repository.getActiveUserId() === USER_A, 'Authenticated activeUserId preserved');
+      assert(repository.getSettings().currency === 'INR', 'Settings reset to INR default from backend');
+      assert(repository.getSettings().dateFormat === 'YYYY-MM-DD', 'Date format reset to default');
+      assert(repository.getSettings().weekStartDay === 'Monday', 'Week start reset to default');
+      assert(repository.getSettings().salaryConfig.dailyBaseSalary === 500, 'Salary config reset to default');
+      assert(repository.getSettings().profile.name === 'Preserved User', 'Preserved profile display_name hydrated from profiles');
+      assert(repository.getSettings().profile.email === 'musthafa@test.local', 'Authenticated profile email preserved');
+
+      // 4) Boolean true RPC response also accepted cleanly
+      rpcMode = 'bool_true';
+      await repository.resetUserData();
+      assert(repository.getActiveUserId() === USER_A, 'Boolean true RPC response succeeded cleanly');
+    }
+    console.log('✓ Test 23 passed.');
+
     console.log('\n======================================================');
-    console.log('--- ALL 22 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
+    console.log('--- ALL 23 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
     console.log('======================================================');
   } finally {
     configureRepositoryBackendForTests(null, null);
