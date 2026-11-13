@@ -1,15 +1,19 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AttendanceRecord,
+  AttendanceStatus,
   CurrencyCode,
   DashboardWidgetConfig,
   DateFormat,
   Debt,
+  DebtDirection,
   DebtRepayment,
   DebtStatus,
   Expense,
   ExpenseCategory,
   Goal,
+  GoalPriority,
+  GoalStatus,
   Income,
   IncomeSource,
   PaymentMethod,
@@ -18,11 +22,18 @@ import {
   SalaryPayout,
   SavingsGoal,
   SavingsTransaction,
+  SavingsTransactionType,
   UserSettings,
   WeekStartDay
 } from '../types';
 import { DEFAULT_USER_SETTINGS, generateDemoDataset } from '../data/initialData';
-import { calculateWorkingHours, getTodayString } from '../utils/formatters';
+import {
+  calculateWorkingHours,
+  getTodayString,
+  localDateInputToUtcIso,
+  normalizeDbTime,
+  utcTimestampToLocalDate
+} from '../utils/formatters';
 import { calculateDailyEarnedSalary } from '../utils/calculations';
 import { supabase, isSupabaseConfigured } from './supabase';
 
@@ -34,6 +45,34 @@ export interface FetchTableError {
 export interface FetchAllResult {
   partialErrors: FetchTableError[];
   stale: boolean;
+}
+
+export type SettingsBundleSection = 'user_settings' | 'salary_configs' | 'profiles';
+
+export class SettingsBundleSaveError extends Error {
+  succeededSections: SettingsBundleSection[];
+  failedSections: Array<{ section: SettingsBundleSection; label: string; message: string }>;
+
+  constructor(
+    succeededSections: SettingsBundleSection[],
+    failedSections: Array<{ section: SettingsBundleSection; label: string; message: string }>
+  ) {
+    const sectionLabels: Record<SettingsBundleSection, string> = {
+      user_settings: 'Regional & Category Preferences',
+      salary_configs: 'Salary Configuration',
+      profiles: 'Profile Display Name'
+    };
+    const failedSummary = failedSections.map(f => `${f.label} (${f.message})`).join('; ');
+    const succeededSummary = succeededSections.map(s => sectionLabels[s]).join(', ');
+    const message =
+      succeededSections.length > 0
+        ? `Partial save: Saved ${succeededSummary}, but failed to save ${failedSummary}.`
+        : `Failed to save settings: ${failedSummary}.`;
+    super(message);
+    this.name = 'SettingsBundleSaveError';
+    this.succeededSections = succeededSections;
+    this.failedSections = failedSections;
+  }
 }
 
 export interface SettingsBundleInput {
@@ -141,6 +180,137 @@ async function requirePersistenceContext() {
   return { mode: 'supabase' as const, user, client: getClient() };
 }
 
+export function toDbWeekStartDay(day: WeekStartDay): 0 | 1 {
+  if (day === 'Sunday') return 0;
+  if (day === 'Monday') return 1;
+  throw new Error(`Unsupported week start day: ${String(day)}`);
+}
+
+export function fromDbWeekStartDay(val: unknown, fallback: WeekStartDay = 'Monday'): WeekStartDay {
+  if (val === 0 || val === '0' || val === 'Sunday' || val === 'sunday') return 'Sunday';
+  if (val === 1 || val === '1' || val === 'Monday' || val === 'monday') return 'Monday';
+  return fallback;
+}
+
+export function toDbAttendanceStatus(status: AttendanceStatus | string): 'present' | 'absent' | 'leave' | 'holiday' {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'present' || normalized === 'absent' || normalized === 'leave' || normalized === 'holiday') {
+    return normalized;
+  }
+  throw new Error(`Unsupported attendance status: ${String(status)}`);
+}
+
+export function fromDbAttendanceStatus(val: unknown): AttendanceStatus {
+  const normalized = String(val || '').trim().toLowerCase();
+  switch (normalized) {
+    case 'present':
+      return 'Present';
+    case 'absent':
+      return 'Absent';
+    case 'leave':
+      return 'Leave';
+    case 'holiday':
+      return 'Holiday';
+    default:
+      return 'Absent';
+  }
+}
+
+export function toDbGoalStatus(
+  status: GoalStatus | string
+): 'not_started' | 'in_progress' | 'completed' | 'paused' {
+  const normalized = String(status || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  switch (normalized) {
+    case 'not_started':
+      return 'not_started';
+    case 'in_progress':
+      return 'in_progress';
+    case 'completed':
+      return 'completed';
+    case 'paused':
+      return 'paused';
+    default:
+      throw new Error(`Unsupported goal status: ${String(status)}`);
+  }
+}
+
+export function fromDbGoalStatus(val: unknown): GoalStatus {
+  const normalized = String(val || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  switch (normalized) {
+    case 'not_started':
+      return 'Not Started';
+    case 'in_progress':
+      return 'In Progress';
+    case 'completed':
+      return 'Completed';
+    case 'paused':
+    case 'cancelled':
+      return 'Paused';
+    default:
+      return 'In Progress';
+  }
+}
+
+export function toDbGoalPriority(priority: GoalPriority | string): 'low' | 'medium' | 'high' {
+  const normalized = String(priority || '').trim().toLowerCase();
+  if (normalized === 'low' || normalized === 'medium' || normalized === 'high') {
+    return normalized;
+  }
+  throw new Error(`Unsupported goal priority: ${String(priority)}`);
+}
+
+export function fromDbGoalPriority(val: unknown): GoalPriority {
+  const normalized = String(val || '').trim().toLowerCase();
+  switch (normalized) {
+    case 'low':
+      return 'Low';
+    case 'high':
+      return 'High';
+    case 'medium':
+    default:
+      return 'Medium';
+  }
+}
+
+export function toDbRecurrenceFrequency(
+  isRecurring: boolean,
+  frequency?: RecurrenceFrequency | string | null
+): 'daily' | 'weekly' | 'monthly' | 'yearly' | null {
+  if (!isRecurring) {
+    return null;
+  }
+  const normalized = String(frequency || '').trim().toLowerCase();
+  if (
+    normalized === 'daily' ||
+    normalized === 'weekly' ||
+    normalized === 'monthly' ||
+    normalized === 'yearly'
+  ) {
+    return normalized;
+  }
+  throw new Error('Recurring expenses require a frequency of Daily, Weekly, Monthly, or Yearly.');
+}
+
+export function fromDbRecurrenceFrequency(isRecurring: unknown, val: unknown): RecurrenceFrequency {
+  if (!isRecurring || val === null || val === undefined || val === '') {
+    return 'None';
+  }
+  const normalized = String(val).trim().toLowerCase();
+  switch (normalized) {
+    case 'daily':
+      return 'Daily';
+    case 'weekly':
+      return 'Weekly';
+    case 'monthly':
+      return 'Monthly';
+    case 'yearly':
+      return 'Yearly';
+    case 'none':
+    default:
+      return 'None';
+  }
+}
+
 function mapExpenseRow(e: any): Expense {
   return {
     id: e.id,
@@ -152,7 +322,7 @@ function mapExpenseRow(e: any): Expense {
     paymentMethod: (e.payment_method || 'Cash') as PaymentMethod,
     notes: e.notes || '',
     isRecurring: Boolean(e.is_recurring),
-    recurringFrequency: (e.recurrence_frequency || 'None') as RecurrenceFrequency,
+    recurringFrequency: fromDbRecurrenceFrequency(e.is_recurring, e.recurrence_frequency),
     recurrenceEndDate: e.recurrence_end_date || undefined,
     createdAt: e.created_at
   };
@@ -179,6 +349,17 @@ function mapDebtRow(d: any): Debt {
       ? Number(d.remaining_amount)
       : original;
 
+  const rawDesc = d.description || '';
+  let direction: DebtDirection = 'receive';
+  let cleanDesc = rawDesc;
+  if (rawDesc.startsWith('[PAY]')) {
+    direction = 'pay';
+    cleanDesc = rawDesc.replace('[PAY]', '').trim();
+  } else if (rawDesc.startsWith('[RECEIVE]')) {
+    direction = 'receive';
+    cleanDesc = rawDesc.replace('[RECEIVE]', '').trim();
+  }
+
   return {
     id: d.id,
     person_name: d.person_name,
@@ -186,11 +367,12 @@ function mapDebtRow(d: any): Debt {
     remaining_amount: remaining,
     lent_date: d.lent_date,
     due_date: d.due_date || undefined,
-    description: d.description || '',
+    description: cleanDesc,
     notes: d.notes || '',
-    status: (d.status || 'outstanding') as DebtStatus,
+    status: (String(d.status || 'outstanding').toLowerCase()) as DebtStatus,
     created_at: d.created_at,
-    updated_at: d.updated_at || undefined
+    updated_at: d.updated_at || undefined,
+    direction
   };
 }
 
@@ -207,15 +389,19 @@ function mapDebtRepaymentRow(r: any): DebtRepayment {
 }
 
 function mapAttendanceRow(a: any): AttendanceRecord {
+  const status = fromDbAttendanceStatus(a.status);
   return {
     id: a.id,
     date: a.attendance_date,
-    status: a.status,
+    status,
     checkInTime: a.check_in ? String(a.check_in).slice(0, 5) : undefined,
     checkOutTime: a.check_out ? String(a.check_out).slice(0, 5) : undefined,
-    breakDurationMinutes: a.break_minutes || 0,
-    calculatedHours: Number(a.hours_worked) || 0,
-    extraHours: Number(a.extra_hours) || 0,
+    breakDurationMinutes:
+      a.break_minutes !== null && a.break_minutes !== undefined ? Number(a.break_minutes) : 0,
+    calculatedHours:
+      a.hours_worked !== null && a.hours_worked !== undefined ? Number(a.hours_worked) : 0,
+    extraHours:
+      a.extra_hours !== null && a.extra_hours !== undefined ? Number(a.extra_hours) : 0,
     dailyBaseSalary:
       a.daily_base_salary !== null && a.daily_base_salary !== undefined
         ? Number(a.daily_base_salary)
@@ -224,7 +410,10 @@ function mapAttendanceRow(a: any): AttendanceRecord {
       a.extra_hour_rate !== null && a.extra_hour_rate !== undefined
         ? Number(a.extra_hour_rate)
         : undefined,
-    dailyEarnedSalary: Number(a.calculated_salary) || 0,
+    dailyEarnedSalary:
+      a.calculated_salary !== null && a.calculated_salary !== undefined
+        ? Number(a.calculated_salary)
+        : 0,
     notes: a.notes || ''
   };
 }
@@ -234,7 +423,8 @@ function mapSavingsGoalRow(g: any): SavingsGoal {
     id: g.id,
     name: g.name,
     targetAmount: Number(g.target_amount),
-    currentAmount: Number(g.current_balance) || 0,
+    currentAmount:
+      g.current_balance !== null && g.current_balance !== undefined ? Number(g.current_balance) : 0,
     targetDate: g.target_date || undefined,
     description: g.notes || '',
     color: g.color || undefined,
@@ -244,11 +434,12 @@ function mapSavingsGoalRow(g: any): SavingsGoal {
 }
 
 function mapSavingsTxRow(tx: any): SavingsTransaction {
+  const normalizedType = String(tx.transaction_type || 'deposit').trim().toLowerCase();
   return {
     id: tx.id,
     savingsGoalId: tx.savings_goal_id,
     amount: Number(tx.amount),
-    type: tx.transaction_type,
+    type: (normalizedType === 'withdrawal' ? 'withdrawal' : 'deposit') as SavingsTransactionType,
     date: tx.transaction_date,
     note: tx.notes || '',
     createdAt: tx.created_at
@@ -260,8 +451,9 @@ function mapSalaryPayoutRow(p: any): SalaryPayout {
     id: p.id,
     periodStart: p.period_start,
     periodEnd: p.period_end,
-    amountPaid: Number(p.amount_paid) || 0,
-    paidAt: p.paid_at ? String(p.paid_at).slice(0, 10) : getTodayString(),
+    amountPaid:
+      p.amount_paid !== null && p.amount_paid !== undefined ? Number(p.amount_paid) : 0,
+    paidAt: p.paid_at ? utcTimestampToLocalDate(String(p.paid_at)) : getTodayString(),
     notes: p.notes || '',
     createdAt: p.created_at || undefined,
     updatedAt: p.updated_at || undefined
@@ -269,7 +461,8 @@ function mapSalaryPayoutRow(p: any): SalaryPayout {
 }
 
 function mapGoalRow(g: any): Goal {
-  const status = g.status || 'In Progress';
+  const status = fromDbGoalStatus(g.status);
+  const priority = fromDbGoalPriority(g.priority);
   const progress =
     g.progress_percentage !== null && g.progress_percentage !== undefined
       ? Math.max(0, Math.min(100, Number(g.progress_percentage)))
@@ -288,7 +481,7 @@ function mapGoalRow(g: any): Goal {
         : undefined,
     progressPercentage: progress,
     targetDate: g.target_date || undefined,
-    priority: g.priority,
+    priority,
     status,
     createdAt: g.created_at,
     completedAt: g.completed_at || undefined
@@ -296,19 +489,23 @@ function mapGoalRow(g: any): Goal {
 }
 
 function mapSalaryConfigRow(row: any, fallback: SalaryConfig): SalaryConfig {
+  const dailyBase = Number(row.daily_base_salary);
+  const stdHours = Number(row.standard_hours);
+  const extraRate = Number(row.extra_hour_rate);
+
   return {
     currency: (row.currency_code as CurrencyCode) || fallback.currency,
     dailyBaseSalary:
-      row.daily_base_salary !== undefined && row.daily_base_salary !== null
-        ? Number(row.daily_base_salary)
+      row.daily_base_salary !== undefined && row.daily_base_salary !== null && Number.isFinite(dailyBase)
+        ? dailyBase
         : fallback.dailyBaseSalary,
     standardWorkingHours:
-      row.standard_hours !== undefined && row.standard_hours !== null
-        ? Number(row.standard_hours)
+      row.standard_hours !== undefined && row.standard_hours !== null && Number.isFinite(stdHours)
+        ? stdHours
         : fallback.standardWorkingHours,
     extraHourRate:
-      row.extra_hour_rate !== undefined && row.extra_hour_rate !== null
-        ? Number(row.extra_hour_rate)
+      row.extra_hour_rate !== undefined && row.extra_hour_rate !== null && Number.isFinite(extraRate)
+        ? extraRate
         : fallback.extraHourRate
   };
 }
@@ -525,7 +722,7 @@ export const repository = {
           ...memoryState.settings,
           currency: resolvedCurrency,
           dateFormat: (sData.date_format as DateFormat) || memoryState.settings.dateFormat,
-          weekStartDay: (sData.week_starts_on as WeekStartDay) || memoryState.settings.weekStartDay,
+          weekStartDay: fromDbWeekStartDay(sData.week_starts_on, memoryState.settings.weekStartDay),
           customExpenseCategories:
             Array.isArray(sData.expense_categories) && sData.expense_categories.length > 0
               ? sData.expense_categories
@@ -547,7 +744,7 @@ export const repository = {
     if (profileRes.ok && profileRes.data) {
       memoryState.settings.profile = {
         ...memoryState.settings.profile,
-        name: profileRes.data.display_name || memoryState.settings.profile.name,
+        name: profileRes.data.display_name ?? memoryState.settings.profile.name,
         avatarUrl: profileRes.data.avatar_url || memoryState.settings.profile.avatarUrl
       };
     }
@@ -626,8 +823,19 @@ export const repository = {
   },
 
   async persistSettingsBundle(bundle: SettingsBundleInput): Promise<void> {
+    if (!Number.isFinite(bundle.salaryConfig.dailyBaseSalary) || bundle.salaryConfig.dailyBaseSalary < 0) {
+      throw new Error('Daily base salary cannot be negative.');
+    }
+    if (!Number.isFinite(bundle.salaryConfig.standardWorkingHours) || bundle.salaryConfig.standardWorkingHours <= 0) {
+      throw new Error('Standard working hours must be greater than zero.');
+    }
+    if (!Number.isFinite(bundle.salaryConfig.extraHourRate) || bundle.salaryConfig.extraHourRate < 0) {
+      throw new Error('Extra hour rate cannot be negative.');
+    }
+
     const ctx = await requirePersistenceContext();
     const resolvedCurrency = bundle.currency || memoryState.settings.currency || 'INR';
+    const dbWeekStartsOn = toDbWeekStartDay(bundle.weekStartDay);
     const normalizedCategories = bundle.customExpenseCategories
       .map(c => c.trim())
       .filter(Boolean);
@@ -637,95 +845,158 @@ export const repository = {
 
     if (ctx.mode === 'supabase') {
       const now = new Date().toISOString();
+      const succeededSections: SettingsBundleSection[] = [];
+      const failedSections: Array<{ section: SettingsBundleSection; label: string; message: string }> = [];
+
+      let nextSettings = {
+        ...memoryState.settings,
+        profile: { ...memoryState.settings.profile },
+        salaryConfig: { ...memoryState.settings.salaryConfig }
+      };
 
       // 1. Update public.user_settings
-      const { data: settingsData, error: settingsError } = await ctx.client
-        .from('user_settings')
-        .upsert(
-          {
-            user_id: ctx.user.id,
-            currency_code: resolvedCurrency,
-            date_format: bundle.dateFormat,
-            week_starts_on: bundle.weekStartDay,
-            expense_categories: normalizedCategories,
-            income_sources: normalizedSources,
-            dashboard_widgets: bundle.widgets,
-            updated_at: now
-          },
-          { onConflict: 'user_id' }
-        )
-        .select()
-        .single();
+      try {
+        const { data: settingsData, error: settingsError } = await ctx.client
+          .from('user_settings')
+          .upsert(
+            {
+              user_id: ctx.user.id,
+              currency_code: resolvedCurrency,
+              date_format: bundle.dateFormat,
+              week_starts_on: dbWeekStartsOn,
+              expense_categories: normalizedCategories,
+              income_sources: normalizedSources,
+              dashboard_widgets: bundle.widgets,
+              updated_at: now
+            },
+            { onConflict: 'user_id' }
+          )
+          .select()
+          .single();
 
-      if (settingsError || !settingsData) {
-        throw new Error(settingsError?.message || 'Database error: Could not save user settings.');
+        if (settingsError || !settingsData) {
+          failedSections.push({
+            section: 'user_settings',
+            label: 'Regional & Category Preferences',
+            message: settingsError?.message || 'Could not save user settings'
+          });
+        } else {
+          succeededSections.push('user_settings');
+          nextSettings = {
+            ...nextSettings,
+            currency: (settingsData.currency_code as CurrencyCode) || resolvedCurrency,
+            dateFormat: (settingsData.date_format as DateFormat) || bundle.dateFormat,
+            weekStartDay: fromDbWeekStartDay(settingsData.week_starts_on, bundle.weekStartDay),
+            customExpenseCategories: Array.isArray(settingsData.expense_categories)
+              ? settingsData.expense_categories
+              : normalizedCategories,
+            customIncomeSources: Array.isArray(settingsData.income_sources)
+              ? settingsData.income_sources
+              : normalizedSources,
+            widgets: mergeWidgets(settingsData.dashboard_widgets, bundle.widgets)
+          };
+        }
+      } catch (err) {
+        failedSections.push({
+          section: 'user_settings',
+          label: 'Regional & Category Preferences',
+          message: err instanceof Error ? err.message : 'Unexpected error saving user settings'
+        });
       }
 
       // 2. Update public.salary_configs (only verified live columns)
-      const { data: salaryData, error: salaryError } = await ctx.client
-        .from('salary_configs')
-        .upsert(
-          {
-            user_id: ctx.user.id,
-            daily_base_salary: bundle.salaryConfig.dailyBaseSalary,
-            standard_hours: bundle.salaryConfig.standardWorkingHours,
-            extra_hour_rate: bundle.salaryConfig.extraHourRate,
-            currency_code: resolvedCurrency,
-            updated_at: now
-          },
-          { onConflict: 'user_id' }
-        )
-        .select('id, user_id, daily_base_salary, standard_hours, extra_hour_rate, currency_code, created_at, updated_at')
-        .single();
+      try {
+        const { data: salaryData, error: salaryError } = await ctx.client
+          .from('salary_configs')
+          .upsert(
+            {
+              user_id: ctx.user.id,
+              daily_base_salary: bundle.salaryConfig.dailyBaseSalary,
+              standard_hours: bundle.salaryConfig.standardWorkingHours,
+              extra_hour_rate: bundle.salaryConfig.extraHourRate,
+              currency_code: resolvedCurrency,
+              updated_at: now
+            },
+            { onConflict: 'user_id' }
+          )
+          .select('id, user_id, daily_base_salary, standard_hours, extra_hour_rate, currency_code, created_at, updated_at')
+          .single();
 
-      if (salaryError || !salaryData) {
-        throw new Error(salaryError?.message || 'Database error: Could not save salary configuration.');
+        if (salaryError || !salaryData) {
+          failedSections.push({
+            section: 'salary_configs',
+            label: 'Salary Configuration',
+            message: salaryError?.message || 'Could not save salary configuration'
+          });
+        } else {
+          succeededSections.push('salary_configs');
+          nextSettings = {
+            ...nextSettings,
+            salaryConfig: mapSalaryConfigRow(salaryData, {
+              ...bundle.salaryConfig,
+              currency: resolvedCurrency
+            })
+          };
+        }
+      } catch (err) {
+        failedSections.push({
+          section: 'salary_configs',
+          label: 'Salary Configuration',
+          message: err instanceof Error ? err.message : 'Unexpected error saving salary configuration'
+        });
       }
 
-      // 3. Update public.profiles if displayName provided (safe when profile row does not yet exist)
-      let confirmedName = bundle.displayName !== undefined ? bundle.displayName.trim() : memoryState.settings.profile.name;
+      // 3. Update public.profiles if displayName provided (non-fatal when profile row does not yet exist)
       if (bundle.displayName !== undefined) {
-        const { data: profData, error: profError } = await ctx.client
-          .from('profiles')
-          .update({
-            display_name: confirmedName,
-            updated_at: now
-          })
-          .eq('id', ctx.user.id)
-          .select('id, display_name, avatar_url')
-          .maybeSingle();
+        const trimmedName = bundle.displayName.trim();
+        try {
+          const { data: profData, error: profError } = await ctx.client
+            .from('profiles')
+            .update({
+              display_name: trimmedName,
+              updated_at: now
+            })
+            .eq('id', ctx.user.id)
+            .select('id, display_name, avatar_url')
+            .maybeSingle();
 
-        if (profError) {
-          throw new Error(profError.message || 'Database error: Could not update profile display name.');
-        }
-        if (profData?.display_name !== undefined && profData?.display_name !== null) {
-          confirmedName = profData.display_name;
+          if (profError) {
+            failedSections.push({
+              section: 'profiles',
+              label: 'Profile Display Name',
+              message: profError.message || 'Could not update profile display name'
+            });
+          } else {
+            succeededSections.push('profiles');
+            nextSettings = {
+              ...nextSettings,
+              profile: {
+                ...nextSettings.profile,
+                name:
+                  profData?.display_name !== undefined && profData?.display_name !== null
+                    ? profData.display_name
+                    : trimmedName
+              }
+            };
+          }
+        } catch (err) {
+          failedSections.push({
+            section: 'profiles',
+            label: 'Profile Display Name',
+            message: err instanceof Error ? err.message : 'Unexpected error updating profile display name'
+          });
         }
       }
 
-      memoryState.settings = {
-        ...memoryState.settings,
-        profile: {
-          ...memoryState.settings.profile,
-          name: confirmedName
-        },
-        currency: (settingsData.currency_code as CurrencyCode) || resolvedCurrency,
-        dateFormat: (settingsData.date_format as DateFormat) || bundle.dateFormat,
-        weekStartDay: (settingsData.week_starts_on as WeekStartDay) || bundle.weekStartDay,
-        customExpenseCategories: Array.isArray(settingsData.expense_categories)
-          ? settingsData.expense_categories
-          : normalizedCategories,
-        customIncomeSources: Array.isArray(settingsData.income_sources)
-          ? settingsData.income_sources
-          : normalizedSources,
-        widgets: mergeWidgets(settingsData.dashboard_widgets, bundle.widgets),
-        salaryConfig: mapSalaryConfigRow(salaryData, {
-          ...bundle.salaryConfig,
-          currency: resolvedCurrency
-        })
-      };
+      // Reconcile ONLY the operations that actually succeeded in Supabase
+      if (succeededSections.length > 0) {
+        memoryState.settings = nextSettings;
+        notifyListeners();
+      }
 
-      notifyListeners();
+      if (failedSections.length > 0) {
+        throw new SettingsBundleSaveError(succeededSections, failedSections);
+      }
       return;
     }
 
@@ -750,6 +1021,16 @@ export const repository = {
   },
 
   async persistSalaryConfig(salaryConfig: SalaryConfig): Promise<void> {
+    if (!Number.isFinite(salaryConfig.dailyBaseSalary) || salaryConfig.dailyBaseSalary < 0) {
+      throw new Error('Daily base salary cannot be negative.');
+    }
+    if (!Number.isFinite(salaryConfig.standardWorkingHours) || salaryConfig.standardWorkingHours <= 0) {
+      throw new Error('Standard working hours must be greater than zero.');
+    }
+    if (!Number.isFinite(salaryConfig.extraHourRate) || salaryConfig.extraHourRate < 0) {
+      throw new Error('Extra hour rate cannot be negative.');
+    }
+
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
@@ -805,12 +1086,16 @@ export const repository = {
       throw new Error('Goal title is required.');
     }
 
+    const uiStatus = fromDbGoalStatus(goal.status || 'In Progress');
+    const uiPriority = fromDbGoalPriority(goal.priority || 'Medium');
     const clampedProgress = Math.max(0, Math.min(100, Math.round(goal.progressPercentage ?? 0)));
+    const progressVal = uiStatus === 'Completed' ? 100 : clampedProgress;
+    const dbStatus = toDbGoalStatus(uiStatus);
+    const dbPriority = toDbGoalPriority(uiPriority);
+
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
-      const status = goal.status || 'In Progress';
-      const progressVal = status === 'Completed' ? 100 : clampedProgress;
       const { data, error } = await ctx.client
         .from('goals')
         .insert({
@@ -818,12 +1103,12 @@ export const repository = {
           title: goal.title.trim(),
           description: goal.description || '',
           category: goal.category,
-          priority: goal.priority,
-          status,
+          priority: dbPriority,
+          status: dbStatus,
           progress_percentage: progressVal,
           target_amount: goal.targetAmount ?? null,
           target_date: goal.targetDate || null,
-          completed_at: status === 'Completed' ? (goal.completedAt || new Date().toISOString()) : null
+          completed_at: uiStatus === 'Completed' ? (goal.completedAt || new Date().toISOString()) : null
         })
         .select()
         .single();
@@ -840,7 +1125,9 @@ export const repository = {
 
     const newGoal: Goal = {
       ...goal,
-      progressPercentage: goal.status === 'Completed' ? 100 : clampedProgress,
+      status: uiStatus,
+      priority: uiPriority,
+      progressPercentage: progressVal,
       id: 'g_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
       createdAt: getTodayString()
     };
@@ -850,6 +1137,8 @@ export const repository = {
   },
 
   async updateGoal(id: string, updates: Partial<Goal>): Promise<void> {
+    const dbStatus = updates.status !== undefined ? toDbGoalStatus(updates.status) : undefined;
+    const dbPriority = updates.priority !== undefined ? toDbGoalPriority(updates.priority) : undefined;
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
@@ -857,14 +1146,22 @@ export const repository = {
       if (updates.title !== undefined) dbPayload.title = updates.title.trim();
       if (updates.description !== undefined) dbPayload.description = updates.description;
       if (updates.category !== undefined) dbPayload.category = updates.category;
-      if (updates.priority !== undefined) dbPayload.priority = updates.priority;
-      if (updates.status !== undefined) dbPayload.status = updates.status;
+      if (dbPriority !== undefined) dbPayload.priority = dbPriority;
+      if (dbStatus !== undefined) dbPayload.status = dbStatus;
       if (updates.progressPercentage !== undefined) {
         dbPayload.progress_percentage = Math.max(0, Math.min(100, Math.round(updates.progressPercentage)));
+      } else if (dbStatus === 'completed') {
+        dbPayload.progress_percentage = 100;
       }
       if (updates.targetAmount !== undefined) dbPayload.target_amount = updates.targetAmount ?? null;
       if (updates.targetDate !== undefined) dbPayload.target_date = updates.targetDate || null;
-      if ('completedAt' in updates) dbPayload.completed_at = updates.completedAt || null;
+      if ('completedAt' in updates) {
+        dbPayload.completed_at = updates.completedAt || null;
+      } else if (dbStatus === 'completed') {
+        dbPayload.completed_at = new Date().toISOString();
+      } else if (dbStatus !== undefined) {
+        dbPayload.completed_at = null;
+      }
 
       if (Object.keys(dbPayload).length === 0) {
         return;
@@ -926,15 +1223,20 @@ export const repository = {
   },
 
   async addExpense(expense: Omit<Expense, 'id' | 'createdAt'>): Promise<Expense> {
-    if (expense.amount <= 0) {
+    if (!Number.isFinite(expense.amount) || expense.amount <= 0) {
       throw new Error('Expense amount must be greater than zero.');
     }
+    const isRecurring = Boolean(expense.isRecurring);
+    const dbRecurrenceFrequency = toDbRecurrenceFrequency(isRecurring, expense.recurringFrequency);
+    const normalizedUiFrequency: RecurrenceFrequency = isRecurring
+      ? fromDbRecurrenceFrequency(true, dbRecurrenceFrequency)
+      : 'None';
+
     const currentTime = new Date().toTimeString().slice(0, 5);
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
-      const timeVal = expense.time || currentTime;
-      const formattedTime = timeVal ? (timeVal.length === 5 ? `${timeVal}:00` : timeVal) : null;
+      const formattedTime = normalizeDbTime(expense.time || currentTime);
 
       const { data, error } = await ctx.client
         .from('expenses')
@@ -946,10 +1248,10 @@ export const repository = {
           expense_date: expense.date,
           expense_time: formattedTime,
           payment_method: expense.paymentMethod || 'Cash',
-          notes: expense.notes ? expense.notes.trim() : null,
-          is_recurring: Boolean(expense.isRecurring),
-          recurrence_frequency: expense.recurringFrequency || 'None',
-          recurrence_end_date: expense.recurrenceEndDate || null
+          notes: expense.notes?.trim() ? expense.notes.trim() : null,
+          is_recurring: isRecurring,
+          recurrence_frequency: dbRecurrenceFrequency,
+          recurrence_end_date: isRecurring && expense.recurrenceEndDate ? expense.recurrenceEndDate : null
         })
         .select()
         .single();
@@ -970,6 +1272,9 @@ export const repository = {
 
     const newExpense: Expense = {
       ...expense,
+      isRecurring,
+      recurringFrequency: normalizedUiFrequency,
+      recurrenceEndDate: isRecurring ? expense.recurrenceEndDate : undefined,
       time: expense.time || currentTime,
       id: 'e_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
       createdAt: getTodayString()
@@ -980,26 +1285,66 @@ export const repository = {
   },
 
   async updateExpense(id: string, updates: Partial<Expense>): Promise<void> {
-    if (updates.amount !== undefined && updates.amount <= 0) {
+    if (updates.amount !== undefined && (!Number.isFinite(updates.amount) || updates.amount <= 0)) {
       throw new Error('Expense amount must be greater than zero.');
+    }
+
+    const existing = memoryState.expenses.find(e => e.id === id);
+    let resolvedRecurrencePayload: {
+      is_recurring?: boolean;
+      recurrence_frequency?: 'daily' | 'weekly' | 'monthly' | 'yearly' | null;
+      recurrence_end_date?: string | null;
+    } = {};
+
+    if (updates.isRecurring === false) {
+      resolvedRecurrencePayload = {
+        is_recurring: false,
+        recurrence_frequency: null,
+        recurrence_end_date: null
+      };
+    } else if (updates.isRecurring === true) {
+      const freq = toDbRecurrenceFrequency(
+        true,
+        updates.recurringFrequency ?? existing?.recurringFrequency
+      );
+      resolvedRecurrencePayload = {
+        is_recurring: true,
+        recurrence_frequency: freq
+      };
+    } else if (updates.recurringFrequency !== undefined) {
+      if (updates.recurringFrequency === 'None') {
+        resolvedRecurrencePayload = {
+          is_recurring: false,
+          recurrence_frequency: null,
+          recurrence_end_date: null
+        };
+      } else if (existing ? existing.isRecurring : true) {
+        resolvedRecurrencePayload = {
+          recurrence_frequency: toDbRecurrenceFrequency(true, updates.recurringFrequency)
+        };
+      } else {
+        resolvedRecurrencePayload = {
+          recurrence_frequency: null
+        };
+      }
     }
 
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
-      const dbPayload: Record<string, any> = {};
+      const dbPayload: Record<string, any> = { ...resolvedRecurrencePayload };
       if (updates.title !== undefined) dbPayload.title = updates.title.trim();
       if (updates.amount !== undefined) dbPayload.amount = updates.amount;
       if (updates.category !== undefined) dbPayload.category = updates.category;
       if (updates.date !== undefined) dbPayload.expense_date = updates.date;
       if (updates.time !== undefined) {
-        dbPayload.expense_time = updates.time ? (updates.time.length === 5 ? `${updates.time}:00` : updates.time) : null;
+        dbPayload.expense_time = normalizeDbTime(updates.time);
       }
       if (updates.paymentMethod !== undefined) dbPayload.payment_method = updates.paymentMethod;
-      if (updates.notes !== undefined) dbPayload.notes = updates.notes ? updates.notes.trim() : null;
-      if (updates.isRecurring !== undefined) dbPayload.is_recurring = Boolean(updates.isRecurring);
-      if (updates.recurringFrequency !== undefined) dbPayload.recurrence_frequency = updates.recurringFrequency;
-      if (updates.recurrenceEndDate !== undefined) dbPayload.recurrence_end_date = updates.recurrenceEndDate || null;
+      if (updates.notes !== undefined) dbPayload.notes = updates.notes?.trim() ? updates.notes.trim() : null;
+      if (updates.recurrenceEndDate !== undefined && resolvedRecurrencePayload.is_recurring !== false) {
+        dbPayload.recurrence_end_date = updates.recurrenceEndDate || null;
+      }
 
       if (Object.keys(dbPayload).length === 0) {
         return;
@@ -1061,15 +1406,17 @@ export const repository = {
   },
 
   async addIncome(income: Omit<Income, 'id' | 'createdAt'>): Promise<Income> {
-    if (income.amount <= 0) {
+    if (!income.title || !income.title.trim()) {
+      throw new Error('Income title is required.');
+    }
+    if (!Number.isFinite(income.amount) || income.amount <= 0) {
       throw new Error('Income amount must be greater than zero.');
     }
     const currentTime = new Date().toTimeString().slice(0, 5);
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
-      const timeVal = income.time || currentTime;
-      const formattedTime = timeVal ? (timeVal.length === 5 ? `${timeVal}:00` : timeVal) : null;
+      const formattedTime = normalizeDbTime(income.time || currentTime);
 
       const { data, error } = await ctx.client
         .from('incomes')
@@ -1080,7 +1427,7 @@ export const repository = {
           source: income.source,
           income_date: income.date,
           income_time: formattedTime,
-          notes: income.notes ? income.notes.trim() : null,
+          notes: income.notes?.trim() ? income.notes.trim() : null,
           salary_payout_id: income.salaryPayoutId || null
         })
         .select()
@@ -1112,7 +1459,7 @@ export const repository = {
   },
 
   async updateIncome(id: string, updates: Partial<Income>): Promise<void> {
-    if (updates.amount !== undefined && updates.amount <= 0) {
+    if (updates.amount !== undefined && (!Number.isFinite(updates.amount) || updates.amount <= 0)) {
       throw new Error('Income amount must be greater than zero.');
     }
 
@@ -1125,9 +1472,9 @@ export const repository = {
       if (updates.source !== undefined) dbPayload.source = updates.source;
       if (updates.date !== undefined) dbPayload.income_date = updates.date;
       if (updates.time !== undefined) {
-        dbPayload.income_time = updates.time ? (updates.time.length === 5 ? `${updates.time}:00` : updates.time) : null;
+        dbPayload.income_time = normalizeDbTime(updates.time);
       }
-      if (updates.notes !== undefined) dbPayload.notes = updates.notes ? updates.notes.trim() : null;
+      if (updates.notes !== undefined) dbPayload.notes = updates.notes?.trim() ? updates.notes.trim() : null;
 
       if (Object.keys(dbPayload).length === 0) {
         return;
@@ -1194,18 +1541,24 @@ export const repository = {
       throw new Error('Attendance cannot be logged for future dates.');
     }
 
+    const normalizedStatus = fromDbAttendanceStatus(record.status);
+    const dbStatus = toDbAttendanceStatus(record.status);
     const salaryConfig = memoryState.settings.salaryConfig;
-    let hours = record.calculatedHours || 0;
-    if (record.status === 'Present' && record.checkInTime && record.checkOutTime) {
-      hours = calculateWorkingHours(record.checkInTime, record.checkOutTime, record.breakDurationMinutes || 0);
+    let hours = record.calculatedHours ?? 0;
+    const sanitizedBreak = normalizedStatus === 'Present'
+      ? Math.max(0, Math.round(record.breakDurationMinutes ?? 0))
+      : 0;
+    if (normalizedStatus === 'Present' && record.checkInTime && record.checkOutTime) {
+      hours = calculateWorkingHours(record.checkInTime, record.checkOutTime, sanitizedBreak);
     }
-    const dailyRes = calculateDailyEarnedSalary(record.status, hours, salaryConfig);
+    const dailyRes = calculateDailyEarnedSalary(normalizedStatus, hours, salaryConfig);
 
     const processedRecordPayload = {
       ...record,
-      status: record.status,
-      calculatedHours: record.status === 'Present' ? dailyRes.workingHours : 0,
-      extraHours: record.status === 'Present' ? dailyRes.extraHours : 0,
+      status: normalizedStatus,
+      breakDurationMinutes: sanitizedBreak,
+      calculatedHours: normalizedStatus === 'Present' ? dailyRes.workingHours : 0,
+      extraHours: normalizedStatus === 'Present' ? dailyRes.extraHours : 0,
       dailyBaseSalary: salaryConfig.dailyBaseSalary,
       extraHourRate: salaryConfig.extraHourRate,
       dailyEarnedSalary: dailyRes.dailyEarnedSalary
@@ -1220,20 +1573,16 @@ export const repository = {
           {
             user_id: ctx.user.id,
             attendance_date: record.date,
-            status: record.status,
-            check_in: record.status === 'Present' && record.checkInTime
-              ? (record.checkInTime.length === 5 ? `${record.checkInTime}:00` : record.checkInTime)
-              : null,
-            check_out: record.status === 'Present' && record.checkOutTime
-              ? (record.checkOutTime.length === 5 ? `${record.checkOutTime}:00` : record.checkOutTime)
-              : null,
-            break_minutes: record.status === 'Present' ? (record.breakDurationMinutes || 0) : 0,
+            status: dbStatus,
+            check_in: normalizedStatus === 'Present' ? normalizeDbTime(record.checkInTime) : null,
+            check_out: normalizedStatus === 'Present' ? normalizeDbTime(record.checkOutTime) : null,
+            break_minutes: sanitizedBreak,
             hours_worked: processedRecordPayload.calculatedHours,
             extra_hours: processedRecordPayload.extraHours,
             daily_base_salary: salaryConfig.dailyBaseSalary,
             extra_hour_rate: salaryConfig.extraHourRate,
             calculated_salary: processedRecordPayload.dailyEarnedSalary,
-            notes: record.notes ? record.notes.trim() : null
+            notes: record.notes?.trim() ? record.notes.trim() : null
           },
           { onConflict: 'user_id,attendance_date' }
         )
@@ -1484,8 +1833,12 @@ export const repository = {
   },
 
   async addSavingsTransaction(tx: Omit<SavingsTransaction, 'id' | 'createdAt'>): Promise<SavingsTransaction> {
-    if (tx.amount <= 0) {
+    if (!Number.isFinite(tx.amount) || tx.amount <= 0) {
       throw new Error('Transaction amount must be greater than zero.');
+    }
+    const normalizedTxType = String(tx.type || '').trim().toLowerCase();
+    if (normalizedTxType !== 'deposit' && normalizedTxType !== 'withdrawal') {
+      throw new Error(`Unsupported savings transaction type: ${String(tx.type)}`);
     }
 
     const targetGoal = memoryState.savingsGoals.find(g => g.id === tx.savingsGoalId);
@@ -1493,7 +1846,7 @@ export const repository = {
       throw new Error('Savings goal fund not found.');
     }
 
-    if (tx.type === 'withdrawal' && tx.amount > targetGoal.currentAmount + 0.001) {
+    if (normalizedTxType === 'withdrawal' && tx.amount > targetGoal.currentAmount + 0.001) {
       throw new Error('Withdrawal amount exceeds available balance.');
     }
 
@@ -1505,10 +1858,10 @@ export const repository = {
         .insert({
           savings_goal_id: tx.savingsGoalId,
           user_id: ctx.user.id,
-          transaction_type: tx.type,
+          transaction_type: normalizedTxType,
           amount: tx.amount,
           transaction_date: tx.date,
-          notes: tx.note ? tx.note.trim() : null
+          notes: tx.note?.trim() ? tx.note.trim() : null
         })
         .select()
         .single();
@@ -1638,7 +1991,7 @@ export const repository = {
     syncToIncome: boolean = true,
     allowReplace: boolean = false
   ): Promise<SalaryPayout> {
-    if (payout.amountPaid < 0) {
+    if (!Number.isFinite(payout.amountPaid) || payout.amountPaid < 0) {
       throw new Error('Payout amount cannot be negative.');
     }
     if (syncToIncome && payout.amountPaid <= 0) {
@@ -1654,27 +2007,22 @@ export const repository = {
 
     const ctx = await requirePersistenceContext();
     const periodLabel = payout.periodStart.slice(0, 7);
-    const paidDate = payout.paidAt.slice(0, 10);
-    const currentTimeWithSeconds = `${new Date().toTimeString().slice(0, 5)}:00`;
+    const { paidAtIso, localDate, localTime } = localDateInputToUtcIso(payout.paidAt);
     const incomeTitle = `Salary Payout (${periodLabel})`;
     const incomeNotes = payout.notes?.trim()
       ? payout.notes.trim()
       : `Recorded via Salary Module (${periodLabel})`;
 
     if (ctx.mode === 'supabase') {
-      const paidAtIso = payout.paidAt.includes('T')
-        ? payout.paidAt
-        : `${paidDate}T${currentTimeWithSeconds}Z`;
-
       const { data: rpcResult, error: rpcError } = await ctx.client.rpc('xos_record_salary_payout', {
         p_period_start: payout.periodStart,
         p_period_end: payout.periodEnd,
         p_amount_paid: payout.amountPaid,
         p_paid_at: paidAtIso,
-        p_notes: payout.notes ? payout.notes.trim() : null,
+        p_notes: payout.notes?.trim() ? payout.notes.trim() : null,
         p_sync_to_income: syncToIncome,
-        p_income_date: paidDate,
-        p_income_time: currentTimeWithSeconds,
+        p_income_date: localDate,
+        p_income_time: localTime,
         p_income_title: incomeTitle,
         p_income_notes: incomeNotes,
         p_replace_existing: allowReplace
@@ -1721,7 +2069,7 @@ export const repository = {
 
     const newPayout: SalaryPayout = {
       ...payout,
-      paidAt: paidDate,
+      paidAt: localDate,
       id: 'sp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4)
     };
 
@@ -1730,7 +2078,7 @@ export const repository = {
         title: incomeTitle,
         amount: payout.amountPaid,
         source: 'Salary' as IncomeSource,
-        date: paidDate,
+        date: localDate,
         notes: incomeNotes,
         salaryPayoutId: newPayout.id,
         id: 'i_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -1788,14 +2136,21 @@ export const repository = {
   },
 
   async addDebt(
-    debt: Omit<Debt, 'id' | 'status' | 'remaining_amount' | 'created_at' | 'updated_at'>
+    debt: Omit<Debt, 'id' | 'status' | 'remaining_amount' | 'created_at' | 'updated_at'> & { direction?: DebtDirection }
   ): Promise<Debt> {
     if (!debt.person_name || !debt.person_name.trim()) {
-      throw new Error("Borrower's name is required.");
+      throw new Error('Person name is required.');
     }
-    if (debt.original_amount <= 0) {
+    if (!Number.isFinite(debt.original_amount) || debt.original_amount <= 0) {
       throw new Error('Loan amount must be greater than zero.');
     }
+
+    const direction = debt.direction || 'receive';
+    const prefix = direction === 'pay' ? '[PAY] ' : '[RECEIVE] ';
+    const rawDesc = debt.description ? debt.description.trim() : '';
+    const storedDesc = rawDesc
+      ? (rawDesc.startsWith('[PAY]') || rawDesc.startsWith('[RECEIVE]') ? rawDesc : `${prefix}${rawDesc}`)
+      : prefix.trim();
 
     const ctx = await requirePersistenceContext();
 
@@ -1805,7 +2160,7 @@ export const repository = {
         .insert({
           user_id: ctx.user.id,
           person_name: debt.person_name.trim(),
-          description: debt.description ? debt.description.trim() : null,
+          description: storedDesc,
           original_amount: debt.original_amount,
           lent_date: debt.lent_date,
           due_date: debt.due_date || null,
@@ -1827,6 +2182,8 @@ export const repository = {
     const newDebt: Debt = {
       ...debt,
       person_name: debt.person_name.trim(),
+      description: rawDesc,
+      direction,
       remaining_amount: debt.original_amount,
       id: 'd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
       status: 'outstanding',
@@ -1839,13 +2196,33 @@ export const repository = {
 
   async updateDebt(
     id: string,
-    updates: Partial<Pick<Debt, 'person_name' | 'original_amount' | 'lent_date' | 'due_date' | 'description' | 'notes'>>
+    updates: Partial<Pick<Debt, 'person_name' | 'original_amount' | 'lent_date' | 'due_date' | 'description' | 'notes' | 'direction'>>
   ): Promise<void> {
-    if (updates.original_amount !== undefined && updates.original_amount <= 0) {
+    if (updates.original_amount !== undefined && (!Number.isFinite(updates.original_amount) || updates.original_amount <= 0)) {
       throw new Error('Loan amount must be greater than zero.');
     }
 
+    const targetDebt = memoryState.debts.find(d => d.id === id);
+    if (!targetDebt) {
+      throw new Error('Debt record not found.');
+    }
+
+    const repaid = memoryState.debtRepayments
+      .filter(r => r.debt_id === id)
+      .reduce((sum, r) => sum + r.amount, 0);
+
+    if (updates.original_amount !== undefined && updates.original_amount < repaid - 0.001) {
+      throw new Error(`New amount (${updates.original_amount}) cannot be less than total repayments already recorded (${repaid}).`);
+    }
+
     const ctx = await requirePersistenceContext();
+    const nextDirection = updates.direction !== undefined ? updates.direction : (targetDebt.direction || 'receive');
+    const prefix = nextDirection === 'pay' ? '[PAY] ' : '[RECEIVE] ';
+    const existingCleanDesc = targetDebt.description || '';
+    const updatedDescInput = updates.description !== undefined ? updates.description.trim() : existingCleanDesc;
+    const storedDesc = updatedDescInput
+      ? (updatedDescInput.startsWith('[PAY]') || updatedDescInput.startsWith('[RECEIVE]') ? updatedDescInput : `${prefix}${updatedDescInput}`)
+      : prefix.trim();
 
     if (ctx.mode === 'supabase') {
       const dbPayload: Record<string, any> = {};
@@ -1853,7 +2230,9 @@ export const repository = {
       if (updates.original_amount !== undefined) dbPayload.original_amount = updates.original_amount;
       if (updates.lent_date !== undefined) dbPayload.lent_date = updates.lent_date;
       if (updates.due_date !== undefined) dbPayload.due_date = updates.due_date || null;
-      if (updates.description !== undefined) dbPayload.description = updates.description ? updates.description.trim() : null;
+      if (updates.description !== undefined || updates.direction !== undefined) {
+        dbPayload.description = storedDesc;
+      }
       if (updates.notes !== undefined) dbPayload.notes = updates.notes ? updates.notes.trim() : null;
 
       if (Object.keys(dbPayload).length === 0) {
@@ -1881,15 +2260,14 @@ export const repository = {
     memoryState.debts = memoryState.debts.map(d => {
       if (d.id !== id) return d;
       const nextOriginal = updates.original_amount ?? d.original_amount;
-      const repaid = memoryState.debtRepayments
-        .filter(r => r.debt_id === id)
-        .reduce((sum, r) => sum + r.amount, 0);
       const nextRemaining = Math.max(0, Number((nextOriginal - repaid).toFixed(2)));
       const nextStatus: DebtStatus =
         nextRemaining <= 0.0001 ? 'paid' : repaid > 0 ? 'partially_paid' : 'outstanding';
       return {
         ...d,
         ...updates,
+        description: updatedDescInput,
+        direction: nextDirection,
         remaining_amount: nextRemaining,
         status: nextStatus,
         updated_at: getTodayString()
@@ -1963,10 +2341,10 @@ export const repository = {
         user_id: ctx.user.id,
         amount: repayment.amount,
         repayment_date: repayment.repayment_date,
-        notes: repayment.notes ? repayment.notes.trim() : null
+        notes: repayment.notes?.trim() ? repayment.notes.trim() : null
       };
-      if (repayment.payment_method) {
-        insertPayload.payment_method = repayment.payment_method;
+      if (repayment.payment_method?.trim()) {
+        insertPayload.payment_method = repayment.payment_method.trim();
       }
 
       const { data: dbRep, error } = await ctx.client

@@ -20,9 +20,29 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { repository, configureRepositoryBackendForTests } from '../services/repository';
-import { parseCalendarDate, formatDate, formatHumanDate } from '../utils/formatters';
-import { filterRecordsByDateRange } from '../utils/calculations';
+import {
+  repository,
+  configureRepositoryBackendForTests,
+  SettingsBundleSaveError,
+  toDbWeekStartDay,
+  fromDbWeekStartDay,
+  toDbAttendanceStatus,
+  fromDbAttendanceStatus,
+  toDbGoalStatus,
+  fromDbGoalStatus,
+  toDbGoalPriority,
+  fromDbGoalPriority,
+  toDbRecurrenceFrequency,
+  fromDbRecurrenceFrequency
+} from '../services/repository';
+import {
+  parseCalendarDate,
+  formatDate,
+  formatHumanDate,
+  localDateInputToUtcIso,
+  utcTimestampToLocalDate
+} from '../utils/formatters';
+import { calculateMonthlySalarySummary, filterRecordsByDateRange } from '../utils/calculations';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -638,7 +658,7 @@ async function runPersistenceTests() {
       let incomesShouldFail = false;
       const partialClient = createMockSupabase(USER_A, {
         expenses: () => ({
-          data: [{ id: UUID_1, title: 'Internet', amount: 999, category: 'Utilities', expense_date: '2026-05-01', payment_method: 'Bank Transfer', is_recurring: false, recurrence_frequency: 'None', created_at: '2026-05-01' }],
+          data: [{ id: UUID_1, title: 'Internet', amount: 999, category: 'Utilities', expense_date: '2026-05-01', payment_method: 'Bank Transfer', is_recurring: false, recurrence_frequency: null, created_at: '2026-05-01' }],
           error: null
         }),
         incomes: () => incomesShouldFail
@@ -678,7 +698,7 @@ async function runPersistenceTests() {
             });
           }
           return {
-            data: [{ id: UUID_4, title: 'User B Expense', amount: 250, category: 'Food', expense_date: '2026-05-03', payment_method: 'Cash', is_recurring: false, recurrence_frequency: 'None', created_at: '2026-05-03' }],
+            data: [{ id: UUID_4, title: 'User B Expense', amount: 250, category: 'Food', expense_date: '2026-05-03', payment_method: 'Cash', is_recurring: false, recurrence_frequency: null, created_at: '2026-05-03' }],
             error: null
           };
         }
@@ -696,7 +716,7 @@ async function runPersistenceTests() {
       assert(repository.getExpenses().length === 1 && repository.getExpenses()[0].id === UUID_4, 'User B expenses active');
 
       resolveUserAFetch({
-        data: [{ id: UUID_3, title: 'User A Stale Expense', amount: 9999, category: 'Other', expense_date: '2026-05-01', payment_method: 'Cash', is_recurring: false, recurrence_frequency: 'None', created_at: '2026-05-01' }],
+        data: [{ id: UUID_3, title: 'User A Stale Expense', amount: 9999, category: 'Other', expense_date: '2026-05-01', payment_method: 'Cash', is_recurring: false, recurrence_frequency: null, created_at: '2026-05-01' }],
         error: null
       });
 
@@ -798,19 +818,19 @@ async function runPersistenceTests() {
         user_id: USER_A,
         currency_code: null,
         date_format: 'YYYY-MM-DD',
-        week_starts_on: 'Monday',
+        week_starts_on: 1,
         expense_categories: ['Food', 'Other'],
         income_sources: ['Salary', 'Other']
       };
       await repository.fetchAllUserData(USER_A);
       assert(repository.getSettings().currency === 'INR', 'Null currency_code column defaults to INR');
 
-      // Existing saved USD -> preserved!
+      // Existing saved USD -> preserved! And SMALLINT week_starts_on 0 -> Sunday!
       settingsRow = {
         user_id: USER_A,
         currency_code: 'USD',
         date_format: 'MM/DD/YYYY',
-        week_starts_on: 'Sunday',
+        week_starts_on: 0,
         expense_categories: ['Housing', 'Other'],
         income_sources: ['Freelance', 'Other']
       };
@@ -820,14 +840,15 @@ async function runPersistenceTests() {
       assert(repository.getSettings().salaryConfig.currency === 'USD', 'salary_configs currency_code USD mapped');
       assert(repository.getSettings().salaryConfig.standardWorkingHours === 7, 'salary_configs standard_hours mapped');
       assert(repository.getSettings().dateFormat === 'MM/DD/YYYY', 'Saved date format preserved');
-      assert(repository.getSettings().weekStartDay === 'Sunday', 'Saved week_starts_on preserved');
+      assert(repository.getSettings().weekStartDay === 'Sunday', 'Saved week_starts_on 0 maps to Sunday');
       assert(repository.getSettings().customExpenseCategories.join(',') === 'Housing,Other', 'Saved expense_categories preserved');
 
-      // Existing saved EUR -> preserved!
-      settingsRow = { user_id: USER_A, currency_code: 'EUR', date_format: 'DD/MM/YYYY', week_starts_on: 'Monday' };
+      // Existing saved EUR -> preserved! And SMALLINT week_starts_on 1 -> Monday!
+      settingsRow = { user_id: USER_A, currency_code: 'EUR', date_format: 'DD/MM/YYYY', week_starts_on: 1 };
       salaryConfigRow = { user_id: USER_A, currency_code: 'EUR', daily_base_salary: 180, standard_hours: 8, extra_hour_rate: 30 };
       await repository.fetchAllUserData(USER_A);
       assert(repository.getSettings().currency === 'EUR', 'Saved EUR currency_code preference MUST be preserved');
+      assert(repository.getSettings().weekStartDay === 'Monday', 'Saved week_starts_on 1 maps to Monday');
       assert(repository.getSettings().salaryConfig.currency === 'EUR', 'salary_configs currency_code EUR mapped');
     }
     console.log('✓ Test 13 passed.');
@@ -966,14 +987,410 @@ async function runPersistenceTests() {
       });
 
       assert(capturedUserSettings.currency_code === 'EUR', 'user_settings persisted currency_code EUR');
-      assert(capturedUserSettings.week_starts_on === 'Monday', 'user_settings persisted week_starts_on');
+      assert(capturedUserSettings.week_starts_on === 1, 'user_settings persisted numeric SMALLINT week_starts_on = 1 for Monday');
       assert(capturedSalaryCfg.currency_code === 'EUR' && capturedSalaryCfg.standard_hours === 8, 'salary_configs persisted currency_code & standard_hours');
       assert(repository.getSettings().currency === 'EUR', 'memoryState updated to EUR');
+      assert(repository.getSettings().weekStartDay === 'Monday', 'memoryState weekStartDay hydrated to Monday');
     }
     console.log('✓ Test 15 passed.');
 
+    // =========================================================================
+    // TEST 16: week_starts_on Integer Conversion & Falsy-0 Guard
+    // =========================================================================
+    console.log('Test 16: week_starts_on SMALLINT (0/1) round-trip & falsy-0 guard...');
+    {
+      assert(toDbWeekStartDay('Sunday') === 0, 'Sunday -> 0');
+      assert(toDbWeekStartDay('Monday') === 1, 'Monday -> 1');
+      assert(fromDbWeekStartDay(0, 'Monday') === 'Sunday', 'DB 0 -> Sunday even when fallback is Monday');
+      assert(fromDbWeekStartDay(1, 'Sunday') === 'Monday', 'DB 1 -> Monday');
+
+      const writtenWeekStarts: any[] = [];
+      let persistedRow: any = null;
+      const weekClient = createMockSupabase(USER_A, {
+        profiles: () => ({ data: { id: USER_A, display_name: 'Tester' }, error: null }),
+        user_settings: (ctx) => {
+          if (ctx.op === 'upsert') {
+            assert(typeof ctx.payload.week_starts_on === 'number', 'week_starts_on MUST be written as integer');
+            writtenWeekStarts.push(ctx.payload.week_starts_on);
+            persistedRow = { ...ctx.payload };
+            return { data: persistedRow, error: null };
+          }
+          return { data: persistedRow, error: null };
+        },
+        salary_configs: (ctx) => ({ data: ctx.payload, error: null })
+      });
+
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      configureRepositoryBackendForTests(weekClient, true);
+
+      await repository.persistSettingsBundle({
+        displayName: 'Tester',
+        currency: 'INR',
+        dateFormat: 'YYYY-MM-DD',
+        weekStartDay: 'Sunday',
+        customExpenseCategories: ['Food'],
+        customIncomeSources: ['Salary'],
+        widgets: [{ id: 'w1', name: 'Balance', visible: true, order: 1 }],
+        salaryConfig: { dailyBaseSalary: 500, standardWorkingHours: 8, extraHourRate: 100, currency: 'INR' }
+      });
+
+      assert(writtenWeekStarts[0] === 0, 'Persisting Sunday writes integer 0');
+      assert(repository.getSettings().weekStartDay === 'Sunday', 'memoryState preserves Sunday for week_starts_on = 0');
+
+      await repository.fetchAllUserData(USER_A);
+      assert(repository.getSettings().weekStartDay === 'Sunday', 'Re-fetching DB row week_starts_on = 0 hydrates Sunday');
+
+      await repository.persistSettingsBundle({
+        currency: 'INR',
+        dateFormat: 'YYYY-MM-DD',
+        weekStartDay: 'Monday',
+        customExpenseCategories: ['Food'],
+        customIncomeSources: ['Salary'],
+        widgets: [{ id: 'w1', name: 'Balance', visible: true, order: 1 }],
+        salaryConfig: { dailyBaseSalary: 500, standardWorkingHours: 8, extraHourRate: 100, currency: 'INR' }
+      });
+      assert(writtenWeekStarts[1] === 1, 'Persisting Monday writes integer 1');
+      assert(repository.getSettings().weekStartDay === 'Monday', 'memoryState hydrates Monday for 1');
+    }
+    console.log('✓ Test 16 passed.');
+
+    // =========================================================================
+    // TEST 17: attendance_records.status Lowercase DB Enum & Calculations
+    // =========================================================================
+    console.log('Test 17: attendance_records lowercase DB enum round-trip & salary calculations...');
+    {
+      assert(toDbAttendanceStatus('Present') === 'present', 'Present -> present');
+      assert(toDbAttendanceStatus('Absent') === 'absent', 'Absent -> absent');
+      assert(toDbAttendanceStatus('Leave') === 'leave', 'Leave -> leave');
+      assert(toDbAttendanceStatus('Holiday') === 'holiday', 'Holiday -> holiday');
+      assert(fromDbAttendanceStatus('present') === 'Present', 'present -> Present');
+      assert(fromDbAttendanceStatus('absent') === 'Absent', 'absent -> Absent');
+      assert(fromDbAttendanceStatus('leave') === 'Leave', 'leave -> Leave');
+      assert(fromDbAttendanceStatus('holiday') === 'Holiday', 'holiday -> Holiday');
+
+      const dbAttendanceRows: any[] = [];
+      const writtenStatuses: string[] = [];
+      const attClient = createMockSupabase(USER_A, {
+        attendance_records: (ctx) => {
+          if (ctx.op === 'upsert') {
+            writtenStatuses.push(ctx.payload.status);
+            assert(
+              ctx.payload.status === ctx.payload.status.toLowerCase(),
+              `DB status must be lowercase, got ${ctx.payload.status}`
+            );
+            const saved = { id: `att_${writtenStatuses.length}`, ...ctx.payload, created_at: '2026-05-01' };
+            dbAttendanceRows.push(saved);
+            return { data: saved, error: null };
+          }
+          return { data: dbAttendanceRows, error: null };
+        }
+      });
+
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      configureRepositoryBackendForTests(attClient, true);
+
+      await repository.upsertAttendanceRecord({ date: '2026-05-01', status: 'Present', checkInTime: '09:00', checkOutTime: '18:00', breakDurationMinutes: 0 });
+      await repository.upsertAttendanceRecord({ date: '2026-05-02', status: 'Absent' });
+      await repository.upsertAttendanceRecord({ date: '2026-05-03', status: 'Leave' });
+      await repository.upsertAttendanceRecord({ date: '2026-05-04', status: 'Holiday' });
+
+      assert(writtenStatuses.join(',') === 'present,absent,leave,holiday', `Expected lowercase statuses, got ${writtenStatuses.join(',')}`);
+
+      // Reload from DB and verify Title Case hydration + salary calculations
+      repository.clearUserData();
+      await repository.fetchAllUserData(USER_A);
+      const loaded = repository.getAttendance();
+      assert(loaded.map(r => r.status).join(',') === 'Present,Absent,Leave,Holiday', 'All 4 statuses hydrate to Title Case');
+
+      const summary = calculateMonthlySalarySummary(loaded, [], repository.getSettings().salaryConfig, '2026-05');
+      assert(summary.presentDays === 1 && summary.absentDays === 1 && summary.leaveDays === 1 && summary.holidayDays === 1, 'Monthly stats count all 4 statuses after hydration');
+      assert(summary.earnedSalary === 600, `Expected 500 + 1*100 = 600 earned salary, got ${summary.earnedSalary}`);
+    }
+    console.log('✓ Test 17 passed.');
+
+    // =========================================================================
+    // TEST 18: goals.status & goals.priority Snake/Lowercase Mapping
+    // =========================================================================
+    console.log('Test 18: goals status/priority DB enum conversions & Completed progress sync...');
+    {
+      assert(toDbGoalStatus('Not Started') === 'not_started', 'Not Started -> not_started');
+      assert(toDbGoalStatus('In Progress') === 'in_progress', 'In Progress -> in_progress');
+      assert(toDbGoalStatus('Completed') === 'completed', 'Completed -> completed');
+      assert(toDbGoalStatus('Paused') === 'paused', 'Paused -> paused');
+      assert(fromDbGoalStatus('cancelled') === 'Paused', 'DB cancelled maps safely to Paused');
+      assert(toDbGoalPriority('Low') === 'low' && toDbGoalPriority('Medium') === 'medium' && toDbGoalPriority('High') === 'high', 'Priorities convert to lowercase');
+      assert(fromDbGoalPriority('low') === 'Low' && fromDbGoalPriority('medium') === 'Medium' && fromDbGoalPriority('high') === 'High', 'DB priorities hydrate cleanly');
+
+      const dbGoals: any[] = [];
+      let lastGoalUpdate: any = null;
+      const goalsClient = createMockSupabase(USER_A, {
+        goals: (ctx) => {
+          if (ctx.op === 'insert') {
+            assert(['not_started', 'in_progress', 'completed', 'paused'].includes(ctx.payload.status), `Invalid DB goal status: ${ctx.payload.status}`);
+            assert(['low', 'medium', 'high'].includes(ctx.payload.priority), `Invalid DB goal priority: ${ctx.payload.priority}`);
+            const row = { id: `goal_${dbGoals.length + 1}`, ...ctx.payload, created_at: '2026-05-01T00:00:00Z' };
+            dbGoals.push(row);
+            return { data: row, error: null };
+          }
+          if (ctx.op === 'update') {
+            lastGoalUpdate = ctx.payload;
+            const idFilter = ctx.filters.find(f => f.col === 'id')?.val;
+            const idx = dbGoals.findIndex(g => g.id === idFilter);
+            if (idx >= 0) {
+              dbGoals[idx] = { ...dbGoals[idx], ...ctx.payload };
+              return { data: dbGoals[idx], error: null };
+            }
+            return { data: null, error: { message: 'Goal not found' } };
+          }
+          return { data: dbGoals, error: null };
+        }
+      });
+
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      configureRepositoryBackendForTests(goalsClient, true);
+
+      await repository.addGoal({ title: 'G1', description: '', category: 'Career', progressPercentage: 0, priority: 'Low', status: 'Not Started' });
+      await repository.addGoal({ title: 'G2', description: '', category: 'Health', progressPercentage: 40, priority: 'Medium', status: 'In Progress' });
+      await repository.addGoal({ title: 'G3', description: '', category: 'Financial', progressPercentage: 50, priority: 'High', status: 'Completed' });
+      await repository.addGoal({ title: 'G4', description: '', category: 'Travel', progressPercentage: 10, priority: 'Medium', status: 'Paused' });
+
+      assert(dbGoals.map(g => g.status).join(',') === 'not_started,in_progress,completed,paused', 'All 4 goal statuses written in snake_case');
+      assert(dbGoals.map(g => g.priority).join(',') === 'low,medium,high,medium', 'All 3 goal priorities written in lowercase');
+      assert(dbGoals[2].progress_percentage === 100 && Boolean(dbGoals[2].completed_at), 'Completed goal forces progress_percentage=100 & completed_at');
+
+      await repository.updateGoal('goal_2', { status: 'Completed', priority: 'High' });
+      assert(lastGoalUpdate.status === 'completed' && lastGoalUpdate.priority === 'high' && lastGoalUpdate.progress_percentage === 100, 'updateGoal writes lowercase/snake_case and syncs 100% progress');
+
+      // Simulate DB row with cancelled status hydrating cleanly
+      dbGoals.push({ id: 'goal_5', title: 'Cancelled One', description: '', category: 'Life', progress_percentage: 20, priority: 'low', status: 'cancelled', created_at: '2026-05-01' });
+      repository.clearUserData();
+      await repository.fetchAllUserData(USER_A);
+      const hydrated = repository.getGoals();
+      assert(hydrated.find(g => g.id === 'goal_5')?.status === 'Paused', 'DB cancelled status hydrates to Paused safely');
+      assert(hydrated.find(g => g.id === 'goal_1')?.status === 'Not Started' && hydrated.find(g => g.id === 'goal_1')?.priority === 'Low', 'Not Started & Low round-trip accurately');
+    }
+    console.log('✓ Test 18 passed.');
+
+    // =========================================================================
+    // TEST 19: expenses.recurrence_frequency NULL & Lowercase Validation
+    // =========================================================================
+    console.log('Test 19: expenses recurrence_frequency NULL vs lowercase CHECK constraint...');
+    {
+      assert(toDbRecurrenceFrequency(false, 'Monthly') === null, 'isRecurring=false always yields NULL');
+      assert(toDbRecurrenceFrequency(false, 'None') === null, 'None yields NULL');
+      assert(toDbRecurrenceFrequency(true, 'Daily') === 'daily', 'Daily -> daily');
+      assert(toDbRecurrenceFrequency(true, 'Weekly') === 'weekly', 'Weekly -> weekly');
+      assert(toDbRecurrenceFrequency(true, 'Monthly') === 'monthly', 'Monthly -> monthly');
+      assert(toDbRecurrenceFrequency(true, 'Yearly') === 'yearly', 'Yearly -> yearly');
+      assert(fromDbRecurrenceFrequency(false, null) === 'None', 'NULL -> None on hydrate');
+      assert(fromDbRecurrenceFrequency(true, 'monthly') === 'Monthly', 'monthly -> Monthly on hydrate');
+
+      const dbExpenses: any[] = [];
+      let expUpdatePayload: any = null;
+      const expClient = createMockSupabase(USER_A, {
+        expenses: (ctx) => {
+          if (ctx.op === 'insert') {
+            if (!ctx.payload.is_recurring) {
+              assert(ctx.payload.recurrence_frequency === null, 'Non-recurring expense MUST store recurrence_frequency = NULL');
+            } else {
+              assert(['daily', 'weekly', 'monthly', 'yearly'].includes(ctx.payload.recurrence_frequency), `Recurring frequency must be lowercase allowed enum, got ${ctx.payload.recurrence_frequency}`);
+            }
+            const row = { id: `exp_${dbExpenses.length + 1}`, ...ctx.payload, created_at: '2026-05-01' };
+            dbExpenses.push(row);
+            return { data: row, error: null };
+          }
+          if (ctx.op === 'update') {
+            expUpdatePayload = ctx.payload;
+            const idFilter = ctx.filters.find(f => f.col === 'id')?.val;
+            const idx = dbExpenses.findIndex(e => e.id === idFilter);
+            dbExpenses[idx] = { ...dbExpenses[idx], ...ctx.payload };
+            return { data: dbExpenses[idx], error: null };
+          }
+          return { data: dbExpenses, error: null };
+        }
+      });
+
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      configureRepositoryBackendForTests(expClient, true);
+
+      // Non-recurring with 'None' writes NULL
+      const nonRec = await repository.addExpense({
+        title: 'Lunch', amount: 250, category: 'Food', date: '2026-05-01', paymentMethod: 'Cash', isRecurring: false, recurringFrequency: 'None'
+      });
+      assert(dbExpenses[0].recurrence_frequency === null && nonRec.recurringFrequency === 'None', 'Non-recurring stores NULL and hydrates as None');
+
+      // Invalid: isRecurring=true with 'None' MUST reject before hitting DB
+      let invalidRejected = false;
+      try {
+        await repository.addExpense({
+          title: 'Bad Rec', amount: 100, category: 'Other', date: '2026-05-01', paymentMethod: 'Cash', isRecurring: true, recurringFrequency: 'None'
+        });
+      } catch {
+        invalidRejected = true;
+      }
+      assert(invalidRejected, 'isRecurring=true with None must reject before DB write');
+
+      // Valid recurring expenses
+      const recMonthly = await repository.addExpense({
+        title: 'Fiber Internet', amount: 999, category: 'Utilities', date: '2026-05-01', paymentMethod: 'Bank Transfer', isRecurring: true, recurringFrequency: 'Monthly', recurrenceEndDate: '2026-12-31'
+      });
+      assert(dbExpenses[1].recurrence_frequency === 'monthly' && recMonthly.recurringFrequency === 'Monthly', 'Monthly stored lowercase and hydrated Title Case');
+
+      // Turning off recurrence on update MUST clear recurrence_frequency & recurrence_end_date to NULL
+      await repository.updateExpense('exp_2', { isRecurring: false });
+      assert(expUpdatePayload.is_recurring === false && expUpdatePayload.recurrence_frequency === null && expUpdatePayload.recurrence_end_date === null, 'Disabling isRecurring sets recurrence_frequency & recurrence_end_date to NULL');
+      assert(repository.getExpenses().find(e => e.id === 'exp_2')?.recurringFrequency === 'None', 'Updated state shows None when recurrence turned off');
+    }
+    console.log('✓ Test 19 passed.');
+
+    // =========================================================================
+    // TEST 20: Salary Payout Timezone UTC Conversion & IST (+05:30) Midnight Round-Trip
+    // =========================================================================
+    console.log('Test 20: Salary payout real UTC conversion & IST (+05:30) midnight round-trip...');
+    {
+      // IST is UTC+05:30 (+330 minutes).
+      // Instant: 2026-05-30T19:00:00.000Z === 2026-05-31 00:30:00 IST
+      const istMidnightNow = new Date('2026-05-30T19:00:00.000Z');
+      const istConv = localDateInputToUtcIso('2026-05-31', istMidnightNow, 330);
+      assert(istConv.paidAtIso === '2026-05-30T19:00:00.000Z', `Expected true UTC 2026-05-30T19:00:00.000Z, got ${istConv.paidAtIso}`);
+      assert(istConv.localDate === '2026-05-31', `Expected local IST date 2026-05-31, got ${istConv.localDate}`);
+      assert(istConv.localTime === '00:30:00', `Expected local IST time 00:30:00, got ${istConv.localTime}`);
+
+      // Hydrating UTC timestamp near midnight back in IST (+330) vs UTC (0)
+      assert(utcTimestampToLocalDate('2026-05-30T19:00:00Z', 330) === '2026-05-31', 'UTC 19:00 hydrates to 2026-05-31 in IST (+05:30), NOT 2026-05-30');
+      assert(utcTimestampToLocalDate('2026-05-30T19:00:00Z', 0) === '2026-05-30', 'UTC 19:00 hydrates to 2026-05-30 in UTC');
+
+      // Verify repository recordSalaryPayout sends true UTC ISO matching local date -> UTC -> local date round-trip
+      let capturedRpcArgs: any = null;
+      const tzClient = createMockSupabase(
+        USER_A,
+        {},
+        (fn, args) => {
+          if (fn === 'xos_record_salary_payout') {
+            capturedRpcArgs = args;
+            return {
+              data: {
+                payout: {
+                  id: UUID_1,
+                  period_start: args.p_period_start,
+                  period_end: args.p_period_end,
+                  amount_paid: args.p_amount_paid,
+                  paid_at: args.p_paid_at,
+                  notes: args.p_notes,
+                  created_at: args.p_paid_at
+                },
+                income: null
+              },
+              error: null
+            };
+          }
+          return { data: null, error: null };
+        }
+      );
+
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      configureRepositoryBackendForTests(tzClient, true);
+
+      const savedTzPayout = await repository.recordSalaryPayout(
+        { periodStart: '2026-05-01', periodEnd: '2026-05-31', amountPaid: 8000, paidAt: '2026-05-31', notes: 'TZ check' },
+        false,
+        false
+      );
+      assert(capturedRpcArgs.p_income_date === '2026-05-31', 'Income date matches local date');
+      assert(/^\d{2}:\d{2}:\d{2}$/.test(capturedRpcArgs.p_income_time), 'Income time normalized to HH:mm:ss');
+      assert(!isNaN(new Date(capturedRpcArgs.p_paid_at).getTime()), 'p_paid_at is valid ISO timestamp');
+      assert(savedTzPayout.paidAt === '2026-05-31', `Round-trip paidAt must equal 2026-05-31, got ${savedTzPayout.paidAt}`);
+    }
+    console.log('✓ Test 20 passed.');
+
+    // =========================================================================
+    // TEST 21: persistSettingsBundle Partial-Save Failure Reconciliation
+    // =========================================================================
+    console.log('Test 21: persistSettingsBundle partial-save failure only reconciles succeeded tables...');
+    {
+      let failSalaryConfig = true;
+      let failUserSettings = false;
+
+      const partialSaveClient = createMockSupabase(USER_A, {
+        user_settings: (ctx) => {
+          if (failUserSettings) return { data: null, error: { message: 'user_settings constraint error' } };
+          return { data: ctx.payload, error: null };
+        },
+        salary_configs: (ctx) => {
+          if (failSalaryConfig) return { data: null, error: { message: 'salary_configs check violation' } };
+          return { data: ctx.payload, error: null };
+        },
+        profiles: (ctx) => ({ data: { id: USER_A, display_name: ctx.payload.display_name }, error: null })
+      });
+
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      configureRepositoryBackendForTests(partialSaveClient, true);
+
+      // Baseline defaults: INR, Monday, dailyBaseSalary = 500
+      assert(repository.getSettings().salaryConfig.dailyBaseSalary === 500, 'Initial dailyBaseSalary is 500');
+
+      let partialErr: any = null;
+      try {
+        await repository.persistSettingsBundle({
+          displayName: 'Updated Name',
+          currency: 'EUR',
+          dateFormat: 'DD/MM/YYYY',
+          weekStartDay: 'Sunday',
+          customExpenseCategories: ['Food'],
+          customIncomeSources: ['Salary'],
+          widgets: [{ id: 'w1', name: 'Balance', visible: true, order: 1 }],
+          salaryConfig: { dailyBaseSalary: 999, standardWorkingHours: 9, extraHourRate: 250, currency: 'EUR' }
+        });
+      } catch (err) {
+        partialErr = err;
+      }
+
+      assert(partialErr instanceof SettingsBundleSaveError, 'Must throw SettingsBundleSaveError on partial failure');
+      assert(partialErr.succeededSections.includes('user_settings') && partialErr.succeededSections.includes('profiles'), 'Reports user_settings and profiles succeeded');
+      assert(partialErr.failedSections.some((f: any) => f.section === 'salary_configs'), 'Reports salary_configs failed');
+      assert(partialErr.message.includes('Partial save') && partialErr.message.includes('Salary Configuration'), 'Error message explains succeeded vs failed sections');
+
+      // Succeeded sections ARE reconciled into memoryState, while failed salary_configs MUST stay at 500!
+      assert(repository.getSettings().currency === 'EUR', 'Reconciled succeeded user_settings currency EUR');
+      assert(repository.getSettings().weekStartDay === 'Sunday', 'Reconciled succeeded user_settings Sunday (0)');
+      assert(repository.getSettings().profile.name === 'Updated Name', 'Reconciled succeeded profiles displayName');
+      assert(repository.getSettings().salaryConfig.dailyBaseSalary === 500, 'Failed salary_configs MUST NOT overwrite memoryState with unsaved 999');
+
+      // Now flip: user_settings fails while salary_configs succeeds
+      failUserSettings = true;
+      failSalaryConfig = false;
+      let secondErr: any = null;
+      try {
+        await repository.persistSettingsBundle({
+          displayName: 'Updated Name',
+          currency: 'USD',
+          dateFormat: 'MM/DD/YYYY',
+          weekStartDay: 'Monday',
+          customExpenseCategories: ['Other'],
+          customIncomeSources: ['Other'],
+          widgets: [{ id: 'w1', name: 'Balance', visible: true, order: 1 }],
+          salaryConfig: { dailyBaseSalary: 1200, standardWorkingHours: 8, extraHourRate: 150, currency: 'USD' }
+        });
+      } catch (err) {
+        secondErr = err;
+      }
+
+      assert(secondErr instanceof SettingsBundleSaveError, 'Must throw SettingsBundleSaveError when user_settings fails');
+      assert(secondErr.failedSections.some((f: any) => f.section === 'user_settings'), 'Reports user_settings failed');
+      assert(repository.getSettings().salaryConfig.dailyBaseSalary === 1200, 'Reconciled succeeded salary_configs (1200)');
+      assert(repository.getSettings().currency === 'EUR', 'Failed user_settings did NOT overwrite saved EUR with USD');
+      assert(repository.getSettings().weekStartDay === 'Sunday', 'Failed user_settings did NOT overwrite saved Sunday with Monday');
+    }
+    console.log('✓ Test 21 passed.');
+
     console.log('\n======================================================');
-    console.log('--- ALL 15 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
+    console.log('--- ALL 21 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
     console.log('======================================================');
   } finally {
     configureRepositoryBackendForTests(null, null);

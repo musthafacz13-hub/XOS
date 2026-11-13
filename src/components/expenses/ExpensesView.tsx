@@ -77,7 +77,9 @@ export const ExpensesView: React.FC = () => {
     setPaymentMethod(exp.paymentMethod);
     setNotes(exp.notes || '');
     setIsRecurring(!!exp.isRecurring);
-    setRecurringFrequency(exp.recurringFrequency || 'Monthly');
+    setRecurringFrequency(
+      exp.recurringFrequency && exp.recurringFrequency !== 'None' ? exp.recurringFrequency : 'Monthly'
+    );
     setIsModalOpen(true);
   };
 
@@ -535,7 +537,13 @@ export const ExpensesView: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={isRecurring}
-                    onChange={(e) => setIsRecurring(e.target.checked)}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setIsRecurring(checked);
+                      if (checked && recurringFrequency === 'None') {
+                        setRecurringFrequency('Monthly');
+                      }
+                    }}
                     className="rounded text-[#111111] focus:ring-[#87CEEB]"
                   />
                   <span>Recurring Payment</span>

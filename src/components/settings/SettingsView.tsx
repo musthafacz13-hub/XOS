@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   DollarSign, 
   Briefcase, 
@@ -19,6 +19,7 @@ import { ConfirmDialog } from '../common/ConfirmDialog';
 import { PDFExportModal } from '../modals/PDFExportModal';
 import { useAuth } from '../../context/AuthContext';
 import { isSupabaseConfigured } from '../../services/supabase';
+import { SettingsBundleSaveError, SettingsBundleSection } from '../../services/repository';
 
 type ConnectionStatus = 'connected' | 'unavailable' | 'signed_out';
 
@@ -47,6 +48,7 @@ export const SettingsView: React.FC = () => {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
+  const failedSectionsRef = useRef<Set<SettingsBundleSection>>(new Set());
 
   // Modals & Dialogs
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState<boolean>(false);
@@ -57,13 +59,19 @@ export const SettingsView: React.FC = () => {
   // Sync local form state when repository settings hydrate from Supabase or user switches
   useEffect(() => {
     if (isSaving) return;
-    setProfileName(data.settings.profile.name || user?.user_metadata?.full_name || '');
-    setCurrency(data.settings.currency || 'INR');
-    setDateFormat(data.settings.dateFormat || 'YYYY-MM-DD');
-    setWeekStartDay(data.settings.weekStartDay || 'Monday');
-    setSalaryConfig(data.settings.salaryConfig);
-    setExpenseCategories(data.settings.customExpenseCategories || []);
-    setIncomeSources(data.settings.customIncomeSources || []);
+    if (!failedSectionsRef.current.has('profiles')) {
+      setProfileName(data.settings.profile.name || user?.user_metadata?.full_name || '');
+    }
+    if (!failedSectionsRef.current.has('user_settings')) {
+      setCurrency(data.settings.currency || 'INR');
+      setDateFormat(data.settings.dateFormat || 'YYYY-MM-DD');
+      setWeekStartDay(data.settings.weekStartDay || 'Monday');
+      setExpenseCategories(data.settings.customExpenseCategories || []);
+      setIncomeSources(data.settings.customIncomeSources || []);
+    }
+    if (!failedSectionsRef.current.has('salary_configs')) {
+      setSalaryConfig(data.settings.salaryConfig);
+    }
   }, [data.settings, user?.user_metadata?.full_name, isSaving]);
 
   const settingsFetchErrors = data.fetchErrors.filter(e =>
@@ -84,6 +92,7 @@ export const SettingsView: React.FC = () => {
     if (e) e.preventDefault();
     if (isSaving) return;
 
+    failedSectionsRef.current.clear();
     setIsSaving(true);
     setSaveSuccessMessage(null);
     setSaveErrorMessage(null);
@@ -107,13 +116,20 @@ export const SettingsView: React.FC = () => {
         salaryConfig: nextSalaryConfig
       });
 
+      failedSectionsRef.current.clear();
       setSalaryConfig(nextSalaryConfig);
       setSaveSuccessMessage('Settings saved successfully.');
       setTimeout(() => setSaveSuccessMessage(null), 3500);
     } catch (err) {
       console.error('Failed to save settings:', err);
-      const msg = err instanceof Error ? err.message : 'Database update failed. Please try again.';
-      setSaveErrorMessage(`Error saving settings: ${msg}`);
+      if (err instanceof SettingsBundleSaveError) {
+        failedSectionsRef.current = new Set(err.failedSections.map(f => f.section));
+        setSaveErrorMessage(err.message);
+      } else {
+        failedSectionsRef.current = new Set(['user_settings', 'salary_configs', 'profiles']);
+        const msg = err instanceof Error ? err.message : 'Database update failed. Please try again.';
+        setSaveErrorMessage(`Error saving settings: ${msg}`);
+      }
       setTimeout(() => setSaveErrorMessage(null), 6000);
     } finally {
       setIsSaving(false);

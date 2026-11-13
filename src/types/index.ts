@@ -188,6 +188,7 @@ export interface DateRangeFilter {
 
 // DEBT MANAGEMENT (Receivables — live DB status enum)
 export type DebtStatus = 'outstanding' | 'partially_paid' | 'paid';
+export type DebtDirection = 'receive' | 'pay';
 
 export interface Debt {
   id: string;
@@ -201,6 +202,7 @@ export interface Debt {
   status: DebtStatus; // Trigger-maintained DB status
   created_at: string;
   updated_at?: string;
+  direction?: DebtDirection;
 }
 
 export interface DebtRepayment {
