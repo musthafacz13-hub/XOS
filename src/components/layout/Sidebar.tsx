@@ -22,6 +22,7 @@ import { WaterRippleContainer } from '../common/WaterRipple';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { MOTION_SPRINGS } from '../../utils/motion';
 import { useAuth } from '../../context/AuthContext';
+import { XOSLogo } from '../common/XOSLogo';
 
 export type ActiveTab = 
   | 'dashboard' 
@@ -106,13 +107,12 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
       {/* Brand Header */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-black/[0.06]">
         <div className="flex items-center gap-3 overflow-hidden">
-          <motion.div 
+          <motion.div
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="w-8 h-8 rounded-xl bg-[#111111] text-white flex items-center justify-center font-bold text-sm tracking-wider shrink-0 relative shadow-xs"
+            className="shrink-0"
           >
-            <span>X</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-[#87CEEB] absolute top-1.5 right-1.5" />
+            <XOSLogo size="md" />
           </motion.div>
           {!collapsed && (
             <motion.div 

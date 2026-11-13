@@ -6,6 +6,7 @@ import { ActiveTab, NAV_ITEMS } from './Sidebar';
 import { WaterRippleContainer } from '../common/WaterRipple';
 import { MOTION_SPRINGS } from '../../utils/motion';
 import { useAuth } from '../../context/AuthContext';
+import { XOSLogo } from '../common/XOSLogo';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -51,6 +52,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
     <header className="h-16 border-b border-black/[0.06] liquid-glass px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 sticky top-0 z-20">
       {/* Title & Date Breadcrumb */}
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <XOSLogo size="xs" className="md:hidden" />
         <h1 className="text-base sm:text-lg font-bold text-[#111111] tracking-tight truncate">
           {title}
         </h1>

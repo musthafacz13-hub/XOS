@@ -8,6 +8,7 @@ import { motion } from 'motion/react';
 import { ChevronLeft } from 'lucide-react';
 import { MotionCanvasBackground } from '../welcome/MotionCanvasBackground';
 import { pageVariants } from '../../utils/motion';
+import { XOSLogo } from '../common/XOSLogo';
 
 interface AuthLayoutProps {
   children: React.ReactNode;
@@ -54,10 +55,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
           {/* Header */}
           <div className="space-y-1.5 text-left">
             <div className="flex items-center gap-2 mb-3">
-              <div className="w-7 h-7 rounded-xl bg-[#111111] text-white flex items-center justify-center font-bold text-xs tracking-wider relative shadow-xs">
-                <span>X</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-[#87CEEB] absolute top-1 right-1" />
-              </div>
+              <XOSLogo size="sm" />
               <span className="text-xs font-bold text-neutral-400 tracking-wider uppercase">
                 XOS Account
               </span>

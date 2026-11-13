@@ -4,6 +4,7 @@ import { ActiveTab, NAV_ITEMS, Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { MobileBottomNav } from './components/layout/MobileBottomNav';
 import { WelcomeView } from './components/welcome/WelcomeView';
+import { XOSLogo } from './components/common/XOSLogo';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { useXOSData } from './hooks/useXOSData';
@@ -212,13 +213,11 @@ function XOSApplication() {
       <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4">
         <div className="flex flex-col items-center space-y-4">
           <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
+            initial={{ scale: 0.92, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.3 }}
-            className="w-12 h-12 rounded-2xl bg-[#111111] text-white flex items-center justify-center font-bold text-lg tracking-wider relative shadow-md"
+            transition={{ duration: 0.25 }}
           >
-            <span>X</span>
-            <span className="w-2 h-2 rounded-full bg-[#87CEEB] absolute top-2 right-2 animate-pulse" />
+            <XOSLogo size="lg" className="shadow-sm" />
           </motion.div>
           <div className="text-center space-y-1">
             <span className="font-bold text-sm text-[#111111] tracking-tight block">XOS</span>
