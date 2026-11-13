@@ -68,7 +68,6 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
 
   // Goal State
   const [goalTitle, setGoalTitle] = useState('');
-  const [goalProgress, setGoalProgress] = useState('0');
   const [goalCategory, setGoalCategory] = useState('Personal');
   const [goalTargetAmount, setGoalTargetAmount] = useState('');
   const [goalTargetDate, setGoalTargetDate] = useState('');
@@ -105,7 +104,6 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       setAttDate(nowToday);
       setAttNotes('');
       setGoalTitle('');
-      setGoalProgress('0');
       setGoalTargetAmount('');
       setGoalTargetDate('');
       setSavingsAmount('');
@@ -212,7 +210,11 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   const handleAddGoal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!goalTitle.trim() || isSubmitting) return;
-    const parsedProgress = Math.max(0, Math.min(100, Math.round(Number(goalProgress) || 0)));
+    const parsedTarget = parseFloat(goalTargetAmount);
+    if (isNaN(parsedTarget) || parsedTarget <= 0) {
+      setActionError('Target amount is required and must be greater than zero.');
+      return;
+    }
     setActionError(null);
     setIsSubmitting(true);
     try {
@@ -220,11 +222,9 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
         title: goalTitle.trim(),
         description: '',
         category: goalCategory,
-        targetAmount: goalTargetAmount ? parseFloat(goalTargetAmount) : undefined,
-        progressPercentage: parsedProgress,
+        targetAmount: parsedTarget,
         targetDate: goalTargetDate || undefined,
-        priority: goalPriority,
-        status: parsedProgress >= 100 ? 'Completed' : 'In Progress'
+        priority: goalPriority
       });
       onClose();
     } catch (err: any) {
@@ -627,13 +627,15 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Progress (%)</label>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Target Amount ({data.settings.currency}) *</label>
                   <input
                     type="number"
-                    min="0"
-                    max="100"
-                    value={goalProgress}
-                    onChange={(e) => setGoalProgress(e.target.value)}
+                    step="0.01"
+                    min="0.01"
+                    required
+                    placeholder="e.g. 5000"
+                    value={goalTargetAmount}
+                    onChange={(e) => setGoalTargetAmount(e.target.value)}
                     className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
                   />
                 </div>
@@ -656,15 +658,16 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Target Amount (Optional)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="e.g. 5000"
-                    value={goalTargetAmount}
-                    onChange={(e) => setGoalTargetAmount(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                  />
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Priority</label>
+                  <select
+                    value={goalPriority}
+                    onChange={(e) => setGoalPriority(e.target.value as 'Low' | 'Medium' | 'High')}
+                    className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+                  >
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-neutral-700 mb-1">Target Date (Optional)</label>

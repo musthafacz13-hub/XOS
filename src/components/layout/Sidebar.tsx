@@ -52,12 +52,11 @@ export interface NavItemConfig {
 
 export const NAV_ITEMS: NavItemConfig[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, category: 'core' },
-  { id: 'goals', label: 'Goals & Dreams', icon: Target, category: 'core' },
+  { id: 'goals', label: 'Goals & Savings', icon: Target, category: 'core' },
   { id: 'expenses', label: 'Expenses', icon: CreditCard, category: 'finance' },
   { id: 'income', label: 'Income', icon: TrendingUp, category: 'finance' },
   { id: 'debt', label: 'Debt Management', icon: HandCoins, category: 'finance' },
   { id: 'salary', label: 'Salary Management', icon: Banknote, category: 'finance' },
-  { id: 'savings', label: 'Savings', icon: PiggyBank, category: 'finance' },
   { id: 'attendance', label: 'Work Attendance', icon: CalendarCheck, category: 'work' },
   { id: 'reports', label: 'Reports & Analytics', icon: BarChart3, category: 'work' },
   { id: 'settings', label: 'Settings', icon: Settings, category: 'settings' }

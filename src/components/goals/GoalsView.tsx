@@ -80,43 +80,34 @@ export const GoalsView: React.FC = () => {
     e.preventDefault();
     if (!title.trim() || isSubmitting) return;
 
-    const parsedTarget = targetAmount ? parseFloat(targetAmount) : undefined;
-    if (parsedTarget !== undefined && (isNaN(parsedTarget) || parsedTarget < 0)) {
-      setFormError('Target amount cannot be negative.');
+    const parsedTarget = parseFloat(targetAmount);
+    if (isNaN(parsedTarget) || parsedTarget <= 0) {
+      setFormError('Target amount is required and must be greater than zero.');
       return;
     }
-
-    const parsedProgress = progressPercentage !== '' ? Number(progressPercentage) : 0;
-    if (isNaN(parsedProgress) || parsedProgress < 0 || parsedProgress > 100) {
-      setFormError('Progress percentage must be between 0 and 100.');
-      return;
-    }
-
-    const finalProgress = status === 'Completed' ? 100 : Math.round(parsedProgress);
-    const completedAtValue =
-      status === 'Completed'
-        ? editingGoal?.completedAt || new Date().toISOString()
-        : undefined;
-
-    const payload = {
-      title: title.trim(),
-      description: description.trim(),
-      category,
-      targetAmount: parsedTarget,
-      progressPercentage: finalProgress,
-      targetDate: targetDate || undefined,
-      priority,
-      status,
-      completedAt: completedAtValue
-    };
 
     setFormError(null);
     setIsSubmitting(true);
     try {
       if (editingGoal) {
-        await data.updateGoal(editingGoal.id, payload);
+        await data.updateGoal(editingGoal.id, {
+          title: title.trim(),
+          description: description.trim(),
+          category,
+          targetAmount: parsedTarget,
+          targetDate: targetDate || undefined,
+          priority,
+          status
+        });
       } else {
-        await data.addGoal(payload);
+        await data.addGoal({
+          title: title.trim(),
+          description: description.trim(),
+          category,
+          targetAmount: parsedTarget,
+          targetDate: targetDate || undefined,
+          priority
+        });
       }
       setIsModalOpen(false);
     } catch (err) {
@@ -131,9 +122,7 @@ export const GoalsView: React.FC = () => {
     const isComp = g.status === 'Completed';
     try {
       await data.updateGoal(g.id, {
-        status: isComp ? 'In Progress' : 'Completed',
-        progressPercentage: isComp ? (g.progressPercentage === 100 ? 0 : g.progressPercentage) : 100,
-        completedAt: isComp ? undefined : new Date().toISOString()
+        status: isComp ? 'In Progress' : 'Completed'
       });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to update goal status.');

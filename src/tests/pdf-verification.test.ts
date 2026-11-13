@@ -82,7 +82,7 @@ async function runPDFTests() {
       { id: 'st1', savingsGoalId: 'sg1', amount: 500, type: 'deposit', date: '2026-05-01', createdAt: '2026-05-01' }
     ],
     goals: [
-      { id: 'g1', title: 'Complete Frontend Audit', description: 'Audit all views', category: 'Career', targetDate: '2026-05-31', progressPercentage: 95, targetAmount: 100, status: 'In Progress', priority: 'High', createdAt: '2026-05-01' }
+      { id: 'g1', title: 'Complete Frontend Audit', description: 'Audit all views', category: 'Career', targetDate: '2026-05-31', progressPercentage: 95, targetAmount: 100, status: 'In Progress', priority: 'High', createdAt: '2026-05-01', savingsGoalId: 'sg1' }
     ]
   };
 

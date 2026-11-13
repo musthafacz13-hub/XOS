@@ -7,13 +7,12 @@ import { QuickActionModal } from './components/modals/QuickActionModal';
 import { pageVariants } from './utils/motion';
 
 import { DashboardView } from './components/dashboard/DashboardView';
-import { GoalsView } from './components/goals/GoalsView';
+import { GoalsAndSavingsView } from './components/goals/GoalsAndSavingsView';
 import { ExpensesView } from './components/expenses/ExpensesView';
 import { IncomeView } from './components/income/IncomeView';
 import { DebtView } from './components/debt/DebtView';
 import { WorkView } from './components/work/WorkView';
 import { SalaryView } from './components/salary/SalaryView';
-import { SavingsView } from './components/savings/SavingsView';
 import { ReportsView } from './components/reports/ReportsView';
 import { SettingsView } from './components/settings/SettingsView';
 
@@ -225,13 +224,12 @@ function XOSApplication() {
                 />
               )}
 
-              {activeTab === 'goals' && <GoalsView />}
+              {(activeTab === 'goals' || activeTab === 'savings') && <GoalsAndSavingsView />}
               {activeTab === 'expenses' && <ExpensesView />}
               {activeTab === 'income' && <IncomeView />}
               {activeTab === 'debt' && <DebtView />}
               {activeTab === 'attendance' && <WorkView />}
               {activeTab === 'salary' && <SalaryView />}
-              {activeTab === 'savings' && <SavingsView />}
               {activeTab === 'reports' && <ReportsView />}
               {activeTab === 'settings' && <SettingsView />}
             </motion.div>

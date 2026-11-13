@@ -72,13 +72,28 @@ export interface Goal {
   description: string;
   category: GoalCategory;
   targetAmount?: number;
-  progressPercentage: number; // 0-100 -> DB progress_percentage
+  progressPercentage: number; // DB trigger-maintained 0-100 -> DB progress_percentage
   targetDate?: string; // YYYY-MM-DD
   priority: GoalPriority;
   status: GoalStatus;
   createdAt: string;
-  completedAt?: string;
+  completedAt?: string; // DB trigger-maintained completed_at
+  savingsGoalId: string; // Required 1:1 DB savings_goal_id
 }
+
+export interface CreateGoalInput {
+  title: string;
+  description?: string;
+  category: GoalCategory;
+  targetAmount: number;
+  targetDate?: string;
+  priority?: GoalPriority;
+  initialDeposit?: number;
+}
+
+export type UpdateGoalInput = Partial<
+  Pick<Goal, 'title' | 'description' | 'category' | 'targetAmount' | 'targetDate' | 'priority' | 'status'>
+>;
 
 export type ExpenseCategory = 
   | 'Food & Dining' 

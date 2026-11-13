@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   AttendanceRecord,
   AttendanceStatus,
+  CreateGoalInput,
   CurrencyCode,
   DashboardWidgetConfig,
   DateFormat,
@@ -23,6 +24,7 @@ import {
   SavingsGoal,
   SavingsTransaction,
   SavingsTransactionType,
+  UpdateGoalInput,
   UserSettings,
   WeekStartDay
 } from '../types';
@@ -480,6 +482,34 @@ function mapSalaryPayoutRow(p: any): SalaryPayout {
   };
 }
 
+export function extractCreatedGoalIds(rpcData: unknown): { goalId: string; savingsGoalId: string } {
+  const raw = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('Database RPC xos_create_goal_with_savings did not return created record IDs.');
+  }
+
+  const obj = raw as Record<string, any>;
+  const rawGoalId =
+    obj.goal_id ??
+    obj.goalId ??
+    obj.goal?.id ??
+    (obj.savings_goal_id || obj.savingsGoalId || obj.savings_goal?.id || obj.savingsGoal?.id ? obj.id : undefined);
+  const rawSavingsGoalId =
+    obj.savings_goal_id ??
+    obj.savingsGoalId ??
+    obj.savings_goal?.id ??
+    obj.savingsGoal?.id;
+
+  const goalId = typeof rawGoalId === 'string' ? rawGoalId.trim() : '';
+  const savingsGoalId = typeof rawSavingsGoalId === 'string' ? rawSavingsGoalId.trim() : '';
+
+  if (!goalId || !savingsGoalId) {
+    throw new Error('Database RPC xos_create_goal_with_savings must return both Goal ID and Savings Account ID.');
+  }
+
+  return { goalId, savingsGoalId };
+}
+
 function mapGoalRow(g: any): Goal {
   const status = fromDbGoalStatus(g.status);
   const priority = fromDbGoalPriority(g.priority);
@@ -489,6 +519,10 @@ function mapGoalRow(g: any): Goal {
       : status === 'Completed'
         ? 100
         : 0;
+  const savingsGoalId = typeof g.savings_goal_id === 'string' ? g.savings_goal_id.trim() : '';
+  if (!savingsGoalId) {
+    throw new Error(`Invalid goal record (${String(g.id || 'unknown')}): missing required savings_goal_id.`);
+  }
 
   return {
     id: g.id,
@@ -504,7 +538,8 @@ function mapGoalRow(g: any): Goal {
     priority,
     status,
     createdAt: g.created_at,
-    completedAt: g.completed_at || undefined
+    completedAt: g.completed_at || undefined,
+    savingsGoalId
   };
 }
 
@@ -1101,62 +1136,162 @@ export const repository = {
     notifyListeners();
   },
 
-  async addGoal(goal: Omit<Goal, 'id' | 'createdAt'>): Promise<Goal> {
+  async addGoal(goal: CreateGoalInput): Promise<Goal> {
     if (!goal.title || !goal.title.trim()) {
       throw new Error('Goal title is required.');
     }
+    if (goal.targetAmount === undefined || goal.targetAmount === null) {
+      throw new Error('Target amount is required and must be greater than zero.');
+    }
+    if (!Number.isFinite(goal.targetAmount) || goal.targetAmount <= 0) {
+      throw new Error('Target amount must be greater than zero.');
+    }
+    const initialDeposit = goal.initialDeposit === undefined ? 0 : goal.initialDeposit;
+    if (!Number.isFinite(initialDeposit) || initialDeposit < 0) {
+      throw new Error('Initial deposit cannot be negative.');
+    }
 
-    const uiStatus = fromDbGoalStatus(goal.status || 'In Progress');
-    const uiPriority = fromDbGoalPriority(goal.priority || 'Medium');
-    const clampedProgress = Math.max(0, Math.min(100, Math.round(goal.progressPercentage ?? 0)));
-    const progressVal = uiStatus === 'Completed' ? 100 : clampedProgress;
-    const dbStatus = toDbGoalStatus(uiStatus);
-    const dbPriority = toDbGoalPriority(uiPriority);
+    const dbPriority = toDbGoalPriority(goal.priority === undefined ? 'Medium' : goal.priority);
+    const uiPriority = fromDbGoalPriority(dbPriority);
 
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
-      const { data, error } = await ctx.client
-        .from('goals')
-        .insert({
-          user_id: ctx.user.id,
-          title: goal.title.trim(),
-          description: goal.description || '',
-          category: goal.category,
-          priority: dbPriority,
-          status: dbStatus,
-          progress_percentage: progressVal,
-          target_amount: goal.targetAmount ?? null,
-          target_date: goal.targetDate || null,
-          completed_at: uiStatus === 'Completed' ? (goal.completedAt || new Date().toISOString()) : null
-        })
-        .select()
-        .single();
+      const { data: rpcData, error: rpcError } = await ctx.client.rpc('xos_create_goal_with_savings', {
+        p_user_id: ctx.user.id,
+        p_title: goal.title.trim(),
+        p_description: goal.description?.trim() || '',
+        p_category: goal.category,
+        p_target_amount: goal.targetAmount,
+        p_target_date: goal.targetDate || null,
+        p_priority: dbPriority,
+        p_initial_deposit: initialDeposit
+      });
 
-      if (error || !data) {
-        throw new Error(error?.message || 'Database error: Could not create goal.');
+      if (rpcError) {
+        throw new Error(rpcError.message || 'Database error: Could not create goal with connected savings.');
       }
 
-      const confirmed = mapGoalRow(data);
-      memoryState.goals = [confirmed, ...memoryState.goals];
+      const { goalId, savingsGoalId } = extractCreatedGoalIds(rpcData);
+
+      const [goalRes, sgRes, txRes] = await Promise.all([
+        ctx.client
+          .from('goals')
+          .select('*')
+          .eq('id', goalId)
+          .eq('user_id', ctx.user.id)
+          .single(),
+        ctx.client
+          .from('savings_goals')
+          .select('*')
+          .eq('id', savingsGoalId)
+          .eq('user_id', ctx.user.id)
+          .single(),
+        initialDeposit > 0
+          ? ctx.client
+              .from('savings_transactions')
+              .select('*')
+              .eq('savings_goal_id', savingsGoalId)
+              .eq('user_id', ctx.user.id)
+              .order('transaction_date', { ascending: false })
+          : Promise.resolve({ data: [], error: null })
+      ]);
+
+      if (goalRes.error || !goalRes.data) {
+        throw new Error(goalRes.error?.message || 'Goal created, but the created goal record could not be retrieved.');
+      }
+      if (sgRes.error || !sgRes.data) {
+        throw new Error(sgRes.error?.message || 'Goal created, but the connected savings account could not be retrieved.');
+      }
+
+      const confirmedGoal = mapGoalRow(goalRes.data);
+      if (confirmedGoal.savingsGoalId !== savingsGoalId) {
+        throw new Error('Created goal savings_goal_id does not match the returned savings account ID.');
+      }
+      const confirmedSavingsGoal = mapSavingsGoalRow(sgRes.data);
+
+      memoryState.goals = [confirmedGoal, ...memoryState.goals.filter(g => g.id !== confirmedGoal.id)];
+      memoryState.savingsGoals = [
+        confirmedSavingsGoal,
+        ...memoryState.savingsGoals.filter(sg => sg.id !== confirmedSavingsGoal.id)
+      ];
+
+      if (!txRes.error && Array.isArray(txRes.data) && txRes.data.length > 0) {
+        const mappedTxs = txRes.data.map(mapSavingsTxRow);
+        const txIds = new Set(mappedTxs.map(t => t.id));
+        memoryState.savingsTransactions = [
+          ...mappedTxs,
+          ...memoryState.savingsTransactions.filter(t => !txIds.has(t.id))
+        ];
+      }
+
       notifyListeners();
-      return confirmed;
+      return confirmedGoal;
     }
 
-    const newGoal: Goal = {
-      ...goal,
-      status: uiStatus,
-      priority: uiPriority,
-      progressPercentage: progressVal,
-      id: 'g_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-      createdAt: getTodayString()
+    const today = getTodayString();
+    const suffix = Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+    const newSgId = 'sg_' + suffix;
+    const initialPct = Math.min(100, Math.round((initialDeposit / goal.targetAmount) * 100));
+    const isCompleted = initialDeposit >= goal.targetAmount;
+
+    const newSavingsGoal: SavingsGoal = {
+      id: newSgId,
+      name: goal.title.trim(),
+      targetAmount: goal.targetAmount,
+      currentAmount: initialDeposit,
+      targetDate: goal.targetDate || undefined,
+      description: goal.description?.trim() || '',
+      createdAt: today
     };
+
+    const newGoal: Goal = {
+      id: 'g_' + suffix,
+      title: goal.title.trim(),
+      description: goal.description?.trim() || '',
+      category: goal.category,
+      targetAmount: goal.targetAmount,
+      targetDate: goal.targetDate || undefined,
+      priority: uiPriority,
+      status: isCompleted ? 'Completed' : initialDeposit > 0 ? 'In Progress' : 'Not Started',
+      progressPercentage: initialPct,
+      completedAt: isCompleted ? today : undefined,
+      createdAt: today,
+      savingsGoalId: newSgId
+    };
+
+    memoryState.savingsGoals = [newSavingsGoal, ...memoryState.savingsGoals];
     memoryState.goals = [newGoal, ...memoryState.goals];
+    if (initialDeposit > 0) {
+      memoryState.savingsTransactions = [
+        {
+          id: 'stx_' + suffix,
+          savingsGoalId: newSgId,
+          amount: initialDeposit,
+          type: 'deposit',
+          date: today,
+          note: 'Initial deposit',
+          createdAt: today
+        },
+        ...memoryState.savingsTransactions
+      ];
+    }
     notifyListeners();
     return newGoal;
   },
 
-  async updateGoal(id: string, updates: Partial<Goal>): Promise<void> {
+  async updateGoal(id: string, updates: UpdateGoalInput): Promise<void> {
+    if ('targetAmount' in updates) {
+      if (
+        updates.targetAmount === undefined ||
+        updates.targetAmount === null ||
+        !Number.isFinite(updates.targetAmount) ||
+        updates.targetAmount <= 0
+      ) {
+        throw new Error('Target amount must be greater than zero.');
+      }
+    }
+
     const dbStatus = updates.status !== undefined ? toDbGoalStatus(updates.status) : undefined;
     const dbPriority = updates.priority !== undefined ? toDbGoalPriority(updates.priority) : undefined;
     const ctx = await requirePersistenceContext();
@@ -1168,20 +1303,8 @@ export const repository = {
       if (updates.category !== undefined) dbPayload.category = updates.category;
       if (dbPriority !== undefined) dbPayload.priority = dbPriority;
       if (dbStatus !== undefined) dbPayload.status = dbStatus;
-      if (updates.progressPercentage !== undefined) {
-        dbPayload.progress_percentage = Math.max(0, Math.min(100, Math.round(updates.progressPercentage)));
-      } else if (dbStatus === 'completed') {
-        dbPayload.progress_percentage = 100;
-      }
-      if (updates.targetAmount !== undefined) dbPayload.target_amount = updates.targetAmount ?? null;
+      if (updates.targetAmount !== undefined) dbPayload.target_amount = updates.targetAmount;
       if (updates.targetDate !== undefined) dbPayload.target_date = updates.targetDate || null;
-      if ('completedAt' in updates) {
-        dbPayload.completed_at = updates.completedAt || null;
-      } else if (dbStatus === 'completed') {
-        dbPayload.completed_at = new Date().toISOString();
-      } else if (dbStatus !== undefined) {
-        dbPayload.completed_at = null;
-      }
 
       if (Object.keys(dbPayload).length === 0) {
         return;
@@ -1201,11 +1324,58 @@ export const repository = {
 
       const confirmed = mapGoalRow(data);
       memoryState.goals = memoryState.goals.map(g => (g.id === id ? confirmed : g));
+
+      const { data: refreshedSg, error: sgError } = await ctx.client
+        .from('savings_goals')
+        .select('*')
+        .eq('id', confirmed.savingsGoalId)
+        .eq('user_id', ctx.user.id)
+        .maybeSingle();
+
+      if (!sgError && refreshedSg) {
+        const mappedSg = mapSavingsGoalRow(refreshedSg);
+        memoryState.savingsGoals = memoryState.savingsGoals.map(sg =>
+          sg.id === mappedSg.id ? mappedSg : sg
+        );
+      }
+
       notifyListeners();
       return;
     }
 
-    memoryState.goals = memoryState.goals.map(g => (g.id === id ? { ...g, ...updates } : g));
+    const targetGoal = memoryState.goals.find(g => g.id === id);
+    if (!targetGoal) {
+      return;
+    }
+
+    if (targetGoal.savingsGoalId) {
+      memoryState.savingsGoals = memoryState.savingsGoals.map(sg => {
+        if (sg.id !== targetGoal.savingsGoalId) return sg;
+        return {
+          ...sg,
+          name: updates.title !== undefined ? updates.title.trim() : sg.name,
+          targetAmount: updates.targetAmount !== undefined ? updates.targetAmount : sg.targetAmount,
+          targetDate: 'targetDate' in updates ? updates.targetDate : sg.targetDate,
+          description: updates.description !== undefined ? updates.description : sg.description
+        };
+      });
+    }
+
+    const linkedSg = memoryState.savingsGoals.find(sg => sg.id === targetGoal.savingsGoalId);
+    const nextTarget = updates.targetAmount ?? targetGoal.targetAmount ?? 0;
+    const savedAmount = linkedSg?.currentAmount || 0;
+    const recomputedProgress = nextTarget > 0 ? Math.min(100, Math.round((savedAmount / nextTarget) * 100)) : 0;
+
+    memoryState.goals = memoryState.goals.map(g =>
+      g.id === id
+        ? {
+            ...g,
+            ...updates,
+            title: updates.title !== undefined ? updates.title.trim() : g.title,
+            progressPercentage: recomputedProgress
+          }
+        : g
+    );
     notifyListeners();
   },
 
@@ -1213,22 +1383,23 @@ export const repository = {
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
-      const { data, error } = await ctx.client
-        .from('goals')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', ctx.user.id)
-        .select('id');
+      const { error: rpcError } = await ctx.client.rpc('xos_archive_goal', {
+        p_goal_id: id
+      });
 
-      if (error) {
-        throw new Error(error.message || 'Database error: Could not delete goal.');
-      }
-      if (!data || data.length === 0) {
-        throw new Error('Goal record not found or could not be deleted.');
+      if (rpcError) {
+        throw new Error(rpcError.message || 'Database error: Could not archive goal.');
       }
     }
 
+    const targetGoal = memoryState.goals.find(g => g.id === id);
     memoryState.goals = memoryState.goals.filter(g => g.id !== id);
+    if (targetGoal?.savingsGoalId) {
+      memoryState.savingsGoals = memoryState.savingsGoals.filter(sg => sg.id !== targetGoal.savingsGoalId);
+      memoryState.savingsTransactions = memoryState.savingsTransactions.filter(
+        tx => tx.savingsGoalId !== targetGoal.savingsGoalId
+      );
+    }
     notifyListeners();
   },
 
@@ -1893,24 +2064,35 @@ export const repository = {
       const confirmedTx = mapSavingsTxRow(dbTx);
       memoryState.savingsTransactions = [confirmedTx, ...memoryState.savingsTransactions];
 
-      // Reconcile balance from DB trigger update (current_balance)
-      const { data: refreshedGoal, error: refreshError } = await ctx.client
-        .from('savings_goals')
-        .select('*')
-        .eq('id', tx.savingsGoalId)
-        .eq('user_id', ctx.user.id)
-        .single();
+      // Reconcile balance and linked Goal trigger state (current_balance, progress_percentage, status, completed_at)
+      const [sgRefresh, goalRefresh] = await Promise.all([
+        ctx.client
+          .from('savings_goals')
+          .select('*')
+          .eq('id', tx.savingsGoalId)
+          .eq('user_id', ctx.user.id)
+          .single(),
+        ctx.client
+          .from('goals')
+          .select('*')
+          .eq('savings_goal_id', tx.savingsGoalId)
+          .eq('user_id', ctx.user.id)
+          .maybeSingle()
+      ]);
 
-      if (!refreshError && refreshedGoal) {
-        const mappedGoal = mapSavingsGoalRow(refreshedGoal);
-        memoryState.savingsGoals = memoryState.savingsGoals.map(g =>
-          g.id === mappedGoal.id ? mappedGoal : g
-        );
-      } else {
-        const delta = tx.type === 'deposit' ? tx.amount : -tx.amount;
-        const updatedAmount = Math.max(0, Number(((targetGoal.currentAmount || 0) + delta).toFixed(2)));
-        memoryState.savingsGoals = memoryState.savingsGoals.map(g =>
-          g.id === targetGoal.id ? { ...g, currentAmount: updatedAmount } : g
+      if (sgRefresh.error || !sgRefresh.data) {
+        throw new Error(sgRefresh.error?.message || 'Transaction saved, but failed to refresh database-maintained savings balance.');
+      }
+
+      const mappedGoal = mapSavingsGoalRow(sgRefresh.data);
+      memoryState.savingsGoals = memoryState.savingsGoals.map(g =>
+        g.id === mappedGoal.id ? mappedGoal : g
+      );
+
+      if (!goalRefresh.error && goalRefresh.data) {
+        const mappedLinkedGoal = mapGoalRow(goalRefresh.data);
+        memoryState.goals = memoryState.goals.map(g =>
+          g.id === mappedLinkedGoal.id ? mappedLinkedGoal : g
         );
       }
 
@@ -1930,6 +2112,18 @@ export const repository = {
     memoryState.savingsGoals = memoryState.savingsGoals.map(g =>
       g.id === targetGoal.id ? { ...g, currentAmount: updatedAmount } : g
     );
+    memoryState.goals = memoryState.goals.map(g => {
+      if (g.savingsGoalId !== targetGoal.id) return g;
+      const target = g.targetAmount || 0;
+      const pct = target > 0 ? Math.min(100, Math.round((updatedAmount / target) * 100)) : 0;
+      const isCompleted = target > 0 && updatedAmount >= target;
+      return {
+        ...g,
+        progressPercentage: pct,
+        status: isCompleted ? 'Completed' : updatedAmount > 0 ? 'In Progress' : 'Not Started',
+        completedAt: isCompleted ? (g.completedAt || getTodayString()) : undefined
+      };
+    });
 
     notifyListeners();
     return newTx;
@@ -1960,17 +2154,34 @@ export const repository = {
 
       memoryState.savingsTransactions = memoryState.savingsTransactions.filter(t => t.id !== id);
 
-      const { data: refreshedGoal, error: refreshError } = await ctx.client
-        .from('savings_goals')
-        .select('*')
-        .eq('id', targetTx.savingsGoalId)
-        .eq('user_id', ctx.user.id)
-        .single();
+      const [sgRefresh, goalRefresh] = await Promise.all([
+        ctx.client
+          .from('savings_goals')
+          .select('*')
+          .eq('id', targetTx.savingsGoalId)
+          .eq('user_id', ctx.user.id)
+          .single(),
+        ctx.client
+          .from('goals')
+          .select('*')
+          .eq('savings_goal_id', targetTx.savingsGoalId)
+          .eq('user_id', ctx.user.id)
+          .maybeSingle()
+      ]);
 
-      if (!refreshError && refreshedGoal) {
-        const mappedGoal = mapSavingsGoalRow(refreshedGoal);
-        memoryState.savingsGoals = memoryState.savingsGoals.map(g =>
-          g.id === mappedGoal.id ? mappedGoal : g
+      if (sgRefresh.error || !sgRefresh.data) {
+        throw new Error(sgRefresh.error?.message || 'Transaction deleted, but failed to refresh database-maintained savings balance.');
+      }
+
+      const mappedGoal = mapSavingsGoalRow(sgRefresh.data);
+      memoryState.savingsGoals = memoryState.savingsGoals.map(g =>
+        g.id === mappedGoal.id ? mappedGoal : g
+      );
+
+      if (!goalRefresh.error && goalRefresh.data) {
+        const mappedLinkedGoal = mapGoalRow(goalRefresh.data);
+        memoryState.goals = memoryState.goals.map(g =>
+          g.id === mappedLinkedGoal.id ? mappedLinkedGoal : g
         );
       }
 
@@ -1986,6 +2197,18 @@ export const repository = {
       memoryState.savingsGoals = memoryState.savingsGoals.map(g =>
         g.id === goal.id ? { ...g, currentAmount: updatedAmount } : g
       );
+      memoryState.goals = memoryState.goals.map(g => {
+        if (g.savingsGoalId !== goal.id) return g;
+        const target = g.targetAmount || 0;
+        const pct = target > 0 ? Math.min(100, Math.round((updatedAmount / target) * 100)) : 0;
+        const isCompleted = target > 0 && updatedAmount >= target;
+        return {
+          ...g,
+          progressPercentage: pct,
+          status: isCompleted ? 'Completed' : updatedAmount > 0 ? 'In Progress' : 'Not Started',
+          completedAt: isCompleted ? (g.completedAt || getTodayString()) : undefined
+        };
+      });
     }
     notifyListeners();
   },

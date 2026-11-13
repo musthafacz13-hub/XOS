@@ -85,7 +85,8 @@ export function generateDemoDataset() {
       targetDate: `${currentYear}-12-31`,
       priority: 'High',
       status: 'In Progress',
-      createdAt: getDateStr(1)
+      createdAt: getDateStr(1),
+      savingsGoalId: 's1'
     },
     {
       id: 'g2',
@@ -98,7 +99,8 @@ export function generateDemoDataset() {
       priority: 'Medium',
       status: 'Completed',
       createdAt: getDateStr(2),
-      completedAt: getDateStr(10)
+      completedAt: getDateStr(10),
+      savingsGoalId: 's2'
     },
     {
       id: 'g3',
@@ -110,7 +112,8 @@ export function generateDemoDataset() {
       targetDate: `${currentYear + 1}-09-15`,
       priority: 'Medium',
       status: 'In Progress',
-      createdAt: getDateStr(3)
+      createdAt: getDateStr(3),
+      savingsGoalId: 's3'
     }
   ];
 
@@ -204,12 +207,30 @@ export function generateDemoDataset() {
   const demoSavingsGoals: SavingsGoal[] = [
     {
       id: 's1',
-      name: 'High-Yield Liquid Savings',
-      targetAmount: 12000,
-      currentAmount: 4800,
+      name: 'Emergency Reserve Fund',
+      targetAmount: 10000,
+      currentAmount: 3500,
       targetDate: `${currentYear}-12-31`,
-      description: 'Primary liquid emergency account.',
-      createdAt: `${currentYear}-01-01`
+      description: 'Build a 6-month living expense reserve.',
+      createdAt: getDateStr(1)
+    },
+    {
+      id: 's2',
+      name: 'Design Systems Certification',
+      targetAmount: 850,
+      currentAmount: 850,
+      targetDate: getDateStr(10),
+      description: 'Complete advanced human interface design program.',
+      createdAt: getDateStr(2)
+    },
+    {
+      id: 's3',
+      name: 'Northern Fjords & Auroras',
+      targetAmount: 4200,
+      currentAmount: 1176,
+      targetDate: `${currentYear + 1}-09-15`,
+      description: 'Explore the Arctic coast and Nordic landscapes.',
+      createdAt: getDateStr(3)
     }
   ];
 

@@ -178,13 +178,17 @@ async function runPersistenceTests() {
     // =========================================================================
     console.log('Test 1: Failed inserts across tables reject cleanly...');
     {
-      const failAllClient = createMockSupabase(USER_A, {
-        expenses: () => ({ data: null, error: { message: 'RLS denied insert on expenses' } }),
-        debts: () => ({ data: null, error: { message: 'RLS denied insert on debts' } }),
-        savings_goals: () => ({ data: null, error: { message: 'DB timeout on savings_goals' } }),
-        attendance_records: () => ({ data: null, error: { message: 'Constraint violation on attendance' } }),
-        goals: () => ({ data: null, error: { message: 'Insert rejected on goals' } })
-      });
+      const failAllClient = createMockSupabase(
+        USER_A,
+        {
+          expenses: () => ({ data: null, error: { message: 'RLS denied insert on expenses' } }),
+          debts: () => ({ data: null, error: { message: 'RLS denied insert on debts' } }),
+          savings_goals: () => ({ data: null, error: { message: 'DB timeout on savings_goals' } }),
+          attendance_records: () => ({ data: null, error: { message: 'Constraint violation on attendance' } }),
+          goals: () => ({ data: null, error: { message: 'Insert rejected on goals' } })
+        },
+        (fn) => ({ data: null, error: { message: `RPC failed: ${fn}` } })
+      );
 
       repository.clearUserData();
       repository.setActiveUserId(USER_A);
@@ -195,7 +199,7 @@ async function runPersistenceTests() {
         () => repository.addDebt({ person_name: 'Sam', original_amount: 1000, lent_date: '2026-05-01' }),
         () => repository.addSavingsGoal({ name: 'Trip', targetAmount: 50000, initialDeposit: 0, initialDepositDate: '2026-05-01' }),
         () => repository.upsertAttendanceRecord({ date: '2026-05-01', status: 'Present', calculatedHours: 8 }),
-        () => repository.addGoal({ title: 'Save', description: '', category: 'Financial', progressPercentage: 10, priority: 'High', status: 'In Progress' })
+        () => repository.addGoal({ title: 'Save', description: '', category: 'Financial', targetAmount: 5000, priority: 'High' })
       ];
 
       for (const fn of cases) {
@@ -283,37 +287,79 @@ async function runPersistenceTests() {
     console.log('✓ Test 2 passed.');
 
     // =========================================================================
-    // TEST 3: Failed Delete (error AND 0 affected rows) + Live goals columns
+    // TEST 3: RPC Goal + Savings Creation ID Hydration & Failed Archive Delete
     // =========================================================================
-    console.log('Test 3: Failed deletes retain record & goals omits unsupported columns...');
+    console.log('Test 3: Goal creation hydrates returned Goal & Savings IDs and failed archive retains record...');
     {
-      let deleteMode: 'error' | 'empty' = 'error';
-      const delClient = createMockSupabase(USER_A, {
-        goals: (ctx) => {
-          if (ctx.op === 'insert') {
-            assert(!('current_amount' in ctx.payload), 'goals insert MUST NOT send unsupported current_amount');
-            assert(!('type' in ctx.payload), 'goals insert MUST NOT send unsupported type');
-            assert(!('cover_image' in ctx.payload), 'goals insert MUST NOT send unsupported cover_image');
-            assert('progress_percentage' in ctx.payload, 'goals insert MUST send progress_percentage');
-            return {
-              data: { id: UUID_1, ...ctx.payload, created_at: '2026-05-01T00:00:00Z' },
-              error: null
+      let dbGoalRow: any = null;
+      let dbSavingsRow: any = null;
+
+      const goalRpcClient = createMockSupabase(
+        USER_A,
+        {
+          goals: (ctx) => {
+            if (ctx.op === 'select') {
+              assert(ctx.filters.some(f => f.col === 'id' && f.val === UUID_1), 'Selects created goal by returned goal_id');
+              return { data: dbGoalRow, error: null };
+            }
+            return { data: null, error: { message: 'Direct goals insert/delete disabled' } };
+          },
+          savings_goals: (ctx) => {
+            if (ctx.op === 'select') {
+              assert(ctx.filters.some(f => f.col === 'id' && f.val === UUID_2), 'Selects created savings account by returned savings_goal_id');
+              return { data: dbSavingsRow, error: null };
+            }
+            return { data: null, error: null };
+          }
+        },
+        (fn, args) => {
+          if (fn === 'xos_create_goal_with_savings') {
+            assert(args.p_target_amount === 5000, 'RPC receives positive p_target_amount');
+            assert(args.p_priority === 'medium', 'RPC receives lowercase p_priority');
+            dbSavingsRow = {
+              id: UUID_2,
+              name: args.p_title,
+              target_amount: args.p_target_amount,
+              current_balance: args.p_initial_deposit || 0,
+              notes: args.p_description,
+              created_at: '2026-05-01T00:00:00Z'
             };
+            dbGoalRow = {
+              id: UUID_1,
+              title: args.p_title,
+              description: args.p_description,
+              category: args.p_category,
+              target_amount: args.p_target_amount,
+              progress_percentage: 0,
+              priority: args.p_priority,
+              status: 'not_started',
+              savings_goal_id: UUID_2,
+              created_at: '2026-05-01T00:00:00Z'
+            };
+            return { data: { goal_id: UUID_1, savings_goal_id: UUID_2 }, error: null };
           }
-          if (ctx.op === 'delete') {
-            if (deleteMode === 'error') return { data: null, error: { message: 'Delete forbidden' } };
-            return { data: [], error: null }; // 0 rows affected!
+          if (fn === 'xos_archive_goal') {
+            assert(args.p_goal_id === UUID_1, 'xos_archive_goal receives p_goal_id');
+            return { data: null, error: { message: 'Archive forbidden' } };
           }
-          return { data: null, error: null };
+          return { data: null, error: { message: `Unexpected RPC ${fn}` } };
         }
-      });
+      );
 
       repository.clearUserData();
       repository.setActiveUserId(USER_A);
-      configureRepositoryBackendForTests(delClient, true);
+      configureRepositoryBackendForTests(goalRpcClient, true);
 
-      const added = await repository.addGoal({ title: 'Learn Rust', description: '', category: 'Learning', progressPercentage: 25, priority: 'Medium', status: 'In Progress' });
-      assert(repository.getGoals().length === 1 && added.progressPercentage === 25, 'Goal added with progressPercentage');
+      const added = await repository.addGoal({
+        title: 'Learn Rust',
+        description: 'Systems book',
+        category: 'Learning',
+        targetAmount: 5000,
+        priority: 'Medium'
+      });
+      assert(added.id === UUID_1 && added.savingsGoalId === UUID_2, 'Returned Goal & Savings IDs hydrated onto Goal');
+      assert(repository.getGoals().length === 1 && repository.getSavingsGoals().length === 1, 'Both Goal and SavingsGoal hydrated into state');
+      assert(repository.getSavingsGoals()[0].id === UUID_2, 'SavingsGoal in state matches returned savings_goal_id');
 
       let errDeleteThrew = false;
       try {
@@ -321,18 +367,9 @@ async function runPersistenceTests() {
       } catch {
         errDeleteThrew = true;
       }
-      assert(errDeleteThrew, 'Delete returning DB error must throw');
-      assert(repository.getGoals().length === 1, 'Goal must stay in state on delete DB error');
-
-      deleteMode = 'empty';
-      let emptyDeleteThrew = false;
-      try {
-        await repository.deleteGoal(UUID_1);
-      } catch {
-        emptyDeleteThrew = true;
-      }
-      assert(emptyDeleteThrew, 'Delete affecting 0 rows must throw');
-      assert(repository.getGoals().length === 1, 'Goal must stay in state when 0 DB rows deleted');
+      assert(errDeleteThrew, 'Archive RPC returning DB error must throw');
+      assert(repository.getGoals().length === 1, 'Goal must stay in state on archive RPC error');
+      assert(repository.getSavingsGoals().length === 1, 'Connected SavingsGoal must stay in state on archive RPC error');
     }
     console.log('✓ Test 3 passed.');
 
@@ -863,47 +900,80 @@ async function runPersistenceTests() {
       let capturedSalaryPayload: any = null;
       let capturedGoalUpdatePayload: any = null;
       let capturedAttendancePayload: any = null;
+      let goalRow: any = null;
+      let sgRow: any = null;
 
-      const configClient = createMockSupabase(USER_A, {
-        salary_configs: (ctx) => {
-          assert(!('currency' in ctx.payload), 'salary_configs MUST NOT write legacy currency');
-          assert(!('standard_working_hours' in ctx.payload), 'salary_configs MUST NOT write legacy standard_working_hours');
-          assert(!('salary_type' in ctx.payload), 'salary_configs MUST NOT write unsupported salary_type');
-          capturedSalaryPayload = ctx.payload;
-          return { data: ctx.payload, error: null };
+      const configClient = createMockSupabase(
+        USER_A,
+        {
+          salary_configs: (ctx) => {
+            assert(!('currency' in ctx.payload), 'salary_configs MUST NOT write legacy currency');
+            assert(!('standard_working_hours' in ctx.payload), 'salary_configs MUST NOT write legacy standard_working_hours');
+            assert(!('salary_type' in ctx.payload), 'salary_configs MUST NOT write unsupported salary_type');
+            capturedSalaryPayload = ctx.payload;
+            return { data: ctx.payload, error: null };
+          },
+          goals: (ctx) => {
+            if (ctx.op === 'select') {
+              return { data: goalRow, error: null };
+            }
+            if (ctx.op === 'update') {
+              assert(!('current_amount' in ctx.payload) && !('type' in ctx.payload), 'goals update omits legacy columns');
+              assert(!('progress_percentage' in ctx.payload), 'goals update MUST NOT directly write progress_percentage');
+              assert(!('completed_at' in ctx.payload), 'goals update MUST NOT directly write completed_at');
+              assert(!('current_balance' in ctx.payload), 'goals update MUST NOT directly write current_balance');
+              assert(!('savings_goal_id' in ctx.payload), 'goals update MUST NOT overwrite savings_goal_id');
+              capturedGoalUpdatePayload = ctx.payload;
+              goalRow = {
+                ...goalRow,
+                ...ctx.payload,
+                progress_percentage: 20
+              };
+              return { data: goalRow, error: null };
+            }
+            return { data: [], error: null };
+          },
+          savings_goals: () => ({ data: sgRow, error: null }),
+          attendance_records: (ctx) => {
+            if (ctx.op === 'upsert') {
+              assert('attendance_date' in ctx.payload && !('date' in ctx.payload), 'attendance_records MUST write attendance_date');
+              assert('check_in' in ctx.payload && !('check_in_time' in ctx.payload), 'attendance_records MUST write check_in');
+              assert('check_out' in ctx.payload && !('check_out_time' in ctx.payload), 'attendance_records MUST write check_out');
+              assert('break_minutes' in ctx.payload && !('break_duration_minutes' in ctx.payload), 'attendance_records MUST write break_minutes');
+              assert('hours_worked' in ctx.payload && !('calculated_hours' in ctx.payload), 'attendance_records MUST write hours_worked');
+              assert('daily_base_salary' in ctx.payload && 'extra_hour_rate' in ctx.payload && 'calculated_salary' in ctx.payload, 'attendance_records writes snapshot salary columns');
+              capturedAttendancePayload = ctx.payload;
+              return { data: { id: UUID_2, ...ctx.payload, created_at: '2026-05-01' }, error: null };
+            }
+            return { data: [], error: null };
+          }
         },
-        goals: (ctx) => {
-          if (ctx.op === 'insert') {
-            assert(!('current_amount' in ctx.payload) && !('type' in ctx.payload), 'goals insert omits legacy columns');
-            return {
-              data: { id: UUID_1, ...ctx.payload, created_at: '2026-05-01' },
-              error: null
+        (fn, args) => {
+          if (fn === 'xos_create_goal_with_savings') {
+            sgRow = {
+              id: UUID_3,
+              name: args.p_title,
+              target_amount: args.p_target_amount,
+              current_balance: 0,
+              created_at: '2026-05-01'
             };
-          }
-          if (ctx.op === 'update') {
-            assert(!('current_amount' in ctx.payload) && !('type' in ctx.payload), 'goals update omits legacy columns');
-            capturedGoalUpdatePayload = ctx.payload;
-            return {
-              data: { id: UUID_1, title: 'My Dream', description: '', category: 'Personal', progress_percentage: ctx.payload.progress_percentage, priority: 'High', status: 'In Progress', created_at: '2026-05-01' },
-              error: null
+            goalRow = {
+              id: UUID_1,
+              title: args.p_title,
+              description: args.p_description,
+              category: args.p_category,
+              target_amount: args.p_target_amount,
+              progress_percentage: 0,
+              priority: args.p_priority,
+              status: 'not_started',
+              savings_goal_id: UUID_3,
+              created_at: '2026-05-01'
             };
+            return { data: { goal_id: UUID_1, savings_goal_id: UUID_3 }, error: null };
           }
-          return { data: [], error: null };
-        },
-        attendance_records: (ctx) => {
-          if (ctx.op === 'upsert') {
-            assert('attendance_date' in ctx.payload && !('date' in ctx.payload), 'attendance_records MUST write attendance_date');
-            assert('check_in' in ctx.payload && !('check_in_time' in ctx.payload), 'attendance_records MUST write check_in');
-            assert('check_out' in ctx.payload && !('check_out_time' in ctx.payload), 'attendance_records MUST write check_out');
-            assert('break_minutes' in ctx.payload && !('break_duration_minutes' in ctx.payload), 'attendance_records MUST write break_minutes');
-            assert('hours_worked' in ctx.payload && !('calculated_hours' in ctx.payload), 'attendance_records MUST write hours_worked');
-            assert('daily_base_salary' in ctx.payload && 'extra_hour_rate' in ctx.payload && 'calculated_salary' in ctx.payload, 'attendance_records writes snapshot salary columns');
-            capturedAttendancePayload = ctx.payload;
-            return { data: { id: UUID_2, ...ctx.payload, created_at: '2026-05-01' }, error: null };
-          }
-          return { data: [], error: null };
+          return { data: null, error: null };
         }
-      });
+      );
 
       repository.clearUserData();
       repository.setActiveUserId(USER_A);
@@ -921,10 +991,11 @@ async function runPersistenceTests() {
       assert(capturedSalaryPayload?.standard_hours === 9, 'salary_configs upsert sends standard_hours');
       assert(capturedSalaryPayload?.extra_hour_rate === 200, 'salary_configs upsert sends extra_hour_rate');
 
-      await repository.addGoal({ title: 'My Goal', description: '', category: 'Personal', progressPercentage: 20, priority: 'Medium', status: 'In Progress' });
-      await repository.updateGoal(UUID_1, { title: 'My Dream', progressPercentage: 85, priority: 'High' });
-      assert(capturedGoalUpdatePayload?.progress_percentage === 85, 'updateGoal writes progress_percentage');
-      assert(repository.getGoals()[0].progressPercentage === 85, 'Goal progressPercentage updated cleanly in state');
+      await repository.addGoal({ title: 'My Goal', description: '', category: 'Personal', targetAmount: 10000, priority: 'Medium' });
+      await repository.updateGoal(UUID_1, { title: 'My Dream', targetAmount: 15000, priority: 'High' });
+      assert(capturedGoalUpdatePayload?.title === 'My Dream' && capturedGoalUpdatePayload?.target_amount === 15000 && capturedGoalUpdatePayload?.priority === 'high', 'updateGoal writes editable metadata only');
+      assert(!('progress_percentage' in capturedGoalUpdatePayload) && !('completed_at' in capturedGoalUpdatePayload), 'updateGoal never directly writes trigger-maintained fields');
+      assert(repository.getGoals()[0].progressPercentage === 20 && repository.getGoals()[0].savingsGoalId === UUID_3, 'Goal state hydrated from DB response preserving savingsGoalId');
 
       const att = await repository.upsertAttendanceRecord({
         date: '2026-05-01',
@@ -1113,9 +1184,9 @@ async function runPersistenceTests() {
     console.log('✓ Test 17 passed.');
 
     // =========================================================================
-    // TEST 18: goals.status & goals.priority Snake/Lowercase Mapping
+    // TEST 18: Goals & Savings Validation, Strict Priority Mapping, RPC IDs & Trigger-Only Refresh
     // =========================================================================
-    console.log('Test 18: goals status/priority DB enum conversions & Completed progress sync...');
+    console.log('Test 18: Goals targetAmount > 0 validation, strict priority mapping, RPC IDs & trigger-only refresh...');
     {
       assert(toDbGoalStatus('Not Started') === 'not_started', 'Not Started -> not_started');
       assert(toDbGoalStatus('In Progress') === 'in_progress', 'In Progress -> in_progress');
@@ -1126,53 +1197,263 @@ async function runPersistenceTests() {
       assert(fromDbGoalPriority('low') === 'Low' && fromDbGoalPriority('medium') === 'Medium' && fromDbGoalPriority('high') === 'High', 'DB priorities hydrate cleanly');
 
       const dbGoals: any[] = [];
-      let lastGoalUpdate: any = null;
-      const goalsClient = createMockSupabase(USER_A, {
-        goals: (ctx) => {
-          if (ctx.op === 'insert') {
-            assert(['not_started', 'in_progress', 'completed', 'paused'].includes(ctx.payload.status), `Invalid DB goal status: ${ctx.payload.status}`);
-            assert(['low', 'medium', 'high'].includes(ctx.payload.priority), `Invalid DB goal priority: ${ctx.payload.priority}`);
-            const row = { id: `goal_${dbGoals.length + 1}`, ...ctx.payload, created_at: '2026-05-01T00:00:00Z' };
-            dbGoals.push(row);
-            return { data: row, error: null };
-          }
-          if (ctx.op === 'update') {
-            lastGoalUpdate = ctx.payload;
-            const idFilter = ctx.filters.find(f => f.col === 'id')?.val;
-            const idx = dbGoals.findIndex(g => g.id === idFilter);
-            if (idx >= 0) {
-              dbGoals[idx] = { ...dbGoals[idx], ...ctx.payload };
-              return { data: dbGoals[idx], error: null };
+      const dbSavingsGoals: any[] = [];
+      const dbSavingsTx: any[] = [];
+      let rpcCallCount = 0;
+      let failNextRpc = false;
+      let returnMissingIds = false;
+
+      const goalsClient = createMockSupabase(
+        USER_A,
+        {
+          goals: (ctx) => {
+            if (ctx.op === 'select') {
+              const idFilter = ctx.filters.find(f => f.col === 'id')?.val;
+              const sgIdFilter = ctx.filters.find(f => f.col === 'savings_goal_id')?.val;
+              if (idFilter) {
+                return { data: dbGoals.find(g => g.id === idFilter) || null, error: null };
+              }
+              if (sgIdFilter) {
+                return { data: dbGoals.find(g => g.savings_goal_id === sgIdFilter) || null, error: null };
+              }
+              return { data: dbGoals, error: null };
             }
-            return { data: null, error: { message: 'Goal not found' } };
+            if (ctx.op === 'update') {
+              assert(!('progress_percentage' in ctx.payload), 'goals update MUST NOT send progress_percentage');
+              assert(!('completed_at' in ctx.payload), 'goals update MUST NOT send completed_at');
+              assert(!('current_balance' in ctx.payload), 'goals update MUST NOT send current_balance');
+              const idFilter = ctx.filters.find(f => f.col === 'id')?.val;
+              const idx = dbGoals.findIndex(g => g.id === idFilter);
+              if (idx >= 0) {
+                dbGoals[idx] = { ...dbGoals[idx], ...ctx.payload };
+                return { data: dbGoals[idx], error: null };
+              }
+              return { data: null, error: { message: 'Goal not found' } };
+            }
+            return { data: null, error: { message: 'Direct insert disabled' } };
+          },
+          savings_goals: (ctx) => {
+            if (ctx.op === 'select') {
+              const idFilter = ctx.filters.find(f => f.col === 'id')?.val;
+              if (idFilter) {
+                return { data: dbSavingsGoals.find(sg => sg.id === idFilter) || null, error: null };
+              }
+              return { data: dbSavingsGoals, error: null };
+            }
+            return { data: null, error: null };
+          },
+          savings_transactions: (ctx) => {
+            if (ctx.op === 'insert') {
+              const txRow = { id: `tx_${dbSavingsTx.length + 1}`, ...ctx.payload, created_at: '2026-05-01T00:00:00Z' };
+              dbSavingsTx.push(txRow);
+              // Simulate DB trigger recalculating current_balance, progress_percentage, status, completed_at
+              const sgIdx = dbSavingsGoals.findIndex(sg => sg.id === ctx.payload.savings_goal_id);
+              if (sgIdx >= 0) {
+                const delta = ctx.payload.transaction_type === 'deposit' ? ctx.payload.amount : -ctx.payload.amount;
+                dbSavingsGoals[sgIdx] = {
+                  ...dbSavingsGoals[sgIdx],
+                  current_balance: Math.max(0, dbSavingsGoals[sgIdx].current_balance + delta)
+                };
+                const gIdx = dbGoals.findIndex(g => g.savings_goal_id === dbSavingsGoals[sgIdx].id);
+                if (gIdx >= 0) {
+                  const target = dbGoals[gIdx].target_amount;
+                  const bal = dbSavingsGoals[sgIdx].current_balance;
+                  const pct = Math.min(100, Math.round((bal / target) * 100));
+                  const completed = bal >= target;
+                  dbGoals[gIdx] = {
+                    ...dbGoals[gIdx],
+                    progress_percentage: pct,
+                    status: completed ? 'completed' : bal > 0 ? 'in_progress' : 'not_started',
+                    completed_at: completed ? '2026-05-02T00:00:00Z' : null
+                  };
+                }
+              }
+              return { data: txRow, error: null };
+            }
+            if (ctx.op === 'delete') {
+              const idFilter = ctx.filters.find(f => f.col === 'id')?.val;
+              const txIdx = dbSavingsTx.findIndex(t => t.id === idFilter);
+              if (txIdx < 0) return { data: [], error: null };
+              const [removed] = dbSavingsTx.splice(txIdx, 1);
+              const sgIdx = dbSavingsGoals.findIndex(sg => sg.id === removed.savings_goal_id);
+              if (sgIdx >= 0) {
+                const revDelta = removed.transaction_type === 'deposit' ? -removed.amount : removed.amount;
+                dbSavingsGoals[sgIdx] = {
+                  ...dbSavingsGoals[sgIdx],
+                  current_balance: Math.max(0, dbSavingsGoals[sgIdx].current_balance + revDelta)
+                };
+                const gIdx = dbGoals.findIndex(g => g.savings_goal_id === dbSavingsGoals[sgIdx].id);
+                if (gIdx >= 0) {
+                  const target = dbGoals[gIdx].target_amount;
+                  const bal = dbSavingsGoals[sgIdx].current_balance;
+                  const pct = Math.min(100, Math.round((bal / target) * 100));
+                  dbGoals[gIdx] = {
+                    ...dbGoals[gIdx],
+                    progress_percentage: pct,
+                    status: bal > 0 ? 'in_progress' : 'not_started',
+                    completed_at: null
+                  };
+                }
+              }
+              return { data: [{ id: removed.id }], error: null };
+            }
+            return { data: dbSavingsTx, error: null };
           }
-          return { data: dbGoals, error: null };
+        },
+        (fn, args) => {
+          rpcCallCount += 1;
+          if (failNextRpc) {
+            return { data: null, error: { message: 'RPC check violation' } };
+          }
+          if (returnMissingIds) {
+            return { data: {}, error: null };
+          }
+          if (fn === 'xos_create_goal_with_savings') {
+            assert(typeof args.p_target_amount === 'number' && args.p_target_amount > 0, 'RPC requires p_target_amount > 0');
+            assert(['low', 'medium', 'high'].includes(args.p_priority), `Invalid RPC priority: ${args.p_priority}`);
+            const sgId = `sg_rpc_${dbSavingsGoals.length + 1}`;
+            const gId = `g_rpc_${dbGoals.length + 1}`;
+            dbSavingsGoals.push({
+              id: sgId,
+              name: args.p_title,
+              target_amount: args.p_target_amount,
+              current_balance: args.p_initial_deposit || 0,
+              created_at: '2026-05-01T00:00:00Z'
+            });
+            dbGoals.push({
+              id: gId,
+              title: args.p_title,
+              description: args.p_description,
+              category: args.p_category,
+              target_amount: args.p_target_amount,
+              progress_percentage: 0,
+              priority: args.p_priority,
+              status: 'not_started',
+              savings_goal_id: sgId,
+              created_at: '2026-05-01T00:00:00Z'
+            });
+            return { data: { goal_id: gId, savings_goal_id: sgId }, error: null };
+          }
+          if (fn === 'xos_archive_goal') {
+            const gIdx = dbGoals.findIndex(g => g.id === args.p_goal_id);
+            if (gIdx >= 0) {
+              const [removed] = dbGoals.splice(gIdx, 1);
+              const sgIdx = dbSavingsGoals.findIndex(sg => sg.id === removed.savings_goal_id);
+              if (sgIdx >= 0) dbSavingsGoals.splice(sgIdx, 1);
+            }
+            return { data: true, error: null };
+          }
+          return { data: null, error: null };
         }
-      });
+      );
 
       repository.clearUserData();
       repository.setActiveUserId(USER_A);
       configureRepositoryBackendForTests(goalsClient, true);
 
-      await repository.addGoal({ title: 'G1', description: '', category: 'Career', progressPercentage: 0, priority: 'Low', status: 'Not Started' });
-      await repository.addGoal({ title: 'G2', description: '', category: 'Health', progressPercentage: 40, priority: 'Medium', status: 'In Progress' });
-      await repository.addGoal({ title: 'G3', description: '', category: 'Financial', progressPercentage: 50, priority: 'High', status: 'Completed' });
-      await repository.addGoal({ title: 'G4', description: '', category: 'Travel', progressPercentage: 10, priority: 'Medium', status: 'Paused' });
+      // Missing, zero, and negative targetAmount must reject BEFORE hitting RPC
+      for (const badTarget of [undefined as any, null as any, 0, -250, Number.NaN]) {
+        let rejected = false;
+        const callsBefore = rpcCallCount;
+        try {
+          await repository.addGoal({
+            title: 'Invalid Target',
+            category: 'Financial',
+            targetAmount: badTarget,
+            priority: 'Medium'
+          });
+        } catch {
+          rejected = true;
+        }
+        assert(rejected, `targetAmount=${String(badTarget)} must reject before RPC`);
+        assert(rpcCallCount === callsBefore, `Invalid targetAmount=${String(badTarget)} must not invoke RPC`);
+      }
 
-      assert(dbGoals.map(g => g.status).join(',') === 'not_started,in_progress,completed,paused', 'All 4 goal statuses written in snake_case');
-      assert(dbGoals.map(g => g.priority).join(',') === 'low,medium,high,medium', 'All 3 goal priorities written in lowercase');
-      assert(dbGoals[2].progress_percentage === 100 && Boolean(dbGoals[2].completed_at), 'Completed goal forces progress_percentage=100 & completed_at');
+      // Invalid priority must reject BEFORE hitting RPC
+      {
+        let badPriorityRejected = false;
+        const callsBefore = rpcCallCount;
+        try {
+          await repository.addGoal({
+            title: 'Bad Priority',
+            category: 'Financial',
+            targetAmount: 1000,
+            priority: 'Urgent' as any
+          });
+        } catch {
+          badPriorityRejected = true;
+        }
+        assert(badPriorityRejected, 'Unsupported priority must reject before RPC');
+        assert(rpcCallCount === callsBefore, 'Unsupported priority must not invoke RPC');
+      }
 
-      await repository.updateGoal('goal_2', { status: 'Completed', priority: 'High' });
-      assert(lastGoalUpdate.status === 'completed' && lastGoalUpdate.priority === 'high' && lastGoalUpdate.progress_percentage === 100, 'updateGoal writes lowercase/snake_case and syncs 100% progress');
+      // RPC error surfacing without updating state
+      failNextRpc = true;
+      let rpcErrMsg = '';
+      try {
+        await repository.addGoal({ title: 'Fail RPC', category: 'Career', targetAmount: 1000, priority: 'High' });
+      } catch (err) {
+        rpcErrMsg = err instanceof Error ? err.message : '';
+      }
+      assert(rpcErrMsg.includes('RPC check violation'), 'RPC error message surfaced cleanly');
+      assert(repository.getGoals().length === 0 && repository.getSavingsGoals().length === 0, 'State unchanged on RPC failure');
+      failNextRpc = false;
+
+      // Missing returned IDs must error cleanly
+      returnMissingIds = true;
+      let missingIdsThrew = false;
+      try {
+        await repository.addGoal({ title: 'Missing IDs', category: 'Career', targetAmount: 1000, priority: 'High' });
+      } catch {
+        missingIdsThrew = true;
+      }
+      assert(missingIdsThrew, 'RPC returning missing goal_id/savings_goal_id must throw');
+      returnMissingIds = false;
+
+      // Happy-path create across all 3 priorities + trigger refresh on deposit/withdrawal/delete
+      const gLow = await repository.addGoal({ title: 'G1', category: 'Career', targetAmount: 1000, priority: 'Low' });
+      const gMed = await repository.addGoal({ title: 'G2', category: 'Health', targetAmount: 2000, priority: 'Medium' });
+      const gHigh = await repository.addGoal({ title: 'G3', category: 'Financial', targetAmount: 500, priority: 'High' });
+
+      assert(gLow.savingsGoalId === 'sg_rpc_1' && gMed.savingsGoalId === 'sg_rpc_2' && gHigh.savingsGoalId === 'sg_rpc_3', 'Each created goal hydrated with returned savingsGoalId');
+      assert(dbGoals.map(g => g.priority).join(',') === 'low,medium,high', 'All 3 goal priorities written in lowercase');
+
+      // Deposit 500 -> DB trigger sets current_balance=500, progress_percentage=100, status='completed', completed_at
+      const depTx = await repository.addSavingsTransaction({
+        savingsGoalId: gHigh.savingsGoalId,
+        amount: 500,
+        type: 'deposit',
+        date: '2026-05-02'
+      });
+      const completedGoal = repository.getGoals().find(g => g.id === gHigh.id)!;
+      assert(completedGoal.progressPercentage === 100 && completedGoal.status === 'Completed' && Boolean(completedGoal.completedAt), 'Savings deposit refreshed trigger-maintained progress, status, and completedAt on linked Goal');
+
+      // Delete deposit -> DB trigger clears completed_at and resets progress_percentage=0 & status='not_started'
+      await repository.deleteSavingsTransaction(depTx.id);
+      const revertedGoal = repository.getGoals().find(g => g.id === gHigh.id)!;
+      assert(revertedGoal.progressPercentage === 0 && revertedGoal.status === 'Not Started' && revertedGoal.completedAt === undefined, 'Transaction delete refreshed trigger-cleared completedAt and progressPercentage on linked Goal');
+
+      // updateGoal rejects non-positive targetAmount
+      let updateRejected = false;
+      try {
+        await repository.updateGoal(gLow.id, { targetAmount: 0 });
+      } catch {
+        updateRejected = true;
+      }
+      assert(updateRejected, 'updateGoal rejects targetAmount <= 0');
+
+      // Archive removes both goal & linked savings account from state
+      await repository.deleteGoal(gLow.id);
+      assert(!repository.getGoals().some(g => g.id === gLow.id), 'Archived goal removed from state');
+      assert(!repository.getSavingsGoals().some(sg => sg.id === gLow.savingsGoalId), 'Archived goal connected savings account removed from state');
 
       // Simulate DB row with cancelled status hydrating cleanly
-      dbGoals.push({ id: 'goal_5', title: 'Cancelled One', description: '', category: 'Life', progress_percentage: 20, priority: 'low', status: 'cancelled', created_at: '2026-05-01' });
+      dbGoals.push({ id: 'goal_5', title: 'Cancelled One', description: '', category: 'Life', progress_percentage: 20, priority: 'low', status: 'cancelled', savings_goal_id: 'sg_rpc_2', created_at: '2026-05-01' });
       repository.clearUserData();
       await repository.fetchAllUserData(USER_A);
       const hydrated = repository.getGoals();
       assert(hydrated.find(g => g.id === 'goal_5')?.status === 'Paused', 'DB cancelled status hydrates to Paused safely');
-      assert(hydrated.find(g => g.id === 'goal_1')?.status === 'Not Started' && hydrated.find(g => g.id === 'goal_1')?.priority === 'Low', 'Not Started & Low round-trip accurately');
+      assert(hydrated.find(g => g.id === gHigh.id)?.savingsGoalId === 'sg_rpc_3', 'Hydrated Goal preserves required savingsGoalId');
     }
     console.log('✓ Test 18 passed.');
 
