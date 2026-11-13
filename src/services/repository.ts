@@ -342,6 +342,35 @@ function mapIncomeRow(i: any): Income {
   };
 }
 
+export function deserializeDebtDescription(rawDescription?: string): { direction: DebtDirection; description: string } {
+  const raw = rawDescription || '';
+  let trimmed = raw.trim();
+  let direction: DebtDirection = 'receive';
+  let foundDirection = false;
+
+  const prefixRegex = /^\s*\[\s*(PAY|RECEIVE)\s*\]\s*/i;
+
+  while (prefixRegex.test(trimmed)) {
+    const match = trimmed.match(prefixRegex);
+    if (match && match[1]) {
+      const matchedStr = match[1].toUpperCase();
+      if (!foundDirection) {
+        direction = matchedStr === 'PAY' ? 'pay' : 'receive';
+        foundDirection = true;
+      }
+    }
+    trimmed = trimmed.replace(prefixRegex, '').trim();
+  }
+
+  return { direction, description: trimmed };
+}
+
+export function serializeDebtDescription(direction: DebtDirection, description?: string): string {
+  const { description: cleanDesc } = deserializeDebtDescription(description);
+  const prefix = direction === 'pay' ? '[PAY]' : '[RECEIVE]';
+  return cleanDesc ? `${prefix} ${cleanDesc}` : prefix;
+}
+
 function mapDebtRow(d: any): Debt {
   const original = Number(d.original_amount);
   const remaining =
@@ -349,16 +378,7 @@ function mapDebtRow(d: any): Debt {
       ? Number(d.remaining_amount)
       : original;
 
-  const rawDesc = d.description || '';
-  let direction: DebtDirection = 'receive';
-  let cleanDesc = rawDesc;
-  if (rawDesc.startsWith('[PAY]')) {
-    direction = 'pay';
-    cleanDesc = rawDesc.replace('[PAY]', '').trim();
-  } else if (rawDesc.startsWith('[RECEIVE]')) {
-    direction = 'receive';
-    cleanDesc = rawDesc.replace('[RECEIVE]', '').trim();
-  }
+  const { direction, description: cleanDesc } = deserializeDebtDescription(d.description);
 
   return {
     id: d.id,
@@ -2146,11 +2166,8 @@ export const repository = {
     }
 
     const direction = debt.direction || 'receive';
-    const prefix = direction === 'pay' ? '[PAY] ' : '[RECEIVE] ';
-    const rawDesc = debt.description ? debt.description.trim() : '';
-    const storedDesc = rawDesc
-      ? (rawDesc.startsWith('[PAY]') || rawDesc.startsWith('[RECEIVE]') ? rawDesc : `${prefix}${rawDesc}`)
-      : prefix.trim();
+    const storedDesc = serializeDebtDescription(direction, debt.description);
+    const deserializedDesc = deserializeDebtDescription(storedDesc);
 
     const ctx = await requirePersistenceContext();
 
@@ -2182,8 +2199,8 @@ export const repository = {
     const newDebt: Debt = {
       ...debt,
       person_name: debt.person_name.trim(),
-      description: rawDesc,
-      direction,
+      description: deserializedDesc.description,
+      direction: deserializedDesc.direction,
       remaining_amount: debt.original_amount,
       id: 'd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
       status: 'outstanding',
@@ -2217,12 +2234,11 @@ export const repository = {
 
     const ctx = await requirePersistenceContext();
     const nextDirection = updates.direction !== undefined ? updates.direction : (targetDebt.direction || 'receive');
-    const prefix = nextDirection === 'pay' ? '[PAY] ' : '[RECEIVE] ';
-    const existingCleanDesc = targetDebt.description || '';
-    const updatedDescInput = updates.description !== undefined ? updates.description.trim() : existingCleanDesc;
-    const storedDesc = updatedDescInput
-      ? (updatedDescInput.startsWith('[PAY]') || updatedDescInput.startsWith('[RECEIVE]') ? updatedDescInput : `${prefix}${updatedDescInput}`)
-      : prefix.trim();
+    
+    const currentCleanDesc = targetDebt.description || '';
+    const nextDescInput = updates.description !== undefined ? updates.description : currentCleanDesc;
+    const storedDesc = serializeDebtDescription(nextDirection, nextDescInput);
+    const deserializedDesc = deserializeDebtDescription(storedDesc);
 
     if (ctx.mode === 'supabase') {
       const dbPayload: Record<string, any> = {};
@@ -2266,8 +2282,8 @@ export const repository = {
       return {
         ...d,
         ...updates,
-        description: updatedDescInput,
-        direction: nextDirection,
+        description: deserializedDesc.description,
+        direction: deserializedDesc.direction,
         remaining_amount: nextRemaining,
         status: nextStatus,
         updated_at: getTodayString()

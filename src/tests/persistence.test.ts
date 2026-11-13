@@ -33,7 +33,9 @@ import {
   toDbGoalPriority,
   fromDbGoalPriority,
   toDbRecurrenceFrequency,
-  fromDbRecurrenceFrequency
+  fromDbRecurrenceFrequency,
+  serializeDebtDescription,
+  deserializeDebtDescription
 } from '../services/repository';
 import {
   parseCalendarDate,
@@ -1389,8 +1391,50 @@ async function runPersistenceTests() {
     }
     console.log('✓ Test 21 passed.');
 
+    // Test 22: Debt Direction Serialization & Deserialization Edge Cases
+    {
+      // 1. [Pay] Rent -> direction pay, description Rent
+      const r1 = deserializeDebtDescription('[Pay] Rent');
+      assert(r1.direction === 'pay' && r1.description === 'Rent', '[Pay] Rent parsed correctly');
+
+      // 2. [pAy] Rent -> direction pay, description Rent
+      const r2 = deserializeDebtDescription('[pAy] Rent');
+      assert(r2.direction === 'pay' && r2.description === 'Rent', '[pAy] Rent parsed correctly');
+
+      // 3. [ReCeIvE] Dinner -> direction receive, description Dinner
+      const r3 = deserializeDebtDescription('[ReCeIvE] Dinner');
+      assert(r3.direction === 'receive' && r3.description === 'Dinner', '[ReCeIvE] Dinner parsed correctly');
+
+      // 4. [PAY] [RECEIVE] Rent -> clean description Rent (first recognized direction wins)
+      const r4 = deserializeDebtDescription('[PAY] [RECEIVE] Rent');
+      assert(r4.direction === 'pay' && r4.description === 'Rent', 'Multiple consecutive prefixes parsed correctly');
+
+      // 5. Bought item [PAY] store -> preserve entire description
+      const r5 = deserializeDebtDescription('Bought item [PAY] store');
+      assert(r5.direction === 'receive' && r5.description === 'Bought item [PAY] store', 'Middle prefix-like text preserved');
+
+      // 6. Empty description -> correct canonical prefix
+      const s1 = serializeDebtDescription('pay', '');
+      assert(s1 === '[PAY]', 'Empty description serializes to canonical [PAY]');
+      const s2 = serializeDebtDescription('receive', undefined);
+      assert(s2 === '[RECEIVE]', 'Undefined description serializes to canonical [RECEIVE]');
+
+      // 7. Direction change -> exactly one prefix matching new direction
+      const updated = serializeDebtDescription('pay', '[RECEIVE] Rent');
+      assert(updated === '[PAY] Rent', 'Direction change produces exactly one correct prefix');
+
+      // 8. Description-only edit -> direction remains unchanged
+      const descEdit = serializeDebtDescription('pay', 'New Rent Desc');
+      assert(descEdit === '[PAY] New Rent Desc', 'Description-only edit preserves direction');
+
+      // 9. Other-field edit -> direction and description remain unchanged
+      const otherEdit = serializeDebtDescription('pay', '[PAY] Rent');
+      assert(otherEdit === '[PAY] Rent', 'Other-field edit preserves direction and description');
+    }
+    console.log('✓ Test 22 passed.');
+
     console.log('\n======================================================');
-    console.log('--- ALL 21 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
+    console.log('--- ALL 22 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
     console.log('======================================================');
   } finally {
     configureRepositoryBackendForTests(null, null);
