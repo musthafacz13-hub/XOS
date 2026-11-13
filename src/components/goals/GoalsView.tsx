@@ -15,10 +15,15 @@ export const GoalsView: React.FC = () => {
 
   // Confirmation dialog state
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Form Fields
   const [title, setTitle] = useState('');
@@ -33,16 +38,18 @@ export const GoalsView: React.FC = () => {
   // Escape key handler for modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isModalOpen) {
+      if (e.key === 'Escape' && isModalOpen && !isSubmitting) {
         setIsModalOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isModalOpen]);
+  }, [isModalOpen, isSubmitting]);
 
   const openCreateModal = () => {
     setEditingGoal(null);
+    setFormError(null);
+    setIsSubmitting(false);
     setTitle('');
     setDescription('');
     setType('goal');
@@ -56,6 +63,8 @@ export const GoalsView: React.FC = () => {
 
   const openEditModal = (g: Goal) => {
     setEditingGoal(g);
+    setFormError(null);
+    setIsSubmitting(false);
     setTitle(g.title);
     setDescription(g.description || '');
     setType(g.type);
@@ -67,9 +76,9 @@ export const GoalsView: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || isSubmitting) return;
 
     const payload = {
       title: title.trim(),
@@ -83,23 +92,37 @@ export const GoalsView: React.FC = () => {
       status: (editingGoal ? editingGoal.status : 'In Progress') as GoalStatus
     };
 
-    if (editingGoal) {
-      data.updateGoal(editingGoal.id, payload);
-    } else {
-      data.addGoal(payload);
+    setFormError(null);
+    setIsSubmitting(true);
+    try {
+      if (editingGoal) {
+        await data.updateGoal(editingGoal.id, payload);
+      } else {
+        await data.addGoal(payload);
+      }
+      setIsModalOpen(false);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to save goal.');
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsModalOpen(false);
   };
 
-  const handleToggleComplete = (g: Goal) => {
+  const handleToggleComplete = async (g: Goal) => {
+    setActionError(null);
     const isComp = g.status === 'Completed';
-    data.updateGoal(g.id, {
-      status: isComp ? 'In Progress' : 'Completed',
-      completedAt: isComp ? undefined : getTodayString()
-    });
+    try {
+      await data.updateGoal(g.id, {
+        status: isComp ? 'In Progress' : 'Completed',
+        completedAt: isComp ? undefined : getTodayString()
+      });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to update goal status.');
+    }
   };
 
   const handleDelete = (id: string) => {
+    setDeleteError(null);
     setDeleteTargetId(id);
   };
 
@@ -139,6 +162,19 @@ export const GoalsView: React.FC = () => {
           <span>New Goal or Dream</span>
         </button>
       </div>
+
+      {actionError && (
+        <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center justify-between gap-2">
+          <span>{actionError}</span>
+          <button
+            type="button"
+            onClick={() => setActionError(null)}
+            className="text-rose-700 hover:text-rose-900 font-semibold cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Main Summary & Quick Actions Dashboard Header */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
@@ -371,7 +407,7 @@ export const GoalsView: React.FC = () => {
       {isModalOpen && (
         <div 
           className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
-          onClick={() => setIsModalOpen(false)}
+          onClick={() => { if (!isSubmitting) setIsModalOpen(false); }}
           role="dialog"
           aria-modal="true"
         >
@@ -384,14 +420,21 @@ export const GoalsView: React.FC = () => {
                 {editingGoal ? 'Edit Goal or Dream' : 'New Goal or Dream'}
               </h3>
               <button
+                type="button"
+                disabled={isSubmitting}
                 onClick={() => setIsModalOpen(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-black cursor-pointer"
+                className="p-1 rounded-lg text-neutral-400 hover:text-black cursor-pointer disabled:opacity-50"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {formError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium">
+                  {formError}
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-semibold text-neutral-700 mb-1">Title *</label>
                 <input
@@ -493,16 +536,18 @@ export const GoalsView: React.FC = () => {
               <div className="pt-3 flex justify-end gap-2 border-t border-neutral-100">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  Save Goal
+                  {isSubmitting ? 'Saving...' : 'Save Goal'}
                 </button>
               </div>
             </form>
@@ -516,11 +561,25 @@ export const GoalsView: React.FC = () => {
         title="Delete Goal"
         message="Are you sure you want to permanently delete this goal? Any progress tracked will be lost."
         confirmLabel="Delete Goal"
-        onConfirm={() => {
-          if (deleteTargetId) data.deleteGoal(deleteTargetId);
+        isLoading={isDeleting}
+        error={deleteError}
+        onConfirm={async () => {
+          if (!deleteTargetId || isDeleting) return;
+          setIsDeleting(true);
+          setDeleteError(null);
+          try {
+            await data.deleteGoal(deleteTargetId);
+            setDeleteTargetId(null);
+          } catch (err) {
+            setDeleteError(err instanceof Error ? err.message : 'Failed to delete goal.');
+          } finally {
+            setIsDeleting(false);
+          }
+        }}
+        onCancel={() => {
+          setDeleteError(null);
           setDeleteTargetId(null);
         }}
-        onCancel={() => setDeleteTargetId(null)}
       />
     </div>
   );

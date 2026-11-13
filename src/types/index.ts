@@ -174,7 +174,6 @@ export interface SalaryPayout {
   netSalary: number;
   status: 'Estimated' | 'Paid';
   notes?: string;
-  syncedToIncomeId?: string;
 }
 
 export interface SavingsGoal {

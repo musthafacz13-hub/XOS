@@ -11,25 +11,27 @@ import {
   SavingsGoal, 
   SavingsTransaction 
 } from '../types';
-import { getMonthString, getTodayString } from './formatters';
+import { formatDate, getMonthString, parseCalendarDate } from './formatters';
 
 export function filterRecordsByDateRange<T extends { date: string }>(
   records: T[],
   preset: DateFilterPreset,
   customStart?: string,
-  customEnd?: string
+  customEnd?: string,
+  referenceDate: Date = new Date()
 ): T[] {
-  const today = new Date();
-  
+  const today = referenceDate;
+  const todayIso = formatDate(today, 'YYYY-MM-DD');
+
   return records.filter(r => {
     if (!r.date) return false;
-    const rDate = new Date(r.date);
+    const rDate = parseCalendarDate(r.date);
     if (isNaN(rDate.getTime())) return false;
+    const rIso = formatDate(rDate, 'YYYY-MM-DD');
 
     switch (preset) {
       case 'today': {
-        const tStr = getTodayString();
-        return r.date === tStr;
+        return rIso === todayIso;
       }
       case 'this_month': {
         return rDate.getFullYear() === today.getFullYear() && rDate.getMonth() === today.getMonth();
@@ -42,8 +44,8 @@ export function filterRecordsByDateRange<T extends { date: string }>(
         return rDate.getFullYear() === today.getFullYear();
       }
       case 'custom': {
-        if (customStart && r.date < customStart) return false;
-        if (customEnd && r.date > customEnd) return false;
+        if (customStart && rIso < customStart) return false;
+        if (customEnd && rIso > customEnd) return false;
         return true;
       }
       default:

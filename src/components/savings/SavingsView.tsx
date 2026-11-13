@@ -11,13 +11,18 @@ export const SavingsView: React.FC = () => {
 
   // Confirmation dialog state
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [isDeletingGoal, setIsDeletingGoal] = useState(false);
+  const [deleteGoalError, setDeleteGoalError] = useState<string | null>(null);
 
   // Modal State
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<SavingsGoal | null>(null);
+  const [isSubmittingGoal, setIsSubmittingGoal] = useState(false);
+  const [goalError, setGoalError] = useState<string | null>(null);
 
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [selectedTxGoalId, setSelectedTxGoalId] = useState<string>('');
+  const [isSubmittingTx, setIsSubmittingTx] = useState(false);
 
   // Goal Form Fields
   const [name, setName] = useState('');
@@ -31,21 +36,23 @@ export const SavingsView: React.FC = () => {
   const [txAmount, setTxAmount] = useState('');
   const [txType, setTxType] = useState<'deposit' | 'withdrawal'>('deposit');
   const [txNote, setTxNote] = useState('');
+  const [txError, setTxError] = useState<string | null>(null);
 
   // Escape key handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (isGoalModalOpen) setIsGoalModalOpen(false);
-        if (isTxModalOpen) setIsTxModalOpen(false);
+        if (isGoalModalOpen && !isSubmittingGoal) setIsGoalModalOpen(false);
+        if (isTxModalOpen && !isSubmittingTx) setIsTxModalOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isGoalModalOpen, isTxModalOpen]);
+  }, [isGoalModalOpen, isTxModalOpen, isSubmittingGoal, isSubmittingTx]);
 
   const openCreateGoalModal = () => {
     setEditingGoal(null);
+    setGoalError(null);
     setName('');
     setTargetAmount('');
     setInitialDeposit('');
@@ -57,6 +64,7 @@ export const SavingsView: React.FC = () => {
 
   const openEditGoalModal = (sg: SavingsGoal) => {
     setEditingGoal(sg);
+    setGoalError(null);
     setName(sg.name);
     setTargetAmount(String(sg.targetAmount));
     setInitialDeposit('0');
@@ -71,39 +79,63 @@ export const SavingsView: React.FC = () => {
     setTxType(type);
     setTxAmount('');
     setTxNote('');
+    setTxError(null);
     setIsTxModalOpen(true);
   };
 
-  const handleGoalSubmit = (e: React.FormEvent) => {
+  const handleGoalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !targetAmount) return;
+    if (isSubmittingGoal) return;
+    setGoalError(null);
 
-    if (editingGoal) {
-      data.updateSavingsGoal(editingGoal.id, {
-        name: name.trim(),
-        targetAmount: parseFloat(targetAmount),
-        startDate,
-        targetDate: targetDate || undefined,
-        description: description.trim()
-      });
-    } else {
-      data.addSavingsGoal({
-        name: name.trim(),
-        targetAmount: parseFloat(targetAmount),
-        initialDeposit: initialDeposit ? parseFloat(initialDeposit) : 0,
-        startDate,
-        targetDate: targetDate || undefined,
-        description: description.trim()
-      });
+    const parsedTarget = parseFloat(targetAmount);
+    const parsedInitial = initialDeposit ? parseFloat(initialDeposit) : 0;
+
+    if (!name.trim()) {
+      setGoalError('Please enter a savings fund name.');
+      return;
+    }
+    if (isNaN(parsedTarget) || parsedTarget < 0) {
+      setGoalError('Please enter a valid target amount.');
+      return;
+    }
+    if (isNaN(parsedInitial) || parsedInitial < 0) {
+      setGoalError('Initial deposit cannot be negative.');
+      return;
     }
 
-    setIsGoalModalOpen(false);
+    setIsSubmittingGoal(true);
+    try {
+      if (editingGoal) {
+        await data.updateSavingsGoal(editingGoal.id, {
+          name: name.trim(),
+          targetAmount: parsedTarget,
+          startDate,
+          targetDate: targetDate || undefined,
+          description: description.trim()
+        });
+      } else {
+        await data.addSavingsGoal({
+          name: name.trim(),
+          targetAmount: parsedTarget,
+          initialDeposit: parsedInitial,
+          startDate,
+          targetDate: targetDate || undefined,
+          description: description.trim()
+        });
+      }
+
+      setIsGoalModalOpen(false);
+    } catch (err) {
+      setGoalError(err instanceof Error ? err.message : 'Database error: Could not save savings fund.');
+    } finally {
+      setIsSubmittingGoal(false);
+    }
   };
 
-  const [txError, setTxError] = useState<string | null>(null);
-
-  const handleTxSubmit = (e: React.FormEvent) => {
+  const handleTxSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingTx) return;
     setTxError(null);
     if (!selectedTxGoalId || !txAmount) return;
 
@@ -119,8 +151,9 @@ export const SavingsView: React.FC = () => {
       return;
     }
 
+    setIsSubmittingTx(true);
     try {
-      data.addSavingsTransaction({
+      await data.addSavingsTransaction({
         savingsGoalId: selectedTxGoalId,
         amount: parsedAmount,
         type: txType,
@@ -130,10 +163,13 @@ export const SavingsView: React.FC = () => {
       setIsTxModalOpen(false);
     } catch (err) {
       setTxError(err instanceof Error ? err.message : 'Failed to record transaction.');
+    } finally {
+      setIsSubmittingTx(false);
     }
   };
 
   const handleDeleteGoal = (id: string) => {
+    setDeleteGoalError(null);
     setDeleteTargetId(id);
   };
 
@@ -436,12 +472,21 @@ export const SavingsView: React.FC = () => {
                 {editingGoal ? 'Edit Savings Fund' : 'New Savings Fund'}
               </h3>
               <button
+                type="button"
+                disabled={isSubmittingGoal}
                 onClick={() => setIsGoalModalOpen(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-black cursor-pointer"
+                className="p-1 rounded-lg text-neutral-400 hover:text-black cursor-pointer disabled:opacity-50"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {goalError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{goalError}</span>
+              </div>
+            )}
 
             <form onSubmit={handleGoalSubmit} className="space-y-4">
               <div>
@@ -519,16 +564,18 @@ export const SavingsView: React.FC = () => {
               <div className="pt-3 flex justify-end gap-2 border-t border-neutral-100">
                 <button
                   type="button"
+                  disabled={isSubmittingGoal}
                   onClick={() => setIsGoalModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer"
+                  disabled={isSubmittingGoal}
+                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  Save Fund
+                  {isSubmittingGoal ? 'Saving...' : 'Save Fund'}
                 </button>
               </div>
             </form>
@@ -595,16 +642,18 @@ export const SavingsView: React.FC = () => {
               <div className="pt-3 flex justify-end gap-2 border-t border-neutral-100">
                 <button
                   type="button"
+                  disabled={isSubmittingTx}
                   onClick={() => setIsTxModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer"
+                  disabled={isSubmittingTx}
+                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  Confirm Entry
+                  {isSubmittingTx ? 'Saving...' : 'Confirm Entry'}
                 </button>
               </div>
             </form>
@@ -618,11 +667,25 @@ export const SavingsView: React.FC = () => {
         title="Delete Savings Fund"
         message="Are you sure you want to delete this savings reserve? All recorded deposits and withdrawals for this fund will also be removed."
         confirmLabel="Delete Fund"
-        onConfirm={() => {
-          if (deleteTargetId) data.deleteSavingsGoal(deleteTargetId);
+        isLoading={isDeletingGoal}
+        error={deleteGoalError}
+        onConfirm={async () => {
+          if (!deleteTargetId || isDeletingGoal) return;
+          setDeleteGoalError(null);
+          setIsDeletingGoal(true);
+          try {
+            await data.deleteSavingsGoal(deleteTargetId);
+            setDeleteTargetId(null);
+          } catch (err) {
+            setDeleteGoalError(err instanceof Error ? err.message : 'Database error: Could not delete savings fund.');
+          } finally {
+            setIsDeletingGoal(false);
+          }
+        }}
+        onCancel={() => {
+          setDeleteGoalError(null);
           setDeleteTargetId(null);
         }}
-        onCancel={() => setDeleteTargetId(null)}
       />
     </div>
   );

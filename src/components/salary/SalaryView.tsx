@@ -14,12 +14,16 @@ export const SalaryView: React.FC = () => {
 
   // Deletion target
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [isDeletingPayout, setIsDeletingPayout] = useState(false);
+  const [deletePayoutError, setDeletePayoutError] = useState<string | null>(null);
 
   // Rate Settings form
   const [dailyBaseSalary, setDailyBaseSalary] = useState(data.settings.salaryConfig.dailyBaseSalary || 500);
   const [standardWorkingHours, setStandardWorkingHours] = useState(data.settings.salaryConfig.standardWorkingHours || 8);
   const [extraHourRate, setExtraHourRate] = useState(data.settings.salaryConfig.extraHourRate || 100);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [savedSettingsNotif, setSavedSettingsNotif] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
 
   // Salary Payment Modal
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -27,6 +31,7 @@ export const SalaryView: React.FC = () => {
   const [paymentDate, setPaymentDate] = useState(getTodayString());
   const [paymentNotes, setPaymentNotes] = useState('');
   const [isSyncingToIncome, setIsSyncingToIncome] = useState(true);
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -45,19 +50,30 @@ export const SalaryView: React.FC = () => {
 
   const monthPayouts = data.salaryPayouts.filter(p => p.periodMonth === selectedMonth);
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    data.saveSettings({
-      ...data.settings,
-      salaryConfig: {
-        ...data.settings.salaryConfig,
-        dailyBaseSalary,
-        standardWorkingHours,
-        extraHourRate
-      }
-    });
-    setSavedSettingsNotif(true);
-    setTimeout(() => setSavedSettingsNotif(false), 3000);
+    if (isSavingSettings) return;
+    setSettingsError(null);
+    setSavedSettingsNotif(false);
+    setIsSavingSettings(true);
+
+    const updatedSalaryConfig = {
+      ...data.settings.salaryConfig,
+      currency: data.settings.currency || data.settings.salaryConfig.currency || 'INR',
+      dailyBaseSalary,
+      standardWorkingHours,
+      extraHourRate
+    };
+
+    try {
+      await data.persistSalaryConfig(updatedSalaryConfig);
+      setSavedSettingsNotif(true);
+      setTimeout(() => setSavedSettingsNotif(false), 3000);
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : 'Failed to save salary rate settings.');
+    } finally {
+      setIsSavingSettings(false);
+    }
   };
 
   const openPaymentModal = () => {
@@ -66,19 +82,23 @@ export const SalaryView: React.FC = () => {
     setPaymentNotes('');
     setIsSyncingToIncome(true);
     setPaymentError(null);
+    setIsSubmittingPayment(false);
     setIsPaymentModalOpen(true);
   };
 
-  const handleRecordPayment = (e: React.FormEvent) => {
+  const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingPayment) return;
     const parsedAmount = parseFloat(paymentAmount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
       setPaymentError('Please enter a valid salary payment amount greater than 0.');
       return;
     }
 
+    setPaymentError(null);
+    setIsSubmittingPayment(true);
     try {
-      data.recordSalaryPayout({
+      await data.recordSalaryPayout({
         periodMonth: selectedMonth,
         paymentDate,
         salaryType: 'daily_wage',
@@ -101,6 +121,8 @@ export const SalaryView: React.FC = () => {
       setActiveTab('payments');
     } catch (err) {
       setPaymentError(err instanceof Error ? err.message : 'Failed to record salary payment.');
+    } finally {
+      setIsSubmittingPayment(false);
     }
   };
 
@@ -309,7 +331,7 @@ export const SalaryView: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-black/[0.06] text-xs text-neutral-700">
                   {monthPayouts.map((pay) => {
-                    const isSynced = Boolean(pay.syncedToIncomeId && data.incomes.some(i => i.id === pay.syncedToIncomeId));
+                    const isSynced = data.incomes.some(i => i.salaryPayoutId === pay.id);
                     return (
                       <tr key={pay.id} className="hover:bg-neutral-50/70 transition-colors">
                         <td className="py-3 px-4 font-mono font-bold text-[#111111]">
@@ -368,6 +390,13 @@ export const SalaryView: React.FC = () => {
             )}
           </div>
 
+          {settingsError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{settingsError}</span>
+            </div>
+          )}
+
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-neutral-700 mb-1">
@@ -424,9 +453,10 @@ export const SalaryView: React.FC = () => {
             <div className="pt-3 border-t border-neutral-100 flex justify-end">
               <button
                 type="submit"
-                className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer"
+                disabled={isSavingSettings}
+                className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
               >
-                Save Rate Settings
+                {isSavingSettings ? 'Saving...' : 'Save Rate Settings'}
               </button>
             </div>
           </div>
@@ -437,7 +467,7 @@ export const SalaryView: React.FC = () => {
       {isPaymentModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs"
-          onClick={() => setIsPaymentModalOpen(false)}
+          onClick={() => { if (!isSubmittingPayment) setIsPaymentModalOpen(false); }}
           role="dialog"
           aria-modal="true"
         >
@@ -452,8 +482,9 @@ export const SalaryView: React.FC = () => {
               </div>
               <button
                 type="button"
+                disabled={isSubmittingPayment}
                 onClick={() => setIsPaymentModalOpen(false)}
-                className="p-1 text-neutral-400 hover:text-black cursor-pointer"
+                className="p-1 text-neutral-400 hover:text-black cursor-pointer disabled:opacity-50"
               >
                 ✕
               </button>
@@ -526,16 +557,18 @@ export const SalaryView: React.FC = () => {
               <div className="pt-3 flex justify-end gap-2 border-t border-neutral-100">
                 <button
                   type="button"
+                  disabled={isSubmittingPayment}
                   onClick={() => setIsPaymentModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer"
+                  disabled={isSubmittingPayment}
+                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  Record Salary Payment
+                  {isSubmittingPayment ? 'Saving...' : 'Record Salary Payment'}
                 </button>
               </div>
             </form>
@@ -549,11 +582,25 @@ export const SalaryView: React.FC = () => {
         title="Delete Salary Payout"
         message="Are you sure you want to delete this payout entry? If synced to income, the corresponding income transaction will also be removed."
         confirmLabel="Delete Payout"
-        onConfirm={() => {
-          if (deleteTargetId) data.deleteSalaryPayout(deleteTargetId);
+        isLoading={isDeletingPayout}
+        error={deletePayoutError}
+        onConfirm={async () => {
+          if (!deleteTargetId || isDeletingPayout) return;
+          setIsDeletingPayout(true);
+          setDeletePayoutError(null);
+          try {
+            await data.deleteSalaryPayout(deleteTargetId);
+            setDeleteTargetId(null);
+          } catch (err) {
+            setDeletePayoutError(err instanceof Error ? err.message : 'Failed to delete salary payout.');
+          } finally {
+            setIsDeletingPayout(false);
+          }
+        }}
+        onCancel={() => {
+          setDeletePayoutError(null);
           setDeleteTargetId(null);
         }}
-        onCancel={() => setDeleteTargetId(null)}
       />
     </div>
   );

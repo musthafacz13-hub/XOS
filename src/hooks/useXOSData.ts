@@ -23,9 +23,11 @@ export function useXOSData() {
     debts: repository.getDebts(),
     debtRepayments: repository.getDebtRepayments(),
     backendStatus: repository.getBackendStatus(),
+    fetchErrors: repository.getFetchErrors(),
     
     // Actions
     saveSettings: (s: Parameters<typeof repository.saveSettings>[0]) => repository.saveSettings(s),
+    persistSalaryConfig: (c: Parameters<typeof repository.persistSalaryConfig>[0]) => repository.persistSalaryConfig(c),
     addGoal: (g: Parameters<typeof repository.addGoal>[0]) => repository.addGoal(g),
     updateGoal: (id: string, u: Parameters<typeof repository.updateGoal>[1]) => repository.updateGoal(id, u),
     deleteGoal: (id: string) => repository.deleteGoal(id),

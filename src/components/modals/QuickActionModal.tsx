@@ -20,6 +20,9 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   const data = useXOSData();
   const [activeTab, setActiveTab] = useState<'expense' | 'income' | 'attendance' | 'goal' | 'savings'>(defaultAction);
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
   // Sync tab with defaultAction prop when opened
   useEffect(() => {
     if (isOpen) {
@@ -30,13 +33,13 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   // Escape key handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape' && isOpen && !isSubmitting) {
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, isSubmitting]);
 
   // Expense State
   const [expenseTitle, setExpenseTitle] = useState('');
@@ -76,37 +79,82 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   const [savingsAmount, setSavingsAmount] = useState('');
   const [savingsType, setSavingsType] = useState<'deposit' | 'withdrawal'>('deposit');
 
-  const handleAddExpense = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (data.savingsGoals.length > 0 && (!savingsGoalId || !data.savingsGoals.some(g => g.id === savingsGoalId))) {
+      setSavingsGoalId(data.savingsGoals[0].id);
+    }
+  }, [data.savingsGoals, savingsGoalId]);
+
+  // Clear errors when tab or open state changes
+  useEffect(() => {
+    setActionError(null);
+    setIsSubmitting(false);
+  }, [activeTab, isOpen]);
+
+  const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!expenseTitle.trim() || !expenseAmount) return;
-    data.addExpense({
-      title: expenseTitle.trim(),
-      amount: parseFloat(expenseAmount),
-      category: expenseCategory,
-      date: expenseDate,
-      time: expenseTime,
-      paymentMethod: expensePaymentMethod,
-      notes: expenseNotes.trim()
-    });
-    onClose();
+
+    const numAmount = parseFloat(expenseAmount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      setActionError('Expense amount must be greater than zero.');
+      return;
+    }
+
+    setActionError(null);
+    setIsSubmitting(true);
+    try {
+      await data.addExpense({
+        title: expenseTitle.trim(),
+        amount: numAmount,
+        category: expenseCategory,
+        date: expenseDate,
+        time: expenseTime,
+        paymentMethod: expensePaymentMethod,
+        notes: expenseNotes.trim()
+      });
+      onClose();
+    } catch (err: any) {
+      console.error('Failed to add expense:', err);
+      setActionError(err?.message || 'Database error: Could not save expense.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleAddIncome = (e: React.FormEvent) => {
+  const handleAddIncome = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!incomeTitle.trim() || !incomeAmount) return;
-    data.addIncome({
-      title: incomeTitle.trim(),
-      amount: parseFloat(incomeAmount),
-      source: incomeSource,
-      date: incomeDate,
-      time: incomeTime,
-      notes: incomeNotes.trim()
-    });
-    onClose();
+
+    const numAmount = parseFloat(incomeAmount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      setActionError('Income amount must be greater than zero.');
+      return;
+    }
+
+    setActionError(null);
+    setIsSubmitting(true);
+    try {
+      await data.addIncome({
+        title: incomeTitle.trim(),
+        amount: numAmount,
+        source: incomeSource,
+        date: incomeDate,
+        time: incomeTime,
+        notes: incomeNotes.trim()
+      });
+      onClose();
+    } catch (err: any) {
+      console.error('Failed to add income:', err);
+      setActionError(err?.message || 'Database error: Could not save income.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleSaveAttendance = (e: React.FormEvent) => {
+  const handleSaveAttendance = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     let hours = 8;
     if (attIn && attOut) {
       const [inH, inM] = attIn.split(':').map(Number);
@@ -114,46 +162,75 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       const totalMins = (outH * 60 + outM) - (inH * 60 + inM) - (parseInt(attBreak) || 0);
       hours = Math.max(0, Number((totalMins / 60).toFixed(2)));
     }
-    data.upsertAttendanceRecord({
-      date: attDate,
-      status: attStatus,
-      checkInTime: attStatus === 'Present' ? attIn : undefined,
-      checkOutTime: attStatus === 'Present' ? attOut : undefined,
-      breakDurationMinutes: attStatus === 'Present' ? parseInt(attBreak) : 0,
-      calculatedHours: attStatus === 'Present' ? hours : 0,
-      notes: attNotes.trim()
-    });
-    onClose();
+    setActionError(null);
+    setIsSubmitting(true);
+    try {
+      await data.upsertAttendanceRecord({
+        date: attDate,
+        status: attStatus,
+        checkInTime: attStatus === 'Present' ? attIn : undefined,
+        checkOutTime: attStatus === 'Present' ? attOut : undefined,
+        breakDurationMinutes: attStatus === 'Present' ? parseInt(attBreak) : 0,
+        calculatedHours: attStatus === 'Present' ? hours : 0,
+        notes: attNotes.trim()
+      });
+      onClose();
+    } catch (err: any) {
+      setActionError(err?.message || 'Database error: Could not log attendance.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleAddGoal = (e: React.FormEvent) => {
+  const handleAddGoal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!goalTitle.trim()) return;
-    data.addGoal({
-      title: goalTitle.trim(),
-      description: '',
-      type: goalType,
-      category: goalCategory,
-      targetAmount: goalTargetAmount ? parseFloat(goalTargetAmount) : undefined,
-      currentAmount: 0,
-      targetDate: goalTargetDate || undefined,
-      priority: goalPriority,
-      status: 'In Progress'
-    });
-    onClose();
+    if (!goalTitle.trim() || isSubmitting) return;
+    setActionError(null);
+    setIsSubmitting(true);
+    try {
+      await data.addGoal({
+        title: goalTitle.trim(),
+        description: '',
+        type: goalType,
+        category: goalCategory,
+        targetAmount: goalTargetAmount ? parseFloat(goalTargetAmount) : undefined,
+        currentAmount: 0,
+        targetDate: goalTargetDate || undefined,
+        priority: goalPriority,
+        status: 'In Progress'
+      });
+      onClose();
+    } catch (err: any) {
+      setActionError(err?.message || 'Database error: Could not save goal.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleAddSavingsTx = (e: React.FormEvent) => {
+  const handleAddSavingsTx = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!savingsGoalId || !savingsAmount) return;
-    data.addSavingsTransaction({
-      savingsGoalId,
-      amount: parseFloat(savingsAmount),
-      type: savingsType,
-      date: getTodayString(),
-      note: 'Quick entry'
-    });
-    onClose();
+    if (!savingsGoalId || !savingsAmount || isSubmitting) return;
+    const parsedAmount = parseFloat(savingsAmount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setActionError('Transaction amount must be greater than zero.');
+      return;
+    }
+    setActionError(null);
+    setIsSubmitting(true);
+    try {
+      await data.addSavingsTransaction({
+        savingsGoalId,
+        amount: parsedAmount,
+        type: savingsType,
+        date: getTodayString(),
+        note: 'Quick entry'
+      });
+      onClose();
+    } catch (err: any) {
+      setActionError(err?.message || 'Database error: Could not save savings transaction.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -165,7 +242,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
           animate="animate"
           exit="exit"
           className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4"
-          onClick={onClose}
+          onClick={() => { if (!isSubmitting) onClose(); }}
           role="dialog"
           aria-modal="true"
         >
@@ -182,8 +259,9 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
               <h2 className="font-bold text-sm sm:text-base text-[#111111]">Quick Activity Log</h2>
               <motion.button
                 whileTap={{ scale: 0.9 }}
+                disabled={isSubmitting}
                 onClick={onClose}
-                className="p-1.5 rounded-lg text-neutral-400 hover:text-black hover:bg-neutral-100 transition-colors cursor-pointer"
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-black hover:bg-neutral-100 transition-colors cursor-pointer disabled:opacity-50"
                 aria-label="Close dialog"
               >
                 <X className="w-4 h-4" />
@@ -227,6 +305,12 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
 
             {/* Content Body */}
             <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4">
+          {actionError && (
+            <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-medium">
+              {actionError}
+            </div>
+          )}
+
           {activeTab === 'expense' && (
             <form onSubmit={handleAddExpense} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -309,16 +393,18 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
               <div className="pt-2 flex justify-end gap-2 border-t border-neutral-100">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={onClose}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white hover:bg-black rounded-xl transition-colors cursor-pointer"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white hover:bg-black rounded-xl transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  Save Expense
+                  {isSubmitting ? 'Saving...' : 'Save Expense'}
                 </button>
               </div>
             </form>
@@ -390,16 +476,18 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
               <div className="pt-2 flex justify-end gap-2 border-t border-neutral-100">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={onClose}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white hover:bg-black rounded-xl transition-colors cursor-pointer"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white hover:bg-black rounded-xl transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  Save Income
+                  {isSubmitting ? 'Saving...' : 'Save Income'}
                 </button>
               </div>
             </form>
@@ -479,16 +567,18 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
               <div className="pt-2 flex justify-end gap-2 border-t border-neutral-100">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={onClose}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white hover:bg-black rounded-xl transition-colors cursor-pointer"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white hover:bg-black rounded-xl transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  Log Attendance
+                  {isSubmitting ? 'Saving...' : 'Log Attendance'}
                 </button>
               </div>
             </form>
@@ -563,16 +653,18 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
               <div className="pt-2 flex justify-end gap-2 border-t border-neutral-100">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={onClose}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white hover:bg-black rounded-xl transition-colors cursor-pointer"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white hover:bg-black rounded-xl transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  Create Goal
+                  {isSubmitting ? 'Saving...' : 'Create Goal'}
                 </button>
               </div>
             </form>
@@ -628,16 +720,18 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
                   <div className="pt-2 flex justify-end gap-2 border-t border-neutral-100">
                     <button
                       type="button"
+                      disabled={isSubmitting}
                       onClick={onClose}
-                      className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer"
+                      className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white hover:bg-black rounded-xl transition-colors cursor-pointer"
+                      disabled={isSubmitting}
+                      className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white hover:bg-black rounded-xl transition-colors cursor-pointer disabled:opacity-50"
                     >
-                      Save Transaction
+                      {isSubmitting ? 'Saving...' : 'Save Transaction'}
                     </button>
                   </div>
                 </>

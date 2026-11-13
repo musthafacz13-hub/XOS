@@ -2,7 +2,7 @@
  * Authentication Context & Provider for XOS
  * Manages Supabase session, user state, authentication flows, and demo bypass mode.
  */
-import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import type { User, Session, AuthError } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
 import { repository } from '../services/repository';
@@ -43,27 +43,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const [isPasswordRecovery, setIsPasswordRecovery] = useState<boolean>(false);
 
-  // Sync profile when authenticated
-  const syncProfileToXOS = useCallback((u: User) => {
+  const inFlightHydrationRef = useRef<{ userId: string; promise: Promise<void> } | null>(null);
+  const completedUserIdRef = useRef<string | null>(null);
+
+  // Apply auth email & fallback display name AFTER DB hydration without overwriting persisted profile
+  const applyAuthProfileFallback = useCallback((u: User) => {
     const currentSettings = repository.getSettings();
-    const fullName = u.user_metadata?.full_name || u.email?.split('@')[0] || 'XOS User';
+    const fallbackName = u.user_metadata?.full_name || u.email?.split('@')[0] || 'XOS User';
     const email = u.email || '';
-    
+
     repository.saveSettings({
       ...currentSettings,
       profile: {
         ...currentSettings.profile,
-        name: currentSettings.profile.name || fullName,
-        email: email
+        name: currentSettings.profile.name || fallbackName,
+        email
       }
     });
   }, []);
 
-  // Initialize session and listen for auth changes
+  // Single coordinated hydration owner with coalescing & user-switch isolation
+  const ensureUserHydrated = useCallback((u: User): Promise<void> => {
+    if (!isSupabaseConfigured || !u?.id) return Promise.resolve();
+
+    if (completedUserIdRef.current === u.id && repository.getActiveUserId() === u.id) {
+      return Promise.resolve();
+    }
+
+    if (inFlightHydrationRef.current && inFlightHydrationRef.current.userId === u.id) {
+      return inFlightHydrationRef.current.promise;
+    }
+
+    const previousUserId = repository.getActiveUserId();
+    if (previousUserId && previousUserId !== u.id) {
+      repository.clearUserData();
+    } else if (completedUserIdRef.current && completedUserIdRef.current !== u.id) {
+      repository.clearUserData();
+    }
+
+    completedUserIdRef.current = null;
+    repository.setActiveUserId(u.id);
+
+    let promise!: Promise<void>;
+    promise = (async () => {
+      try {
+        const result = await repository.fetchAllUserData(u.id);
+        if (!result.stale && repository.getActiveUserId() === u.id) {
+          applyAuthProfileFallback(u);
+          completedUserIdRef.current = u.id;
+        }
+      } finally {
+        if (inFlightHydrationRef.current?.promise === promise) {
+          inFlightHydrationRef.current = null;
+        }
+      }
+    })();
+
+    inFlightHydrationRef.current = { userId: u.id, promise };
+    return promise;
+  }, [applyAuthProfileFallback]);
+
+  // Initialize session and listen for auth changes (never await DB calls inside onAuthStateChange!)
   useEffect(() => {
     let mounted = true;
 
-    // Check for password recovery hash parameter on boot
     if (window.location.hash.includes('type=recovery')) {
       setIsPasswordRecovery(true);
     }
@@ -73,50 +116,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // Optimized initial session lookup with request coalescing
-    apiOptimization.coalesce('auth:initial_session', async () => {
-      return supabase.auth.getSession();
-    }).then(({ data: { session }, error }) => {
-      if (!mounted) return;
-      if (!error && session) {
-        setSession(session);
-        setUser(session.user);
-        syncProfileToXOS(session.user);
-      }
-      setLoading(false);
-    }).catch(() => {
-      if (mounted) setLoading(false);
-    });
-
-    // Listen to auth events
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+    // Listen to auth events synchronously; reactive effect below handles hydration outside callback tick
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
       if (!mounted) return;
 
       if (event === 'PASSWORD_RECOVERY') {
         setIsPasswordRecovery(true);
       }
 
-      if (currentSession) {
-        setSession(currentSession);
-        setUser(currentSession.user);
-        syncProfileToXOS(currentSession.user);
+      if (event === 'SIGNED_OUT' || !currentSession) {
+        completedUserIdRef.current = null;
+        inFlightHydrationRef.current = null;
+        setSession(null);
+        setUser(null);
+        apiOptimization.invalidateCache();
+        repository.clearUserData();
+        setLoading(false);
+        return;
+      }
+
+      setSession(currentSession);
+      setUser(currentSession.user);
+      setIsDemoUser(false);
+      try {
+        sessionStorage.removeItem(DEMO_USER_KEY);
+      } catch {}
+    });
+
+    // Initial session lookup with request coalescing
+    apiOptimization.coalesce('auth:initial_session', async () => {
+      return supabase.auth.getSession();
+    }).then(async ({ data: { session: initialSession }, error }) => {
+      if (!mounted) return;
+      if (!error && initialSession?.user) {
+        setSession(initialSession);
+        setUser(initialSession.user);
         setIsDemoUser(false);
         try {
           sessionStorage.removeItem(DEMO_USER_KEY);
         } catch {}
-      } else if (event === 'SIGNED_OUT') {
-        setSession(null);
-        setUser(null);
+        await ensureUserHydrated(initialSession.user);
       }
-
-      setLoading(false);
+      if (mounted) setLoading(false);
+    }).catch(() => {
+      if (mounted) setLoading(false);
     });
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [syncProfileToXOS]);
+  }, [ensureUserHydrated]);
+
+  // Hydrate whenever authenticated user ID transitions (coalesced; skips TOKEN_REFRESHED for same user.id)
+  useEffect(() => {
+    if (!isSupabaseConfigured || !user?.id) return;
+    ensureUserHydrated(user);
+  }, [user?.id, ensureUserHydrated]);
 
   const sanitizeError = (err: AuthError | Error | null): string => {
     if (!err) return '';
@@ -162,10 +218,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (data.session) {
           setSession(data.session);
           setUser(data.user);
-          syncProfileToXOS(data.user);
           setIsDemoUser(false);
           try { sessionStorage.removeItem(DEMO_USER_KEY); } catch {}
           apiOptimization.invalidateCache();
+          if (data.user) {
+            await ensureUserHydrated(data.user);
+          }
         }
 
         return { error: null };
@@ -207,10 +265,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (data.session && data.user) {
           setSession(data.session);
           setUser(data.user);
-          syncProfileToXOS(data.user);
           setIsDemoUser(false);
           try { sessionStorage.removeItem(DEMO_USER_KEY); } catch {}
           apiOptimization.invalidateCache();
+          await ensureUserHydrated(data.user);
         }
 
         return { error: null, needsEmailVerification };
@@ -325,10 +383,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.warn('Sign out caught:', err);
     } finally {
+      completedUserIdRef.current = null;
+      inFlightHydrationRef.current = null;
       setUser(null);
       setSession(null);
       setIsDemoUser(false);
       apiOptimization.invalidateCache();
+      repository.clearUserData();
       try {
         sessionStorage.removeItem(DEMO_USER_KEY);
       } catch {}
@@ -343,7 +404,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const exitDemoMode = () => {
+    completedUserIdRef.current = null;
+    inFlightHydrationRef.current = null;
     setIsDemoUser(false);
+    repository.clearUserData();
     try {
       sessionStorage.removeItem(DEMO_USER_KEY);
     } catch {}

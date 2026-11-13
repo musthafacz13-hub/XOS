@@ -17,10 +17,14 @@ export const IncomeView: React.FC = () => {
 
   // Confirmation dialog state
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIncome, setEditingIncome] = useState<Income | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Form Fields
   const [title, setTitle] = useState('');
@@ -33,16 +37,18 @@ export const IncomeView: React.FC = () => {
   // Escape key handler for modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isModalOpen) {
+      if (e.key === 'Escape' && isModalOpen && !isSubmitting) {
         setIsModalOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isModalOpen]);
+  }, [isModalOpen, isSubmitting]);
 
   const openCreateModal = () => {
     setEditingIncome(null);
+    setFormError(null);
+    setIsSubmitting(false);
     setTitle('');
     setAmount('');
     setSource('Salary');
@@ -54,6 +60,8 @@ export const IncomeView: React.FC = () => {
 
   const openEditModal = (inc: Income) => {
     setEditingIncome(inc);
+    setFormError(null);
+    setIsSubmitting(false);
     setTitle(inc.title);
     setAmount(String(inc.amount));
     setSource(inc.source);
@@ -63,28 +71,45 @@ export const IncomeView: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !amount) return;
 
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      setFormError('Amount must be greater than zero.');
+      return;
+    }
+
+    setFormError(null);
+    setIsSubmitting(true);
+
     const payload = {
       title: title.trim(),
-      amount: parseFloat(amount),
+      amount: numAmount,
       source,
       date,
       time,
       notes: notes.trim()
     };
 
-    if (editingIncome) {
-      data.updateIncome(editingIncome.id, payload);
-    } else {
-      data.addIncome(payload);
+    try {
+      if (editingIncome) {
+        await data.updateIncome(editingIncome.id, payload);
+      } else {
+        await data.addIncome(payload);
+      }
+      setIsModalOpen(false);
+    } catch (err: any) {
+      console.error('Failed to save income:', err);
+      setFormError(err?.message || 'Database error: Could not save income.');
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsModalOpen(false);
   };
 
   const handleDelete = (id: string) => {
+    setDeleteError(null);
     setDeleteTargetId(id);
   };
 
@@ -355,7 +380,7 @@ export const IncomeView: React.FC = () => {
       {isModalOpen && (
         <div 
           className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
-          onClick={() => setIsModalOpen(false)}
+          onClick={() => { if (!isSubmitting) setIsModalOpen(false); }}
           role="dialog"
           aria-modal="true"
         >
@@ -368,14 +393,22 @@ export const IncomeView: React.FC = () => {
                 {editingIncome ? 'Edit Income Record' : 'Log Income Entry'}
               </h3>
               <button
+                type="button"
+                disabled={isSubmitting}
                 onClick={() => setIsModalOpen(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-black cursor-pointer"
+                className="p-1 rounded-lg text-neutral-400 hover:text-black cursor-pointer disabled:opacity-50"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {formError && (
+                <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-medium">
+                  {formError}
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-neutral-700 mb-1">Title *</label>
@@ -449,16 +482,18 @@ export const IncomeView: React.FC = () => {
               <div className="pt-3 flex justify-end gap-2 border-t border-neutral-100">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  Save Income
+                  {isSubmitting ? 'Saving to Database...' : (editingIncome ? 'Update Income' : 'Save Income')}
                 </button>
               </div>
             </form>
@@ -472,11 +507,26 @@ export const IncomeView: React.FC = () => {
         title="Delete Income Record"
         message="Are you sure you want to permanently delete this income entry from your records?"
         confirmLabel="Delete Income"
-        onConfirm={() => {
-          if (deleteTargetId) data.deleteIncome(deleteTargetId);
+        isLoading={isDeleting}
+        error={deleteError}
+        onConfirm={async () => {
+          if (!deleteTargetId || isDeleting) return;
+          setIsDeleting(true);
+          setDeleteError(null);
+          try {
+            await data.deleteIncome(deleteTargetId);
+            setDeleteTargetId(null);
+          } catch (err) {
+            console.error('Delete income failed:', err);
+            setDeleteError(err instanceof Error ? err.message : 'Failed to delete income record.');
+          } finally {
+            setIsDeleting(false);
+          }
+        }}
+        onCancel={() => {
+          setDeleteError(null);
           setDeleteTargetId(null);
         }}
-        onCancel={() => setDeleteTargetId(null)}
       />
     </div>
   );

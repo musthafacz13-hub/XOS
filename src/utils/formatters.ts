@@ -25,9 +25,30 @@ export function formatCurrency(amount: number, currencyCode: CurrencyCode = 'INR
   return `${currency.symbol}${formattedNumber}`;
 }
 
+export function parseCalendarDate(dateInput: string | Date): Date {
+  if (dateInput instanceof Date) return dateInput;
+  const trimmed = dateInput.trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    const day = Number(match[3]);
+    const localDate = new Date(year, month, day);
+    if (
+      localDate.getFullYear() === year &&
+      localDate.getMonth() === month &&
+      localDate.getDate() === day
+    ) {
+      return localDate;
+    }
+    return new Date(NaN);
+  }
+  return new Date(trimmed);
+}
+
 export function formatDate(dateStr: string | Date | undefined, format: DateFormat = 'YYYY-MM-DD'): string {
   if (!dateStr) return '';
-  const d = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
+  const d = parseCalendarDate(dateStr);
   if (isNaN(d.getTime())) return String(dateStr);
 
   const year = d.getFullYear();
@@ -47,7 +68,7 @@ export function formatDate(dateStr: string | Date | undefined, format: DateForma
 
 export function formatHumanDate(dateStr: string | Date | undefined): string {
   if (!dateStr) return '';
-  const d = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
+  const d = parseCalendarDate(dateStr);
   if (isNaN(d.getTime())) return String(dateStr);
 
   return d.toLocaleDateString('en-US', {

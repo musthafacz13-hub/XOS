@@ -109,12 +109,12 @@ export const SettingsView: React.FC = () => {
           .maybeSingle(),
         supabase
           .from('user_settings')
-          .select('currency, date_format, week_start_day, custom_expense_categories, custom_income_sources')
+          .select('currency_code, date_format, week_start_day, custom_expense_categories, custom_income_sources')
           .eq('user_id', user.id)
           .maybeSingle(),
         supabase
           .from('salary_configs')
-          .select('daily_base_salary, standard_working_hours, extra_hour_rate, salary_type, base_amount')
+          .select('*')
           .eq('user_id', user.id)
           .maybeSingle()
       ]);
@@ -135,14 +135,20 @@ export const SettingsView: React.FC = () => {
         setProfileTagline(profileRes.data.tagline || '');
       }
 
-      // Populate User Settings (respecting existing saved currency or defaulting cleanly to INR)
-      if (settingsRes.data) {
-        if (settingsRes.data.currency) {
-          setCurrency(settingsRes.data.currency as CurrencyCode);
-        } else {
-          setCurrency('INR');
-        }
+      const salData = salaryRes.data;
+      const savedCurrencyCode =
+        (settingsRes.data?.currency_code as CurrencyCode | null | undefined) ||
+        (salData?.currency_code as CurrencyCode | null | undefined) ||
+        undefined;
+      const resolvedCurrency: CurrencyCode = !settingsRes.error
+        ? (savedCurrencyCode || 'INR')
+        : (local.currency || 'INR');
 
+      // Populate User Settings (preserving saved USD/EUR/other currency_code, defaulting to INR only when absent)
+      if (!settingsRes.error) {
+        setCurrency(resolvedCurrency);
+      }
+      if (settingsRes.data) {
         if (settingsRes.data.date_format) {
           setDateFormat(settingsRes.data.date_format as DateFormat);
         }
@@ -158,16 +164,31 @@ export const SettingsView: React.FC = () => {
       }
 
       // Populate Salary Config
-      const salData = salaryRes.data;
+      const hydratedSalaryConfig: SalaryConfig = salData ? {
+        ...local.salaryConfig,
+        currency: (salData.currency_code as CurrencyCode) || resolvedCurrency,
+        salaryType: salData.salary_type || local.salaryConfig.salaryType,
+        dailyBaseSalary: salData.daily_base_salary !== undefined && salData.daily_base_salary !== null ? Number(salData.daily_base_salary) : local.salaryConfig.dailyBaseSalary,
+        standardWorkingHours: salData.standard_working_hours !== undefined && salData.standard_working_hours !== null ? Number(salData.standard_working_hours) : local.salaryConfig.standardWorkingHours,
+        extraHourRate: salData.extra_hour_rate !== undefined && salData.extra_hour_rate !== null ? Number(salData.extra_hour_rate) : local.salaryConfig.extraHourRate,
+        baseAmount: salData.base_amount !== undefined && salData.base_amount !== null ? Number(salData.base_amount) : local.salaryConfig.baseAmount,
+        expectedWorkingDaysPerMonth: salData.expected_working_days_per_month ?? local.salaryConfig.expectedWorkingDaysPerMonth,
+        expectedWorkingHoursPerDay: salData.expected_working_hours_per_day !== undefined && salData.expected_working_hours_per_day !== null ? Number(salData.expected_working_hours_per_day) : local.salaryConfig.expectedWorkingHoursPerDay,
+        weeklyHolidays: Array.isArray(salData.weekly_holidays) ? salData.weekly_holidays : local.salaryConfig.weeklyHolidays,
+        paidLeaveAllowancePerMonth: salData.paid_leave_allowance_per_month ?? local.salaryConfig.paidLeaveAllowancePerMonth,
+        overtimeRateMultiplier: salData.overtime_rate_multiplier !== undefined && salData.overtime_rate_multiplier !== null ? Number(salData.overtime_rate_multiplier) : local.salaryConfig.overtimeRateMultiplier,
+        paymentDateOfMonth: salData.payment_date_of_month ?? local.salaryConfig.paymentDateOfMonth,
+        fixedMonthlyAbsencePolicy: salData.fixed_monthly_absence_policy || local.salaryConfig.fixedMonthlyAbsencePolicy,
+        includeOvertimeInMonthly: salData.include_overtime_in_monthly !== undefined && salData.include_overtime_in_monthly !== null ? Boolean(salData.include_overtime_in_monthly) : local.salaryConfig.includeOvertimeInMonthly,
+        allowances: Array.isArray(salData.allowances) ? salData.allowances : local.salaryConfig.allowances,
+        deductions: Array.isArray(salData.deductions) ? salData.deductions : local.salaryConfig.deductions
+      } : {
+        ...local.salaryConfig,
+        currency: resolvedCurrency
+      };
+
       if (salData) {
-        setSalaryConfig(prev => ({
-          ...prev,
-          dailyBaseSalary: Number(salData.daily_base_salary) || prev.dailyBaseSalary,
-          standardWorkingHours: Number(salData.standard_working_hours) || prev.standardWorkingHours,
-          extraHourRate: Number(salData.extra_hour_rate) || prev.extraHourRate,
-          salaryType: salData.salary_type || prev.salaryType,
-          baseAmount: Number(salData.base_amount) || prev.baseAmount
-        }));
+        setSalaryConfig(hydratedSalaryConfig);
       }
 
       // Sync local repository state so other sections reflect real database settings
@@ -179,17 +200,12 @@ export const SettingsView: React.FC = () => {
           occupation: profileRes.data?.occupation || local.profile.occupation,
           tagline: profileRes.data?.tagline || local.profile.tagline
         },
-        currency: (settingsRes.data?.currency as CurrencyCode) || local.currency || 'INR',
+        currency: resolvedCurrency,
         dateFormat: (settingsRes.data?.date_format as DateFormat) || local.dateFormat,
         weekStartDay: (settingsRes.data?.week_start_day as WeekStartDay) || local.weekStartDay,
         customExpenseCategories: settingsRes.data?.custom_expense_categories || local.customExpenseCategories,
         customIncomeSources: settingsRes.data?.custom_income_sources || local.customIncomeSources,
-        salaryConfig: salData ? {
-          ...local.salaryConfig,
-          dailyBaseSalary: Number(salData.daily_base_salary) || local.salaryConfig.dailyBaseSalary,
-          standardWorkingHours: Number(salData.standard_working_hours) || local.salaryConfig.standardWorkingHours,
-          extraHourRate: Number(salData.extra_hour_rate) || local.salaryConfig.extraHourRate
-        } : local.salaryConfig
+        salaryConfig: hydratedSalaryConfig
       });
     } catch (err) {
       console.error('Error loading Supabase settings:', err);
@@ -215,25 +231,27 @@ export const SettingsView: React.FC = () => {
 
     try {
       if (user && isSupabaseConfigured) {
-        // A. Update profiles table
+        // A. Update profiles table (RLS allows SELECT & UPDATE for auth.uid(); no INSERT policy)
         const { error: profileError } = await supabase
           .from('profiles')
-          .upsert({
-            id: user.id,
+          .update({
             display_name: profileName.trim(),
             occupation: profileOccupation.trim(),
             tagline: profileTagline.trim(),
             updated_at: new Date().toISOString()
-          });
+          })
+          .eq('id', user.id)
+          .select('id')
+          .single();
 
         if (profileError) throw profileError;
 
-        // B. Update user_settings table
+        // B. Update user_settings table (uses live currency_code column)
         const { error: settingsError } = await supabase
           .from('user_settings')
           .upsert({
             user_id: user.id,
-            currency,
+            currency_code: currency,
             date_format: dateFormat,
             week_start_day: weekStartDay,
             custom_expense_categories: expenseCategories,
@@ -243,19 +261,13 @@ export const SettingsView: React.FC = () => {
 
         if (settingsError) throw settingsError;
 
-        // C. Update salary_configs table
-        const { error: salaryError } = await supabase
-          .from('salary_configs')
-          .upsert({
-            user_id: user.id,
-            daily_base_salary: salaryConfig.dailyBaseSalary,
-            standard_working_hours: salaryConfig.standardWorkingHours,
-            extra_hour_rate: salaryConfig.extraHourRate,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'user_id' });
-
-        if (salaryError) throw salaryError;
+        // C. Persist full salary_configs row via repository (including currency_code)
+        const updatedSalaryConfig: SalaryConfig = { ...salaryConfig, currency };
+        setSalaryConfig(updatedSalaryConfig);
+        await data.persistSalaryConfig(updatedSalaryConfig);
       }
+
+      const nextSalaryConfig: SalaryConfig = { ...salaryConfig, currency };
 
       // Synchronize local workspace state
       data.saveSettings({
@@ -269,7 +281,7 @@ export const SettingsView: React.FC = () => {
         currency,
         dateFormat,
         weekStartDay,
-        salaryConfig,
+        salaryConfig: nextSalaryConfig,
         customExpenseCategories: expenseCategories,
         customIncomeSources: incomeSources
       });

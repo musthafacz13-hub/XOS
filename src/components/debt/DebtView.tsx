@@ -36,6 +36,8 @@ export const DebtView: React.FC = () => {
 
   // Deletion targets
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [isDeletingDebt, setIsDeletingDebt] = useState(false);
+  const [deleteDebtError, setDeleteDebtError] = useState<string | null>(null);
 
   // Form Fields - Record Debt Lent
   const [personName, setPersonName] = useState('');
@@ -45,17 +47,23 @@ export const DebtView: React.FC = () => {
   const [description, setDescription] = useState('');
   const [notes, setNotes] = useState('');
   const [debtFormError, setDebtFormError] = useState<string | null>(null);
+  const [isSubmittingDebt, setIsSubmittingDebt] = useState(false);
 
   // Form Fields - Repayment
   const [repaymentAmount, setRepaymentAmount] = useState('');
   const [repaymentDate, setRepaymentDate] = useState(getTodayString());
   const [repaymentNotes, setRepaymentNotes] = useState('');
   const [repaymentError, setRepaymentError] = useState<string | null>(null);
+  const [isSubmittingRepayment, setIsSubmittingRepayment] = useState(false);
+
+  // History modal delete state
+  const [deletingRepaymentId, setDeletingRepaymentId] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   // Escape key listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !isSubmittingDebt && !isSubmittingRepayment) {
         setIsDebtModalOpen(false);
         setRepaymentTargetDebt(null);
         setHistoryTargetDebt(null);
@@ -63,7 +71,7 @@ export const DebtView: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isSubmittingDebt, isSubmittingRepayment]);
 
   // Filter only 'lent' debts (Money Owed to Me)
   const lentDebts = useMemo(() => {
@@ -137,8 +145,10 @@ export const DebtView: React.FC = () => {
   };
 
   // Handle Save Debt
-  const handleSaveDebt = (e: React.FormEvent) => {
+  const handleSaveDebt = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingDebt) return;
+
     if (!personName.trim()) {
       setDebtFormError("Please enter the borrower's name.");
       return;
@@ -153,29 +163,38 @@ export const DebtView: React.FC = () => {
       return;
     }
 
-    if (editingDebt) {
-      data.updateDebt(editingDebt.id, {
-        person_name: personName.trim(),
-        type: 'lent',
-        original_amount: parsedAmount,
-        transaction_date: transactionDate,
-        due_date: dueDate.trim() || undefined,
-        description: description.trim() || undefined,
-        notes: notes.trim() || undefined
-      });
-    } else {
-      data.addDebt({
-        person_name: personName.trim(),
-        type: 'lent',
-        original_amount: parsedAmount,
-        transaction_date: transactionDate,
-        due_date: dueDate.trim() || undefined,
-        description: description.trim() || undefined,
-        notes: notes.trim() || undefined
-      });
-    }
+    setDebtFormError(null);
+    setIsSubmittingDebt(true);
 
-    setIsDebtModalOpen(false);
+    try {
+      if (editingDebt) {
+        await data.updateDebt(editingDebt.id, {
+          person_name: personName.trim(),
+          type: 'lent',
+          original_amount: parsedAmount,
+          transaction_date: transactionDate,
+          due_date: dueDate.trim() || undefined,
+          description: description.trim() || undefined,
+          notes: notes.trim() || undefined
+        });
+      } else {
+        await data.addDebt({
+          person_name: personName.trim(),
+          type: 'lent',
+          original_amount: parsedAmount,
+          transaction_date: transactionDate,
+          due_date: dueDate.trim() || undefined,
+          description: description.trim() || undefined,
+          notes: notes.trim() || undefined
+        });
+      }
+
+      setIsDebtModalOpen(false);
+    } catch (err) {
+      setDebtFormError(err instanceof Error ? err.message : 'Database error: Could not save loan record.');
+    } finally {
+      setIsSubmittingDebt(false);
+    }
   };
 
   // Open Repayment Modal
@@ -189,9 +208,9 @@ export const DebtView: React.FC = () => {
   };
 
   // Handle Save Repayment
-  const handleSaveRepayment = (e: React.FormEvent) => {
+  const handleSaveRepayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!repaymentTargetDebt) return;
+    if (!repaymentTargetDebt || isSubmittingRepayment) return;
 
     const parsedAmount = parseFloat(repaymentAmount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
@@ -205,14 +224,22 @@ export const DebtView: React.FC = () => {
       return;
     }
 
-    data.addDebtRepayment({
-      debt_id: repaymentTargetDebt.id,
-      amount: parsedAmount,
-      repayment_date: repaymentDate || getTodayString(),
-      notes: repaymentNotes.trim() || undefined
-    });
+    setRepaymentError(null);
+    setIsSubmittingRepayment(true);
 
-    setRepaymentTargetDebt(null);
+    try {
+      await data.addDebtRepayment({
+        debt_id: repaymentTargetDebt.id,
+        amount: parsedAmount,
+        repayment_date: repaymentDate || getTodayString(),
+        notes: repaymentNotes.trim() || undefined
+      });
+      setRepaymentTargetDebt(null);
+    } catch (err) {
+      setRepaymentError(err instanceof Error ? err.message : 'Database error: Could not save repayment.');
+    } finally {
+      setIsSubmittingRepayment(false);
+    }
   };
 
   return (
@@ -460,7 +487,10 @@ export const DebtView: React.FC = () => {
 
                     <button
                       type="button"
-                      onClick={() => setHistoryTargetDebt(debt)}
+                      onClick={() => {
+                        setHistoryError(null);
+                        setHistoryTargetDebt(debt);
+                      }}
                       className="p-1.5 rounded-lg text-neutral-600 hover:text-black hover:bg-neutral-100 transition-colors cursor-pointer"
                       title="Repayment History"
                     >
@@ -478,7 +508,10 @@ export const DebtView: React.FC = () => {
 
                     <button
                       type="button"
-                      onClick={() => setDeleteTargetId(debt.id)}
+                      onClick={() => {
+                        setDeleteDebtError(null);
+                        setDeleteTargetId(debt.id);
+                      }}
                       className="p-1.5 rounded-lg text-neutral-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                       title="Delete Record"
                     >
@@ -624,16 +657,18 @@ export const DebtView: React.FC = () => {
               <div className="pt-3 flex items-center justify-end gap-2 border-t border-neutral-100">
                 <button
                   type="button"
+                  disabled={isSubmittingDebt}
                   onClick={() => setIsDebtModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer"
+                  disabled={isSubmittingDebt}
+                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  Save Loan Record
+                  {isSubmittingDebt ? 'Saving...' : 'Save Loan Record'}
                 </button>
               </div>
             </form>
@@ -726,16 +761,18 @@ export const DebtView: React.FC = () => {
               <div className="pt-3 flex items-center justify-end gap-2 border-t border-neutral-100">
                 <button
                   type="button"
+                  disabled={isSubmittingRepayment}
                   onClick={() => setRepaymentTargetDebt(null)}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer"
+                  disabled={isSubmittingRepayment}
+                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  Save Repayment
+                  {isSubmittingRepayment ? 'Saving...' : 'Save Repayment'}
                 </button>
               </div>
             </form>
@@ -773,6 +810,13 @@ export const DebtView: React.FC = () => {
               </button>
             </div>
 
+            {historyError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{historyError}</span>
+              </div>
+            )}
+
             {data.debtRepayments.filter(r => r.debt_id === historyTargetDebt.id).length === 0 ? (
               <p className="text-xs text-neutral-400 text-center py-6">
                 No repayments logged yet for this loan.
@@ -794,10 +838,19 @@ export const DebtView: React.FC = () => {
                       </div>
                       <button
                         type="button"
-                        onClick={() => {
-                          data.deleteDebtRepayment(rep.id);
+                        disabled={deletingRepaymentId === rep.id}
+                        onClick={async () => {
+                          setHistoryError(null);
+                          setDeletingRepaymentId(rep.id);
+                          try {
+                            await data.deleteDebtRepayment(rep.id);
+                          } catch (err) {
+                            setHistoryError(err instanceof Error ? err.message : 'Could not delete repayment.');
+                          } finally {
+                            setDeletingRepaymentId(null);
+                          }
                         }}
-                        className="p-1 text-neutral-400 hover:text-rose-600 transition-colors cursor-pointer"
+                        className="p-1 text-neutral-400 hover:text-rose-600 transition-colors cursor-pointer disabled:opacity-50"
                         title="Delete repayment"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -826,11 +879,25 @@ export const DebtView: React.FC = () => {
         title="Delete Loan Record"
         message="Are you sure you want to permanently delete this lent debt record and its repayment history?"
         confirmLabel="Delete Loan"
-        onConfirm={() => {
-          if (deleteTargetId) data.deleteDebt(deleteTargetId);
+        isLoading={isDeletingDebt}
+        error={deleteDebtError}
+        onConfirm={async () => {
+          if (!deleteTargetId || isDeletingDebt) return;
+          setDeleteDebtError(null);
+          setIsDeletingDebt(true);
+          try {
+            await data.deleteDebt(deleteTargetId);
+            setDeleteTargetId(null);
+          } catch (err) {
+            setDeleteDebtError(err instanceof Error ? err.message : 'Database error: Could not delete loan.');
+          } finally {
+            setIsDeletingDebt(false);
+          }
+        }}
+        onCancel={() => {
+          setDeleteDebtError(null);
           setDeleteTargetId(null);
         }}
-        onCancel={() => setDeleteTargetId(null)}
       />
     </div>
   );

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CalendarCheck, Plus, ChevronLeft, ChevronRight, CheckCircle2, Trash2, Edit3, X } from 'lucide-react';
+import { CalendarCheck, Plus, ChevronLeft, ChevronRight, CheckCircle2, Trash2, Edit3, X, AlertCircle } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
 import { AttendanceRecord, AttendanceStatus } from '../../types';
 import { calculateAttendanceStats } from '../../utils/calculations';
@@ -16,10 +16,15 @@ export const WorkView: React.FC = () => {
 
   // Confirmation dialog state
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Form Fields
   const [date, setDate] = useState(todayStr);
@@ -32,13 +37,13 @@ export const WorkView: React.FC = () => {
   // Escape key handler for modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isModalOpen) {
+      if (e.key === 'Escape' && isModalOpen && !isSubmitting) {
         setIsModalOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isModalOpen]);
+  }, [isModalOpen, isSubmitting]);
 
   const currentMonthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
   const monthName = new Date(currentYear, currentMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -47,9 +52,12 @@ export const WorkView: React.FC = () => {
 
   const openLogModalForDate = (dStr: string) => {
     if (dStr > todayStr) {
-      alert("Attendance cannot be logged for future dates.");
+      setPageError('Attendance cannot be logged for future dates.');
       return;
     }
+    setPageError(null);
+    setFormError(null);
+    setIsSubmitting(false);
     const existing = data.attendance.find(r => r.date === dStr);
     if (existing) {
       setEditingRecord(existing);
@@ -89,28 +97,38 @@ export const WorkView: React.FC = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     let hours = 0;
     if (status === 'Present') {
       hours = calculateWorkingHours(checkInTime, checkOutTime, parseInt(breakDurationMinutes) || 0);
     }
 
-    data.upsertAttendanceRecord({
-      id: editingRecord?.id,
-      date,
-      status,
-      checkInTime: status === 'Present' ? checkInTime : undefined,
-      checkOutTime: status === 'Present' ? checkOutTime : undefined,
-      breakDurationMinutes: status === 'Present' ? parseInt(breakDurationMinutes) : 0,
-      calculatedHours: hours,
-      notes: notes.trim()
-    });
+    setFormError(null);
+    setIsSubmitting(true);
+    try {
+      await data.upsertAttendanceRecord({
+        id: editingRecord?.id,
+        date,
+        status,
+        checkInTime: status === 'Present' ? checkInTime : undefined,
+        checkOutTime: status === 'Present' ? checkOutTime : undefined,
+        breakDurationMinutes: status === 'Present' ? parseInt(breakDurationMinutes) : 0,
+        calculatedHours: hours,
+        notes: notes.trim()
+      });
 
-    setIsModalOpen(false);
+      setIsModalOpen(false);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to save attendance record.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleDelete = (id: string) => {
+    setDeleteError(null);
     setDeleteTargetId(id);
   };
 
@@ -157,6 +175,22 @@ export const WorkView: React.FC = () => {
           <span>Mark Attendance</span>
         </button>
       </div>
+
+      {pageError && (
+        <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+            <span>{pageError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPageError(null)}
+            className="text-rose-700 hover:text-rose-900 font-semibold cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Today Quick Status Box & Monthly Stats */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -447,7 +481,7 @@ export const WorkView: React.FC = () => {
       {isModalOpen && (
         <div 
           className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
-          onClick={() => setIsModalOpen(false)}
+          onClick={() => { if (!isSubmitting) setIsModalOpen(false); }}
           role="dialog"
           aria-modal="true"
         >
@@ -460,14 +494,22 @@ export const WorkView: React.FC = () => {
                 {editingRecord ? 'Edit Attendance Record' : 'Log Attendance'}
               </h3>
               <button
+                type="button"
+                disabled={isSubmitting}
                 onClick={() => setIsModalOpen(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-black cursor-pointer"
+                className="p-1 rounded-lg text-neutral-400 hover:text-black cursor-pointer disabled:opacity-50"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {formError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>{formError}</span>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-neutral-700 mb-1">Date</label>
@@ -541,16 +583,18 @@ export const WorkView: React.FC = () => {
               <div className="pt-3 flex justify-end gap-2 border-t border-neutral-100">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  Save Record
+                  {isSubmitting ? 'Saving...' : 'Save Record'}
                 </button>
               </div>
             </form>
@@ -564,11 +608,25 @@ export const WorkView: React.FC = () => {
         title="Delete Attendance Record"
         message="Are you sure you want to delete this attendance entry? Working hours and stats will be recalculated."
         confirmLabel="Delete Record"
-        onConfirm={() => {
-          if (deleteTargetId) data.deleteAttendanceRecord(deleteTargetId);
+        isLoading={isDeleting}
+        error={deleteError}
+        onConfirm={async () => {
+          if (!deleteTargetId || isDeleting) return;
+          setIsDeleting(true);
+          setDeleteError(null);
+          try {
+            await data.deleteAttendanceRecord(deleteTargetId);
+            setDeleteTargetId(null);
+          } catch (err) {
+            setDeleteError(err instanceof Error ? err.message : 'Failed to delete attendance record.');
+          } finally {
+            setIsDeleting(false);
+          }
+        }}
+        onCancel={() => {
+          setDeleteError(null);
           setDeleteTargetId(null);
         }}
-        onCancel={() => setDeleteTargetId(null)}
       />
     </div>
   );

@@ -10,7 +10,9 @@ interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   isDestructive?: boolean;
-  onConfirm: () => void;
+  isLoading?: boolean;
+  error?: string | null;
+  onConfirm: () => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -21,13 +23,15 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   isDestructive = true,
+  isLoading = false,
+  error = null,
   onConfirm,
   onCancel
 }) => {
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape' && isOpen && !isLoading) {
         onCancel();
       }
     };
@@ -35,7 +39,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       window.addEventListener('keydown', handleKeyDown);
     }
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onCancel]);
+  }, [isOpen, isLoading, onCancel]);
 
   return (
     <AnimatePresence>
@@ -46,7 +50,9 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           animate="animate"
           exit="exit"
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
-          onClick={onCancel}
+          onClick={() => {
+            if (!isLoading) onCancel();
+          }}
           role="dialog"
           aria-modal="true"
           aria-labelledby="confirm-dialog-title"
@@ -75,31 +81,38 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
               </div>
               <button
                 onClick={onCancel}
+                disabled={isLoading}
                 type="button"
-                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 transition-colors cursor-pointer"
+                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 transition-colors cursor-pointer disabled:opacity-50"
                 aria-label="Close dialog"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
+            {error && (
+              <div className="mt-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{error}</span>
+              </div>
+            )}
+
             <div className="mt-6 flex items-center justify-end gap-2.5">
               <button
                 type="button"
+                disabled={isLoading}
                 onClick={onCancel}
-                className="px-4 py-2 text-xs font-semibold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 active:scale-97 rounded-xl transition-all cursor-pointer min-h-[40px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400"
+                className="px-4 py-2 text-xs font-semibold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 active:scale-97 rounded-xl transition-all cursor-pointer min-h-[40px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:opacity-50"
               >
                 {cancelLabel}
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  onConfirm();
-                  onCancel();
-                }}
-                className="px-4 py-2 text-xs font-semibold text-white bg-[#111111] hover:bg-black active:scale-97 rounded-xl transition-all cursor-pointer min-h-[40px] shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+                disabled={isLoading}
+                onClick={() => onConfirm()}
+                className="px-4 py-2 text-xs font-semibold text-white bg-[#111111] hover:bg-black active:scale-97 rounded-xl transition-all cursor-pointer min-h-[40px] shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB] disabled:opacity-50"
               >
-                {confirmLabel}
+                {isLoading ? 'Processing...' : confirmLabel}
               </button>
             </div>
           </motion.div>
