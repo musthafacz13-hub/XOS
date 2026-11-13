@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   ArrowUpRight, 
   ArrowDownLeft, 
@@ -38,16 +38,27 @@ export const DebtView: React.FC = () => {
   const [debtFormError, setDebtFormError] = useState<string | null>(null);
   const [isSubmittingDebt, setIsSubmittingDebt] = useState(false);
 
+  const isSubmittingRef = useRef(false);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   // Escape key listener
   useEffect(() => {
+    if (!isDebtModalOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isSubmittingDebt) {
+      if (e.key === 'Escape' && !isSubmittingRef.current && !isSubmittingDebt) {
         setIsDebtModalOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSubmittingDebt]);
+  }, [isDebtModalOpen, isSubmittingDebt]);
 
   const allDebts = data.debts;
 
@@ -71,6 +82,7 @@ export const DebtView: React.FC = () => {
 
   // Open Create Modal
   const openCreateModal = (dir: DebtDirection) => {
+    if (isSubmittingRef.current || isSubmittingDebt) return;
     setEditingDebt(null);
     setModalDirection(dir);
     setPersonName('');
@@ -84,6 +96,7 @@ export const DebtView: React.FC = () => {
 
   // Open Edit Modal
   const openEditModal = (debt: Debt) => {
+    if (isSubmittingRef.current || isSubmittingDebt) return;
     setEditingDebt(debt);
     setModalDirection(debt.direction || 'receive');
     setPersonName(debt.person_name);
@@ -98,7 +111,7 @@ export const DebtView: React.FC = () => {
   // Handle Save Debt (Add or Edit)
   const handleSaveDebt = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmittingDebt) return;
+    if (isSubmittingRef.current || isSubmittingDebt) return;
 
     if (!personName.trim()) {
       setDebtFormError('Please enter the person\'s name.');
@@ -114,6 +127,7 @@ export const DebtView: React.FC = () => {
       return;
     }
 
+    isSubmittingRef.current = true;
     setDebtFormError(null);
     setIsSubmittingDebt(true);
 
@@ -138,11 +152,32 @@ export const DebtView: React.FC = () => {
         });
       }
 
-      setIsDebtModalOpen(false);
+      if (isMountedRef.current) {
+        setIsDebtModalOpen(false);
+      }
     } catch (err) {
-      setDebtFormError(err instanceof Error ? err.message : 'Database error: Could not save debt record.');
+      if (isMountedRef.current) {
+        if (
+          err instanceof Error &&
+          (err.name === 'DebtRequestAbortError' ||
+            err.name === 'AbortError' ||
+            /AbortError|Fetch is aborted/i.test(err.message))
+        ) {
+          setDebtFormError(err.message);
+        } else if (
+          err instanceof Error &&
+          (err.name === 'DebtRequestTimeoutError' || err.name === 'TimeoutError')
+        ) {
+          setDebtFormError(err.message);
+        } else {
+          setDebtFormError(err instanceof Error ? err.message : 'Database error: Could not save debt record.');
+        }
+      }
     } finally {
-      setIsSubmittingDebt(false);
+      isSubmittingRef.current = false;
+      if (isMountedRef.current) {
+        setIsSubmittingDebt(false);
+      }
     }
   };
 
@@ -375,7 +410,7 @@ export const DebtView: React.FC = () => {
       {isDebtModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs"
-          onClick={() => { if (!isSubmittingDebt) setIsDebtModalOpen(false); }}
+          onClick={() => { if (!isSubmittingRef.current && !isSubmittingDebt) setIsDebtModalOpen(false); }}
           role="dialog"
           aria-modal="true"
         >
@@ -394,8 +429,10 @@ export const DebtView: React.FC = () => {
               </div>
               <button
                 type="button"
-                onClick={() => setIsDebtModalOpen(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-900 transition-colors cursor-pointer"
+                disabled={isSubmittingDebt}
+                onClick={() => { if (!isSubmittingRef.current && !isSubmittingDebt) setIsDebtModalOpen(false); }}
+                aria-label="Close modal"
+                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-900 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <X className="w-4 h-4" />
               </button>

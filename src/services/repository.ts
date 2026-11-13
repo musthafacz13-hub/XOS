@@ -223,6 +223,56 @@ function validateResetRpcResponse(rpcData: unknown): void {
   throw new Error('Account reset failed: invalid confirmation response from server.');
 }
 
+function classifyFetchError(err: unknown): 'abort' | 'timeout' | 'other' {
+  if (!err) return 'other';
+  const anyErr = err as { name?: unknown; code?: unknown; message?: unknown };
+  const name = typeof anyErr.name === 'string' ? anyErr.name : '';
+  const code = typeof anyErr.code === 'string' ? anyErr.code : '';
+  const msg = typeof anyErr.message === 'string' ? anyErr.message : String(err);
+
+  if (
+    name === 'TimeoutError' ||
+    name === 'DebtRequestTimeoutError' ||
+    /Request timed out|TimeoutError/i.test(msg)
+  ) {
+    return 'timeout';
+  }
+  if (
+    name === 'AbortError' ||
+    name === 'DebtRequestAbortError' ||
+    code === 'ABORT_ERR' ||
+    /AbortError|Fetch is aborted|signal is aborted/i.test(msg)
+  ) {
+    return 'abort';
+  }
+  return 'other';
+}
+
+function formatDebtMutationError(err: unknown, fallbackMessage: string): Error {
+  const kind = classifyFetchError(err);
+  if (kind === 'timeout') {
+    const timeoutErr = new Error(
+      'Request timed out before confirmation from the server. Please verify your debt list before trying again.'
+    );
+    timeoutErr.name = 'DebtRequestTimeoutError';
+    return timeoutErr;
+  }
+  if (kind === 'abort') {
+    const abortErr = new Error(
+      'Request was cancelled before confirmation (AbortError: Fetch is aborted). Please verify your debt list before trying again.'
+    );
+    abortErr.name = 'DebtRequestAbortError';
+    return abortErr;
+  }
+  const msg =
+    err && typeof err === 'object' && 'message' in err && typeof (err as any).message === 'string'
+      ? (err as any).message
+      : err instanceof Error
+        ? err.message
+        : '';
+  return new Error(msg || fallbackMessage);
+}
+
 /**
  * Test-only hook allowing unit suites to inject a mocked Supabase client
  * without modifying production configuration.
@@ -2486,26 +2536,90 @@ export const repository = {
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
-      const { data, error } = await ctx.client
-        .from('debts')
-        .insert({
-          user_id: ctx.user.id,
-          person_name: debt.person_name.trim(),
-          description: storedDesc,
-          original_amount: debt.original_amount,
-          lent_date: debt.lent_date,
-          due_date: debt.due_date || null,
-          notes: debt.notes ? debt.notes.trim() : null
-        })
-        .select()
-        .single();
+      const knownIds = new Set(memoryState.debts.map(d => d.id));
+      const trimmedName = debt.person_name.trim();
+      const normalizedDueDate = debt.due_date || null;
+      const normalizedNotes = debt.notes ? debt.notes.trim() : null;
+      const requestStartedMs = Date.now();
 
-      if (error || !data) {
-        throw new Error(error?.message || 'Database error: Could not save loan record.');
+      let insertData: any = null;
+      let insertError: any = null;
+
+      try {
+        const res = await ctx.client
+          .from('debts')
+          .insert({
+            user_id: ctx.user.id,
+            person_name: trimmedName,
+            description: storedDesc,
+            original_amount: debt.original_amount,
+            lent_date: debt.lent_date,
+            due_date: normalizedDueDate,
+            notes: normalizedNotes
+          })
+          .select()
+          .single();
+        insertData = res.data;
+        insertError = res.error;
+      } catch (thrown) {
+        insertError = thrown;
       }
 
-      const confirmedDebt = mapDebtRow(data);
-      memoryState.debts = [confirmedDebt, ...memoryState.debts];
+      if (insertError || !insertData) {
+        const errorKind = classifyFetchError(insertError);
+        if (errorKind === 'abort' || errorKind === 'timeout') {
+          // Never auto-retry the insert; first check whether the original insert already committed.
+          try {
+            let checkQuery: any = ctx.client
+              .from('debts')
+              .select('*')
+              .eq('user_id', ctx.user.id)
+              .eq('person_name', trimmedName)
+              .eq('lent_date', debt.lent_date)
+              .order('created_at', { ascending: false });
+
+            if (typeof checkQuery.limit === 'function') {
+              checkQuery = checkQuery.limit(10);
+            }
+
+            const { data: recentRows, error: checkError } = await checkQuery;
+            if (!checkError && Array.isArray(recentRows)) {
+              const matchedRow = recentRows.find((row: any) => {
+                if (!row || !row.id || knownIds.has(row.id)) return false;
+                const amountMatches = Math.abs(Number(row.original_amount) - debt.original_amount) < 0.005;
+                const descMatches = (row.description || '') === storedDesc;
+                const dueMatches = (row.due_date || null) === normalizedDueDate;
+                const notesMatches = (row.notes ? String(row.notes).trim() : null) === normalizedNotes;
+                const createdMs = row.created_at ? Date.parse(row.created_at) : NaN;
+                const recentEnough = !Number.isFinite(createdMs) || createdMs >= requestStartedMs - 60000;
+                return amountMatches && descMatches && dueMatches && notesMatches && recentEnough;
+              });
+
+              if (matchedRow) {
+                const confirmedDebt = mapDebtRow(matchedRow);
+                memoryState.debts = [
+                  confirmedDebt,
+                  ...memoryState.debts.filter(d => d.id !== confirmedDebt.id)
+                ];
+                notifyListeners();
+                return confirmedDebt;
+              }
+            }
+          } catch {
+            // Reconciliation query also failed; throw explicit abort/timeout error below.
+          }
+
+          throw formatDebtMutationError(insertError, 'Database error: Could not save loan record.');
+        }
+
+        throw formatDebtMutationError(insertError, 'Database error: Could not save loan record.');
+      }
+
+      const confirmedDebt = mapDebtRow(insertData);
+      memoryState.debts = [
+        confirmedDebt,
+        ...memoryState.debts.filter(d => d.id !== confirmedDebt.id)
+      ];
       notifyListeners();
       return confirmedDebt;
     }
@@ -2569,16 +2683,24 @@ export const repository = {
         return;
       }
 
-      const { data, error } = await ctx.client
-        .from('debts')
-        .update(dbPayload)
-        .eq('id', id)
-        .eq('user_id', ctx.user.id)
-        .select()
-        .single();
+      let data: any = null;
+      let error: any = null;
+      try {
+        const res = await ctx.client
+          .from('debts')
+          .update(dbPayload)
+          .eq('id', id)
+          .eq('user_id', ctx.user.id)
+          .select()
+          .single();
+        data = res.data;
+        error = res.error;
+      } catch (thrown) {
+        error = thrown;
+      }
 
       if (error || !data) {
-        throw new Error(error?.message || 'Database error: Could not update loan record.');
+        throw formatDebtMutationError(error, 'Database error: Could not update loan record.');
       }
 
       const confirmed = mapDebtRow(data);
@@ -2610,15 +2732,23 @@ export const repository = {
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
-      const { data, error } = await ctx.client
-        .from('debts')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', ctx.user.id)
-        .select('id');
+      let data: any = null;
+      let error: any = null;
+      try {
+        const res = await ctx.client
+          .from('debts')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', ctx.user.id)
+          .select('id');
+        data = res.data;
+        error = res.error;
+      } catch (thrown) {
+        error = thrown;
+      }
 
       if (error) {
-        throw new Error(error.message || 'Database error: Could not delete loan record.');
+        throw formatDebtMutationError(error, 'Database error: Could not delete loan record.');
       }
       if (!data || data.length === 0) {
         throw new Error('Loan record not found or could not be deleted.');

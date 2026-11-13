@@ -29,6 +29,6 @@ export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKe
     storageKey: 'xos_auth_session'
   },
   global: {
-    fetch: apiOptimization.createOptimizedFetch(12000)
+    fetch: apiOptimization.createOptimizedFetch(12000, 45000)
   }
 });

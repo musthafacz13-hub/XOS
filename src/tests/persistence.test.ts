@@ -1875,8 +1875,200 @@ async function runPersistenceTests() {
     }
     console.log('✓ Test 23 passed.');
 
+    // =========================================================================
+    // TEST 24: Consecutive Debt Creation (3rd+ Record), Independent Abort Lifecycle & AbortError Reconciliation
+    // =========================================================================
+    console.log('Test 24: Consecutive debt creation (1st..4th), independent fetch AbortControllers, and AbortError handling...');
+    {
+      // A) Verify createOptimizedFetch uses independent AbortControllers, respects writeTimeoutMs > readTimeoutMs,
+      //    and does not let one caller's abort signal cancel another coalesced GET request.
+      const originalFetch = globalThis.fetch;
+      const seenSignals: AbortSignal[] = [];
+      try {
+        globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+          if (init?.signal) seenSignals.push(init.signal);
+          const method = (init?.method || 'GET').toUpperCase();
+          const delayMs = method === 'POST' ? 60 : 15;
+          await new Promise<void>((resolve, reject) => {
+            if (init?.signal?.aborted) {
+              reject(init.signal.reason ?? new DOMException('Fetch is aborted', 'AbortError'));
+              return;
+            }
+            const timer = setTimeout(() => {
+              init?.signal?.removeEventListener('abort', onAbort);
+              resolve();
+            }, delayMs);
+            const onAbort = () => {
+              clearTimeout(timer);
+              reject(init?.signal?.reason ?? new DOMException('Fetch is aborted', 'AbortError'));
+            };
+            init?.signal?.addEventListener('abort', onAbort, { once: true });
+          });
+          return new Response(JSON.stringify({ ok: true }), { status: method === 'POST' ? 201 : 200 });
+        }) as typeof fetch;
+
+        const optimizedFetch = apiOptimization.createOptimizedFetch(25, 300);
+
+        // 4 consecutive POST writes taking 60ms (> 25ms read timeout, < 300ms write timeout) must all succeed
+        for (let i = 0; i < 4; i++) {
+          const res = await optimizedFetch('https://example.supabase.co/rest/v1/debts', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer tok-1' },
+            body: JSON.stringify({ n: i + 1 })
+          });
+          assert(res.status === 201, `Consecutive POST #${i + 1} must succeed without 25ms read timeout abort`);
+        }
+
+        assert(seenSignals.length === 4, 'Each POST request received its own AbortSignal');
+        assert(new Set(seenSignals).size === 4, 'All 4 POST requests used distinct AbortController instances');
+        assert(seenSignals.every(sig => !sig.aborted), 'Completed POST requests did not leave aborted signals');
+
+        // Caller-aborted GET must NOT abort an un-signaled coalesced GET to the same URL
+        const callerAC = new AbortController();
+        const coalescedGet = optimizedFetch('https://example.supabase.co/rest/v1/debts?select=*', {
+          method: 'GET',
+          headers: { Authorization: 'Bearer tok-1' }
+        });
+        const signaledGet = optimizedFetch('https://example.supabase.co/rest/v1/debts?select=*', {
+          method: 'GET',
+          headers: { Authorization: 'Bearer tok-1' },
+          signal: callerAC.signal
+        });
+        callerAC.abort();
+
+        let signaledFailed = false;
+        try {
+          await signaledGet;
+        } catch (err: any) {
+          signaledFailed = err?.name === 'AbortError';
+        }
+        assert(signaledFailed, 'Caller-aborted GET rejected with AbortError');
+        const sharedGetRes = await coalescedGet;
+        assert(sharedGetRes.status === 200, 'Uncancelled GET succeeded independently');
+
+        // Exceeding writeTimeoutMs produces TimeoutError, not ambiguous AbortError
+        const shortWriteFetch = apiOptimization.createOptimizedFetch(20, 30);
+        let timedOutName = '';
+        try {
+          await shortWriteFetch('https://example.supabase.co/rest/v1/debts', { method: 'POST' });
+        } catch (err: any) {
+          timedOutName = err?.name || '';
+        }
+        assert(timedOutName === 'TimeoutError', `Expired write timeout surfaces TimeoutError (got ${timedOutName})`);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+
+      // B) Verify 1st, 2nd, 3rd, and 4th consecutive addDebt calls persist both [RECEIVE] and [PAY] directions,
+      //    and genuine AbortError neither retries blindly nor corrupts existing debts, while reconciling committed writes.
+      const dbDebts: any[] = [];
+      let insertCount = 0;
+      let nextDebtMode: 'success' | 'abort_uncommitted' | 'abort_committed' = 'success';
+
+      const debtCrudClient = createMockSupabase(USER_A, {
+        debts: (ctx) => {
+          if (ctx.op === 'insert') {
+            insertCount += 1;
+            if (nextDebtMode === 'abort_uncommitted') {
+              return { data: null, error: { message: 'AbortError: Fetch is aborted' } };
+            }
+            const row = {
+              id: `00000000-0000-4000-8000-00000000000${insertCount}`,
+              ...ctx.payload,
+              remaining_amount: ctx.payload.original_amount,
+              status: 'outstanding',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            };
+            dbDebts.unshift(row);
+            if (nextDebtMode === 'abort_committed') {
+              return { data: null, error: { message: 'AbortError: Fetch is aborted' } };
+            }
+            return { data: row, error: null };
+          }
+          if (ctx.op === 'select') {
+            const nameFilter = ctx.filters.find(f => f.col === 'person_name')?.val;
+            const dateFilter = ctx.filters.find(f => f.col === 'lent_date')?.val;
+            const filtered = dbDebts.filter(
+              r => (!nameFilter || r.person_name === nameFilter) && (!dateFilter || r.lent_date === dateFilter)
+            );
+            return { data: filtered, error: null };
+          }
+          return { data: [], error: null };
+        }
+      });
+
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      configureRepositoryBackendForTests(debtCrudClient, true);
+
+      // 1st debt (receive)
+      const d1 = await repository.addDebt({
+        person_name: 'Alice',
+        original_amount: 500,
+        lent_date: '2026-11-10',
+        direction: 'receive'
+      });
+      // 2nd debt (pay)
+      const d2 = await repository.addDebt({
+        person_name: 'Bob',
+        original_amount: 300,
+        lent_date: '2026-11-11',
+        direction: 'pay'
+      });
+      // 3rd debt (receive)
+      const d3 = await repository.addDebt({
+        person_name: 'Charlie',
+        original_amount: 750,
+        lent_date: '2026-11-12',
+        direction: 'receive'
+      });
+      // 4th debt (pay)
+      const d4 = await repository.addDebt({
+        person_name: 'Diana',
+        original_amount: 200,
+        lent_date: '2026-11-13',
+        direction: 'pay'
+      });
+
+      assert(repository.getDebts().length === 4, `All 4 consecutive debts persisted (got ${repository.getDebts().length})`);
+      assert(d1.direction === 'receive' && d2.direction === 'pay' && d3.direction === 'receive' && d4.direction === 'pay', 'Directions preserved across consecutive debts');
+
+      // Genuine AbortError where row did NOT reach DB: must NOT auto-retry insert and must surface DebtRequestAbortError
+      const insertsBeforeAbort = insertCount;
+      nextDebtMode = 'abort_uncommitted';
+      let caughtAbort: Error | null = null;
+      try {
+        await repository.addDebt({
+          person_name: 'Eve',
+          original_amount: 999,
+          lent_date: '2026-11-13',
+          direction: 'receive'
+        });
+      } catch (err) {
+        caughtAbort = err as Error;
+      }
+      assert(caughtAbort !== null && caughtAbort.name === 'DebtRequestAbortError', `Uncommitted AbortError throws DebtRequestAbortError (got ${caughtAbort?.name})`);
+      assert(insertCount === insertsBeforeAbort + 1, 'Aborted addDebt did NOT automatically retry INSERT');
+      assert(repository.getDebts().length === 4, 'Existing 4 debt records remained intact after aborted 5th attempt');
+
+      // AbortError where server DID commit before response arrived: reconciles via SELECT with zero duplicate insert
+      const insertsBeforeReconcile = insertCount;
+      nextDebtMode = 'abort_committed';
+      const d5 = await repository.addDebt({
+        person_name: 'Frank',
+        original_amount: 420,
+        lent_date: '2026-11-13',
+        direction: 'pay'
+      });
+      assert(insertCount === insertsBeforeReconcile + 1, 'Committed-but-aborted addDebt reconciled via SELECT without duplicate INSERT');
+      assert(d5.person_name === 'Frank' && d5.direction === 'pay', 'Reconciled debt preserves name and [PAY] direction');
+      assert(repository.getDebts().length === 5, 'Debt list updated cleanly to 5 records with zero duplicates');
+    }
+    console.log('✓ Test 24 passed.');
+
     console.log('\n======================================================');
-    console.log('--- ALL 23 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
+    console.log('--- ALL 24 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
     console.log('======================================================');
   } finally {
     configureRepositoryBackendForTests(null, null);

@@ -143,44 +143,64 @@ class ApiOptimizationService {
 
   /**
    * Optimized custom fetch implementation for Supabase global.fetch
-   * - In-flight GET request deduplication
-   * - Request timeout via AbortController (default 12s)
-   * - Retry on network errors
+   * - In-flight GET request deduplication (only when no caller-specific AbortSignal is attached)
+   * - Independent per-request AbortController lifecycle (no shared cancellation across mutations)
+   * - Separate read timeout (default 12s) and write timeout (default 45s) with explicit TimeoutError
    */
-  createOptimizedFetch(timeoutMs: number = 12000): typeof fetch {
+  createOptimizedFetch(timeoutMs: number = 12000, writeTimeoutMs: number = 45000): typeof fetch {
     return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      const method = (init?.method || 'GET').toUpperCase();
+      const requestObj = typeof Request !== 'undefined' && input instanceof Request ? input : null;
+      const method = (init?.method || requestObj?.method || 'GET').toUpperCase();
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const parentSignal = init?.signal ?? requestObj?.signal;
 
+      const headersSource = init?.headers ?? requestObj?.headers;
       let authMarker = 'anon';
-      if (init?.headers) {
-        if (init.headers instanceof Headers) {
-          authMarker = init.headers.get('authorization')?.slice(-16) || 'anon';
-        } else if (Array.isArray(init.headers)) {
-          const found = init.headers.find(([k]) => k.toLowerCase() === 'authorization');
+      if (headersSource) {
+        if (headersSource instanceof Headers) {
+          authMarker = headersSource.get('authorization')?.slice(-16) || 'anon';
+        } else if (Array.isArray(headersSource)) {
+          const found = headersSource.find(([k]) => k.toLowerCase() === 'authorization');
           authMarker = found?.[1]?.slice(-16) || 'anon';
         } else {
-          const rec = init.headers as Record<string, string>;
+          const rec = headersSource as Record<string, string>;
           authMarker = (rec.Authorization || rec.authorization || '').slice(-16) || 'anon';
         }
       }
 
-      // Only coalesce safe idempotent GET requests scoped to auth marker
-      const isCoalesceable = method === 'GET';
+      const isSafeRead = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+      const effectiveTimeoutMs = isSafeRead ? timeoutMs : Math.max(timeoutMs, writeTimeoutMs);
+
+      // Only coalesce safe idempotent GET requests that do not carry a caller-specific AbortSignal
+      const isCoalesceable = method === 'GET' && !parentSignal;
       const coalesceKey = isCoalesceable ? `fetch:${authMarker}:${url}` : null;
 
       const performFetch = async (): Promise<Response> => {
+        if (parentSignal?.aborted) {
+          throw parentSignal.reason ?? new DOMException('Fetch is aborted', 'AbortError');
+        }
+
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-        const onParentAbort = () => controller.abort();
+        let timedOut = false;
+        const timeoutId =
+          effectiveTimeoutMs > 0
+            ? setTimeout(() => {
+                timedOut = true;
+                const timeoutErr = new DOMException(
+                  `Request timed out after ${effectiveTimeoutMs}ms`,
+                  'TimeoutError'
+                );
+                controller.abort(timeoutErr);
+              }, effectiveTimeoutMs)
+            : null;
+
+        const onParentAbort = () => {
+          controller.abort(parentSignal?.reason);
+        };
 
         try {
-          if (init?.signal) {
-            if (init.signal.aborted) {
-              controller.abort();
-            } else {
-              init.signal.addEventListener('abort', onParentAbort, { once: true });
-            }
+          if (parentSignal) {
+            parentSignal.addEventListener('abort', onParentAbort, { once: true });
           }
 
           const response = await fetch(input, {
@@ -188,10 +208,20 @@ class ApiOptimizationService {
             signal: controller.signal
           });
           return response;
+        } catch (err) {
+          if (timedOut) {
+            throw new DOMException(
+              `Request timed out after ${effectiveTimeoutMs}ms`,
+              'TimeoutError'
+            );
+          }
+          throw err;
         } finally {
-          clearTimeout(timeoutId);
-          if (init?.signal) {
-            init.signal.removeEventListener('abort', onParentAbort);
+          if (timeoutId !== null) {
+            clearTimeout(timeoutId);
+          }
+          if (parentSignal) {
+            parentSignal.removeEventListener('abort', onParentAbort);
           }
         }
       };
