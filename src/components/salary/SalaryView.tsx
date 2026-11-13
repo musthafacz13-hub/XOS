@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Calculator, Plus, Trash2, Banknote, Check, AlertCircle, Calendar, Clock, DollarSign } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
 import { calculateMonthlySalarySummary, getMonthDateBounds, payoutMatchesMonth } from '../../utils/calculations';
@@ -42,14 +42,29 @@ export const SalaryView: React.FC = () => {
   }, [data.settings.salaryConfig]);
 
   // Monthly earnings summary calculation
-  const monthlySummary = calculateMonthlySalarySummary(
-    data.attendance,
-    data.salaryPayouts,
-    data.settings.salaryConfig,
-    selectedMonth
+  const monthlySummary = useMemo(
+    () =>
+      calculateMonthlySalarySummary(
+        data.attendance,
+        data.salaryPayouts,
+        data.settings.salaryConfig,
+        selectedMonth
+      ),
+    [data.attendance, data.salaryPayouts, data.settings.salaryConfig, selectedMonth]
   );
 
-  const monthPayouts = data.salaryPayouts.filter(p => payoutMatchesMonth(p, selectedMonth));
+  const monthPayouts = useMemo(
+    () => data.salaryPayouts.filter(p => payoutMatchesMonth(p, selectedMonth)),
+    [data.salaryPayouts, selectedMonth]
+  );
+
+  const syncedPayoutIncomeIds = useMemo(() => {
+    const ids = new Set<string>();
+    data.incomes.forEach(i => {
+      if (i.salaryPayoutId) ids.add(i.salaryPayoutId);
+    });
+    return ids;
+  }, [data.incomes]);
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -323,7 +338,7 @@ export const SalaryView: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-black/[0.06] text-xs text-neutral-700">
                   {monthPayouts.map((pay) => {
-                    const isSynced = data.incomes.some(i => i.salaryPayoutId === pay.id);
+                    const isSynced = syncedPayoutIncomeIds.has(pay.id);
                     return (
                       <tr key={pay.id} className="hover:bg-neutral-50/70 transition-colors">
                         <td className="py-3 px-4 font-mono font-bold text-[#111111]">

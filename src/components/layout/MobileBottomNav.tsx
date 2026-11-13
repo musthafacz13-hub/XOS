@@ -37,7 +37,7 @@ interface MobileBottomNavProps {
   settings: UserSettings;
 }
 
-export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
+export const MobileBottomNav: React.FC<MobileBottomNavProps> = React.memo(({
   activeTab,
   setActiveTab
 }) => {
@@ -548,4 +548,4 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
       />
     </>
   );
-};
+});

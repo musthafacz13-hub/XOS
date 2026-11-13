@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { TrendingUp, Plus, Search, Trash2, Edit3, Banknote, ShieldCheck, X } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { useXOSData } from '../../hooks/useXOSData';
@@ -113,26 +113,40 @@ export const IncomeView: React.FC = () => {
     setDeleteTargetId(id);
   };
 
-  const filteredIncomes = data.incomes.filter(i => {
-    if (selectedSource !== 'all' && i.source !== selectedSource) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      return i.title.toLowerCase().includes(q) || (i.notes && i.notes.toLowerCase().includes(q));
-    }
-    return true;
-  });
+  const syncedPayoutIds = useMemo(
+    () => new Set(data.salaryPayouts.map(p => p.id)),
+    [data.salaryPayouts]
+  );
 
-  const totalIncomeSum = filteredIncomes.reduce((sum, i) => sum + i.amount, 0);
+  const filteredIncomes = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return data.incomes.filter(i => {
+      if (selectedSource !== 'all' && i.source !== selectedSource) return false;
+      if (q) {
+        return i.title.toLowerCase().includes(q) || (i.notes && i.notes.toLowerCase().includes(q));
+      }
+      return true;
+    });
+  }, [data.incomes, selectedSource, searchQuery]);
 
-  const sourceMap: Record<string, number> = {};
-  filteredIncomes.forEach(i => {
-    sourceMap[i.source] = (sourceMap[i.source] || 0) + i.amount;
-  });
+  const totalIncomeSum = useMemo(
+    () => filteredIncomes.reduce((sum, i) => sum + i.amount, 0),
+    [filteredIncomes]
+  );
 
-  const sourceChartData = Object.entries(sourceMap).map(([name, value]) => ({
-    name,
-    amount: Number(value.toFixed(2))
-  })).sort((a, b) => b.amount - a.amount);
+  const sourceChartData = useMemo(() => {
+    const sourceMap: Record<string, number> = {};
+    filteredIncomes.forEach(i => {
+      sourceMap[i.source] = (sourceMap[i.source] || 0) + i.amount;
+    });
+
+    return Object.entries(sourceMap)
+      .map(([name, value]) => ({
+        name,
+        amount: Number(value.toFixed(2))
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [filteredIncomes]);
 
   return (
     <div className="space-y-6">
@@ -265,7 +279,7 @@ export const IncomeView: React.FC = () => {
           {/* Mobile Card List (widths < 768px: 320px, 360px, 375px, 390px, etc.) */}
           <div className="md:hidden space-y-2.5">
             {filteredIncomes.map((inc) => (
-              <div key={inc.id} className="p-4 rounded-2xl border border-black/[0.08] bg-white space-y-2.5 shadow-xs">
+              <div key={inc.id} className="cv-auto p-4 rounded-2xl border border-black/[0.08] bg-white space-y-2.5 shadow-xs">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <span className="font-semibold text-sm text-[#111111] block truncate">{inc.title}</span>
@@ -283,7 +297,7 @@ export const IncomeView: React.FC = () => {
                   </div>
                 </div>
 
-                {inc.salaryPayoutId && data.salaryPayouts.some(p => p.id === inc.salaryPayoutId) && (
+                {inc.salaryPayoutId && syncedPayoutIds.has(inc.salaryPayoutId) && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-neutral-100 text-neutral-700 border border-neutral-200 font-mono">
                     <Banknote className="w-3 h-3 text-[#87CEEB]" /> Payout Synced
                   </span>
@@ -333,7 +347,7 @@ export const IncomeView: React.FC = () => {
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-[#111111] block">{inc.title}</span>
-                        {inc.salaryPayoutId && data.salaryPayouts.some(p => p.id === inc.salaryPayoutId) && (
+                        {inc.salaryPayoutId && syncedPayoutIds.has(inc.salaryPayoutId) && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] bg-neutral-100 text-neutral-700 border border-neutral-200 font-semibold flex items-center gap-1">
                             <Banknote className="w-3 h-3 text-[#87CEEB]" /> Payout Synced
                           </span>

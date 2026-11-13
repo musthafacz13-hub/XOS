@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { CreditCard, Plus, Search, Trash2, Edit3, PieChart as PieChartIcon, X } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { useXOSData } from '../../hooks/useXOSData';
@@ -128,27 +128,36 @@ export const ExpensesView: React.FC = () => {
     setDeleteTargetId(id);
   };
 
-  const filteredExpenses = data.expenses.filter(e => {
-    if (selectedCategory !== 'all' && e.category !== selectedCategory) return false;
-    if (selectedPaymentMethod !== 'all' && e.paymentMethod !== selectedPaymentMethod) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      return e.title.toLowerCase().includes(q) || (e.notes && e.notes.toLowerCase().includes(q));
-    }
-    return true;
-  });
+  const filteredExpenses = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return data.expenses.filter(e => {
+      if (selectedCategory !== 'all' && e.category !== selectedCategory) return false;
+      if (selectedPaymentMethod !== 'all' && e.paymentMethod !== selectedPaymentMethod) return false;
+      if (q) {
+        return e.title.toLowerCase().includes(q) || (e.notes && e.notes.toLowerCase().includes(q));
+      }
+      return true;
+    });
+  }, [data.expenses, selectedCategory, selectedPaymentMethod, searchQuery]);
 
-  const totalExpenseSum = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalExpenseSum = useMemo(
+    () => filteredExpenses.reduce((sum, e) => sum + e.amount, 0),
+    [filteredExpenses]
+  );
 
-  const categoryMap: Record<string, number> = {};
-  filteredExpenses.forEach(e => {
-    categoryMap[e.category] = (categoryMap[e.category] || 0) + e.amount;
-  });
+  const categoryChartData = useMemo(() => {
+    const categoryMap: Record<string, number> = {};
+    filteredExpenses.forEach(e => {
+      categoryMap[e.category] = (categoryMap[e.category] || 0) + e.amount;
+    });
 
-  const categoryChartData = Object.entries(categoryMap).map(([name, value]) => ({
-    name,
-    value: Number(value.toFixed(2))
-  })).sort((a, b) => b.value - a.value);
+    return Object.entries(categoryMap)
+      .map(([name, value]) => ({
+        name,
+        value: Number(value.toFixed(2))
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [filteredExpenses]);
 
   return (
     <div className="space-y-6">
@@ -303,7 +312,7 @@ export const ExpensesView: React.FC = () => {
           {/* Mobile Card List (widths < 768px: 320px, 360px, 375px, 390px, etc.) */}
           <div className="md:hidden space-y-2.5">
             {filteredExpenses.map((exp) => (
-              <div key={exp.id} className="p-4 rounded-2xl border border-black/[0.08] bg-white space-y-2.5 shadow-xs">
+              <div key={exp.id} className="cv-auto p-4 rounded-2xl border border-black/[0.08] bg-white space-y-2.5 shadow-xs">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <span className="font-semibold text-sm text-[#111111] block truncate">{exp.title}</span>

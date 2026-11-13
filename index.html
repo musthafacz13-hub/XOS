@@ -3,19 +3,45 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#111111" />
     <title>XOS — Personal Life Operating System</title>
-    <meta name="description" content="A customizable Personal Life Operating System to manage goals, finances, work attendance, salary calculations, savings, and personal progress in one centralized workspace." />
+    <meta name="description" content="A private Personal Life Operating System to manage expenses, income, work attendance, salary calculations, savings, and goals in one unified workspace." />
+    <meta name="robots" content="index, follow" />
+    <meta property="og:site_name" content="XOS" />
     <meta property="og:title" content="XOS — Personal Life Operating System" />
-    <meta property="og:description" content="A customizable Personal Life Operating System to manage goals, finances, work attendance, salary calculations, savings, and personal progress in one centralized workspace." />
+    <meta property="og:description" content="A private Personal Life Operating System to manage expenses, income, work attendance, salary calculations, savings, and goals in one unified workspace." />
     <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="XOS — Personal Life Operating System" />
+    <meta name="twitter:description" content="Manage expenses, income, work attendance, salary calculations, savings, and goals in one private workspace." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "XOS",
+        "alternateName": "XOS — Personal Life Operating System",
+        "applicationCategory": "FinanceApplication",
+        "operatingSystem": "Web",
+        "description": "A private Personal Life Operating System to manage expenses, income, work attendance, salary calculations, savings, and goals in one unified workspace."
+      }
+    </script>
   </head>
   <body class="bg-white text-[#111111] antialiased selection:bg-[#87CEEB]/30 selection:text-black">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

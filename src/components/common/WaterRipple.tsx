@@ -1,4 +1,4 @@
-import React, { useState, useTransition } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 export interface Ripple {
   x: number;
@@ -23,6 +23,15 @@ export const WaterRippleContainer: React.FC<WaterRippleContainerProps> = ({
   disabled = false
 }) => {
   const [ripples, setRipples] = useState<Ripple[]>([]);
+  const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      timers.forEach((timerId) => clearTimeout(timerId));
+      timers.clear();
+    };
+  }, []);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (disabled) return;
@@ -39,9 +48,11 @@ export const WaterRippleContainer: React.FC<WaterRippleContainerProps> = ({
 
     setRipples(prev => [...prev.slice(-3), newRipple]);
 
-    setTimeout(() => {
+    const timerId = setTimeout(() => {
+      timersRef.current.delete(timerId);
       setRipples(prev => prev.filter(r => r.id !== newRipple.id));
     }, 450);
+    timersRef.current.add(timerId);
   };
 
   return (

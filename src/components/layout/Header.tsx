@@ -22,7 +22,7 @@ const PRESET_OPTIONS: { id: DateFilterPreset; label: string }[] = [
   { id: 'this_year', label: 'This Year' }
 ];
 
-export const Header: React.FC<HeaderProps> = ({
+export const Header: React.FC<HeaderProps> = React.memo(({
   activeTab,
   dateFilter,
   setDateFilter,
@@ -143,7 +143,7 @@ export const Header: React.FC<HeaderProps> = ({
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.95 }}
-            onClick={onOpenQuickAction}
+            onClick={() => onOpenQuickAction()}
             type="button"
             className="h-9 sm:h-10 flex items-center gap-1.5 px-3.5 sm:px-4 rounded-xl bg-[#111111] text-white text-xs font-semibold hover:bg-black transition-colors shadow-xs shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
             aria-label="Log New Activity"
@@ -156,4 +156,4 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
     </header>
   );
-};
+});

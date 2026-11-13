@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { 
   Wallet, 
   TrendingUp, 
@@ -49,75 +49,87 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const periodLabel = getPeriodLabel(dateFilter.preset);
 
   // Filter financial data by header date range
-  const filteredIncomes = filterRecordsByDateRange(
-    data.incomes, 
-    dateFilter.preset, 
-    dateFilter.startDate, 
-    dateFilter.endDate
+  const filteredIncomes = useMemo(
+    () => filterRecordsByDateRange(data.incomes, dateFilter.preset, dateFilter.startDate, dateFilter.endDate),
+    [data.incomes, dateFilter.preset, dateFilter.startDate, dateFilter.endDate]
   );
-  const filteredExpenses = filterRecordsByDateRange(
-    data.expenses, 
-    dateFilter.preset, 
-    dateFilter.startDate, 
-    dateFilter.endDate
+
+  const filteredExpenses = useMemo(
+    () => filterRecordsByDateRange(data.expenses, dateFilter.preset, dateFilter.startDate, dateFilter.endDate),
+    [data.expenses, dateFilter.preset, dateFilter.startDate, dateFilter.endDate]
   );
-  
+
   // Financial calculations
-  const financialTotals = calculateFinancialTotals(
-    filteredIncomes, 
-    filteredExpenses, 
-    data.savingsGoals, 
-    data.savingsTransactions
+  const financialTotals = useMemo(
+    () => calculateFinancialTotals(filteredIncomes, filteredExpenses, data.savingsGoals, data.savingsTransactions),
+    [filteredIncomes, filteredExpenses, data.savingsGoals, data.savingsTransactions]
   );
-  const globalTotals = calculateFinancialTotals(
-    data.incomes, 
-    data.expenses, 
-    data.savingsGoals, 
-    data.savingsTransactions
+
+  const globalTotals = useMemo(
+    () => calculateFinancialTotals(data.incomes, data.expenses, data.savingsGoals, data.savingsTransactions),
+    [data.incomes, data.expenses, data.savingsGoals, data.savingsTransactions]
   );
 
   // Work, Salary, and Debt calculations
   const currentMonthStr = getMonthString();
-  const attendanceStats = calculateAttendanceStats(data.attendance, currentMonthStr);
-  const monthlySalarySummary = calculateMonthlySalarySummary(
-    data.attendance, 
-    data.salaryPayouts, 
-    data.settings.salaryConfig, 
-    currentMonthStr
+
+  const attendanceStats = useMemo(
+    () => calculateAttendanceStats(data.attendance, currentMonthStr),
+    [data.attendance, currentMonthStr]
   );
-  const debtSummary = calculateDebtSummary(data.debts, data.debtRepayments);
+
+  const monthlySalarySummary = useMemo(
+    () =>
+      calculateMonthlySalarySummary(
+        data.attendance,
+        data.salaryPayouts,
+        data.settings.salaryConfig,
+        currentMonthStr
+      ),
+    [data.attendance, data.salaryPayouts, data.settings.salaryConfig, currentMonthStr]
+  );
+
+  const debtSummary = useMemo(
+    () => calculateDebtSummary(data.debts, data.debtRepayments),
+    [data.debts, data.debtRepayments]
+  );
 
   // Active Goals & Dreams
-  const activeGoals = data.goals.filter(
-    g => g.status === 'In Progress' || g.status === 'Not Started'
+  const activeGoals = useMemo(
+    () => data.goals.filter(g => g.status === 'In Progress' || g.status === 'Not Started'),
+    [data.goals]
   );
 
   // Recent Activity (Expenses & Incomes sorted by date)
-  const recentExpenses = [...data.expenses]
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 5);
-  const recentIncomes = [...data.incomes]
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 5);
+  const recentActivity = useMemo(() => {
+    const recentExpenses = [...data.expenses]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 5);
+    const recentIncomes = [...data.incomes]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 5);
 
-  const recentActivity = [
-    ...recentExpenses.map(e => ({ 
-      id: e.id, 
-      title: e.title, 
-      amount: -e.amount, 
-      date: e.date, 
-      type: 'expense' as const, 
-      category: e.category 
-    })),
-    ...recentIncomes.map(i => ({ 
-      id: i.id, 
-      title: i.title, 
-      amount: i.amount, 
-      date: i.date, 
-      type: 'income' as const, 
-      category: i.source 
-    }))
-  ].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6);
+    return [
+      ...recentExpenses.map(e => ({
+        id: e.id,
+        title: e.title,
+        amount: -e.amount,
+        date: e.date,
+        type: 'expense' as const,
+        category: e.category
+      })),
+      ...recentIncomes.map(i => ({
+        id: i.id,
+        title: i.title,
+        amount: i.amount,
+        date: i.date,
+        type: 'income' as const,
+        category: i.source
+      }))
+    ]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 6);
+  }, [data.expenses, data.incomes]);
 
   const displayName = data.settings.profile.name.trim();
 

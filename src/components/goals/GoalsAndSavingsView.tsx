@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Target, 
   Plus, 
@@ -75,10 +75,16 @@ export const GoalsAndSavingsView: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isGoalModalOpen, isTxModalOpen, isSubmittingGoal, isSubmittingTx, selectedDetailGoalId]);
 
+  const savingsById = useMemo(
+    () => new Map(data.savingsGoals.map(sg => [sg.id, sg])),
+    [data.savingsGoals]
+  );
+
   // Helper to find the connected Savings Goal via strict 1:1 ID relationship
-  const getConnectedSavingsGoal = (goal: Goal): SavingsGoal | undefined => {
-    return data.savingsGoals.find(sg => sg.id === goal.savingsGoalId);
-  };
+  const getConnectedSavingsGoal = useCallback(
+    (goal: Goal): SavingsGoal | undefined => savingsById.get(goal.savingsGoalId),
+    [savingsById]
+  );
 
   // Open Create Modal
   const openCreateModal = () => {
@@ -232,27 +238,73 @@ export const GoalsAndSavingsView: React.FC = () => {
   };
 
   // Totals across all goals & connected savings
-  const totalTargetAmount = data.goals.reduce((sum, g) => sum + (g.targetAmount || 0), 0);
-  const totalSavedAmount = data.savingsGoals.reduce((sum, sg) => sum + (sg.currentAmount || 0), 0);
-  const totalRemainingAmount = Math.max(0, totalTargetAmount - totalSavedAmount);
-  const overallProgress = totalTargetAmount > 0 ? Math.min(100, Math.round((totalSavedAmount / totalTargetAmount) * 100)) : 0;
+  const goalTotals = useMemo(() => {
+    const totalTargetAmount = data.goals.reduce((sum, g) => sum + (g.targetAmount || 0), 0);
+    const totalSavedAmount = data.savingsGoals.reduce((sum, sg) => sum + (sg.currentAmount || 0), 0);
+    const totalRemainingAmount = Math.max(0, totalTargetAmount - totalSavedAmount);
+    const overallProgress = totalTargetAmount > 0 ? Math.min(100, Math.round((totalSavedAmount / totalTargetAmount) * 100)) : 0;
+
+    let activeGoalsCount = 0;
+    let completedGoalsCount = 0;
+    data.goals.forEach(g => {
+      const sg = savingsById.get(g.savingsGoalId);
+      const saved = sg?.currentAmount || 0;
+      const target = g.targetAmount || 0;
+      if (sg && target > 0 && saved >= target) {
+        completedGoalsCount += 1;
+      }
+      if (!sg || saved < target) {
+        activeGoalsCount += 1;
+      }
+    });
+
+    return {
+      totalTargetAmount,
+      totalSavedAmount,
+      totalRemainingAmount,
+      overallProgress,
+      activeGoalsCount,
+      completedGoalsCount
+    };
+  }, [data.goals, data.savingsGoals, savingsById]);
+
+  const {
+    totalTargetAmount,
+    totalSavedAmount,
+    totalRemainingAmount,
+    overallProgress,
+    activeGoalsCount,
+    completedGoalsCount
+  } = goalTotals;
 
   // Filtered goals
-  const filteredGoals = data.goals.filter(g => {
-    const connectedSg = getConnectedSavingsGoal(g);
-    const saved = connectedSg?.currentAmount || 0;
-    const target = g.targetAmount || 0;
-    const isCompleted = target > 0 && saved >= target;
+  const filteredGoals = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return data.goals.filter(g => {
+      const connectedSg = savingsById.get(g.savingsGoalId);
+      const saved = connectedSg?.currentAmount || 0;
+      const target = g.targetAmount || 0;
+      const isCompleted = target > 0 && saved >= target;
 
-    if (activeTab === 'active' && isCompleted) return false;
-    if (activeTab === 'completed' && !isCompleted) return false;
-    if (selectedCategory !== 'all' && g.category !== selectedCategory) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      return g.title.toLowerCase().includes(q) || (g.description && g.description.toLowerCase().includes(q));
-    }
-    return true;
-  });
+      if (activeTab === 'active' && isCompleted) return false;
+      if (activeTab === 'completed' && !isCompleted) return false;
+      if (selectedCategory !== 'all' && g.category !== selectedCategory) return false;
+      if (q) {
+        return g.title.toLowerCase().includes(q) || (g.description && g.description.toLowerCase().includes(q));
+      }
+      return true;
+    });
+  }, [data.goals, savingsById, activeTab, selectedCategory, searchQuery]);
+
+  const selectedGoalTransactions = useMemo(() => {
+    if (!selectedDetailGoal) return [];
+    const connectedSg = savingsById.get(selectedDetailGoal.savingsGoalId);
+    if (!connectedSg) return [];
+    return data.savingsTransactions
+      .filter(tx => tx.savingsGoalId === connectedSg.id)
+      .slice()
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [selectedDetailGoal, savingsById, data.savingsTransactions]);
 
   const categories = ['Financial', 'Career', 'Health', 'Travel', 'Learning', 'Life', 'Personal'];
 
@@ -320,10 +372,7 @@ export const GoalsAndSavingsView: React.FC = () => {
           </div>
           <div className="text-[11px] font-mono text-neutral-400 pt-2 border-t border-neutral-100 flex justify-between">
             <span>Active Goals:</span>
-            <span className="text-black font-bold">{data.goals.filter(g => {
-              const sg = getConnectedSavingsGoal(g);
-              return !sg || (sg.currentAmount || 0) < (g.targetAmount || 0);
-            }).length}</span>
+            <span className="text-black font-bold">{activeGoalsCount}</span>
           </div>
         </div>
 
@@ -336,10 +385,7 @@ export const GoalsAndSavingsView: React.FC = () => {
             </div>
             <div className="mt-3">
               <div className="text-3xl font-extrabold font-mono tracking-tight text-emerald-700 tabular-nums">
-                {data.goals.filter(g => {
-                  const sg = getConnectedSavingsGoal(g);
-                  return sg && (g.targetAmount || 0) > 0 && (sg.currentAmount || 0) >= (g.targetAmount || 0);
-                }).length}
+                {completedGoalsCount}
               </div>
               <p className="text-xs text-neutral-600 mt-1">
                 Fully funded savings targets
@@ -437,7 +483,7 @@ export const GoalsAndSavingsView: React.FC = () => {
               <div
                 key={goal.id}
                 onClick={() => setSelectedDetailGoalId(goal.id)}
-                className="p-5 rounded-2xl bg-white border border-black/[0.08] hover:border-black/[0.18] transition-all shadow-xs flex flex-col justify-between space-y-4 cursor-pointer group"
+                className="cv-auto p-5 rounded-2xl bg-white border border-black/[0.08] hover:border-black/[0.18] transition-all shadow-xs flex flex-col justify-between space-y-4 cursor-pointer group"
               >
                 <div>
                   <div className="flex items-start justify-between gap-3">
@@ -663,7 +709,7 @@ export const GoalsAndSavingsView: React.FC = () => {
         const remaining = Math.max(0, target - saved);
         const progress = target > 0 ? Math.min(100, Math.round((saved / target) * 100)) : 0;
         const isCompleted = target > 0 && saved >= target;
-        const txs = connectedSg ? data.savingsTransactions.filter(tx => tx.savingsGoalId === connectedSg.id) : [];
+        const txs = selectedGoalTransactions;
 
         return (
           <div
@@ -804,10 +850,7 @@ export const GoalsAndSavingsView: React.FC = () => {
                   </p>
                 ) : (
                   <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                    {txs
-                      .slice()
-                      .sort((a, b) => b.date.localeCompare(a.date))
-                      .map(tx => {
+                    {txs.map(tx => {
                         const isDeposit = tx.type === 'deposit';
                         return (
                           <div key={tx.id} className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between text-xs">

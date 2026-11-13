@@ -29,6 +29,12 @@ interface ParticleNode {
   layer: number; // 0: background subtle, 1: mid clarity, 2: foreground anchor
 }
 
+const EDGE_ALPHA_STEPS = 16;
+const EDGE_STROKE_STYLES = Array.from({ length: EDGE_ALPHA_STEPS + 1 }, (_, i) => {
+  const alpha = ((i / EDGE_ALPHA_STEPS) * 0.085).toFixed(4);
+  return `rgba(17, 17, 17, ${alpha})`;
+});
+
 export const MotionCanvasBackground: React.FC<MotionCanvasBackgroundProps> = ({ className = '' }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -42,10 +48,16 @@ export const MotionCanvasBackground: React.FC<MotionCanvasBackgroundProps> = ({ 
     // Check user preference for reduced motion
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    let animationFrameId: number;
+    let animationFrameId = 0;
     let width = 0;
     let height = 0;
-    let isVisible = !document.hidden;
+    let currentDpr = 1;
+    let isTabVisible = !document.hidden;
+    let isIntersecting = true;
+
+    // Offscreen cached radial backdrop to avoid recreating radial gradients every frame
+    const backdropCanvas = document.createElement('canvas');
+    const backdropCtx = backdropCanvas.getContext('2d');
 
     // Mouse coordinates for gentle parallax interaction
     let targetMouseX = 0;
@@ -54,36 +66,96 @@ export const MotionCanvasBackground: React.FC<MotionCanvasBackgroundProps> = ({ 
     let currentMouseY = 0;
 
     const handleMouseMove = (e: MouseEvent) => {
+      if (width === 0 || height === 0) return;
       targetMouseX = (e.clientX / width - 0.5) * 40;
       targetMouseY = (e.clientY / height - 0.5) * 40;
     };
 
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
 
+    let lastTimestamp = performance.now();
+
+    const startLoopIfActive = () => {
+      if (prefersReducedMotion || !isTabVisible || !isIntersecting || animationFrameId) {
+        return;
+      }
+      lastTimestamp = performance.now();
+      animationFrameId = requestAnimationFrame(render);
+    };
+
+    const stopLoop = () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = 0;
+      }
+    };
+
     // Handle tab visibility change
     const handleVisibilityChange = () => {
-      isVisible = !document.hidden;
-      if (isVisible && !prefersReducedMotion) {
-        lastTimestamp = performance.now();
-        animationFrameId = requestAnimationFrame(render);
+      isTabVisible = !document.hidden;
+      if (isTabVisible && isIntersecting) {
+        startLoopIfActive();
+      } else {
+        stopLoop();
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
+    // Pause animation when canvas leaves the viewport
+    let observer: IntersectionObserver | null = null;
+    if (typeof IntersectionObserver !== 'undefined') {
+      observer = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[0];
+          isIntersecting = Boolean(entry?.isIntersecting);
+          if (isIntersecting && isTabVisible) {
+            startLoopIfActive();
+          } else {
+            stopLoop();
+          }
+        },
+        { threshold: 0 }
+      );
+      observer.observe(canvas);
+    }
+
     // Grid nodes representing clarity & structure
     let nodes: ParticleNode[] = [];
 
+    const renderBackdropCache = () => {
+      if (!backdropCtx || width === 0 || height === 0) return;
+      backdropCanvas.width = Math.floor(width * currentDpr);
+      backdropCanvas.height = Math.floor(height * currentDpr);
+      backdropCtx.setTransform(currentDpr, 0, 0, currentDpr, 0, 0);
+      backdropCtx.clearRect(0, 0, width, height);
+
+      const centerGrad = backdropCtx.createRadialGradient(
+        width * 0.5,
+        height * 0.38,
+        width * 0.05,
+        width * 0.5,
+        height * 0.5,
+        width * 0.75
+      );
+      centerGrad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+      centerGrad.addColorStop(0.45, 'rgba(252, 252, 253, 0.96)');
+      centerGrad.addColorStop(1, 'rgba(245, 245, 247, 0.85)');
+      backdropCtx.fillStyle = centerGrad;
+      backdropCtx.fillRect(0, 0, width, height);
+    };
+
     const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      currentDpr = Math.min(window.devicePixelRatio || 1, 2);
       width = window.innerWidth;
       height = window.innerHeight;
 
-      canvas.width = Math.floor(width * dpr);
-      canvas.height = Math.floor(height * dpr);
+      canvas.width = Math.floor(width * currentDpr);
+      canvas.height = Math.floor(height * currentDpr);
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
 
-      ctx.scale(dpr, dpr);
+      ctx.setTransform(currentDpr, 0, 0, currentDpr, 0, 0);
+      renderBackdropCache();
 
       // Generate grid-aligned floating nodes based on screen size
       nodes = [];
@@ -155,10 +227,12 @@ export const MotionCanvasBackground: React.FC<MotionCanvasBackgroundProps> = ({ 
     window.addEventListener('resize', resize, { passive: true });
     resize();
 
-    let lastTimestamp = performance.now();
+    const maxDist = 135;
+    const maxDistSq = maxDist * maxDist;
 
     const render = (now: number) => {
-      if (!isVisible) return;
+      animationFrameId = 0;
+      if (!isTabVisible || !isIntersecting) return;
 
       const delta = Math.min((now - lastTimestamp) / 1000, 0.1);
       lastTimestamp = now;
@@ -169,22 +243,12 @@ export const MotionCanvasBackground: React.FC<MotionCanvasBackgroundProps> = ({ 
 
       ctx.clearRect(0, 0, width, height);
 
-      // 1. Subtle, serene atmospheric vignette
-      const centerGrad = ctx.createRadialGradient(
-        width * 0.5 + currentMouseX * 0.5,
-        height * 0.38 + currentMouseY * 0.5,
-        width * 0.05,
-        width * 0.5,
-        height * 0.5,
-        width * 0.75
-      );
-      centerGrad.addColorStop(0, 'rgba(255, 255, 255, 1)');
-      centerGrad.addColorStop(0.45, 'rgba(252, 252, 253, 0.96)');
-      centerGrad.addColorStop(1, 'rgba(245, 245, 247, 0.85)');
-      ctx.fillStyle = centerGrad;
-      ctx.fillRect(0, 0, width, height);
+      // 1. Draw pre-rendered radial atmospheric backdrop
+      if (backdropCanvas.width > 0 && backdropCanvas.height > 0) {
+        ctx.drawImage(backdropCanvas, 0, 0, width, height);
+      }
 
-      // 2. Harmonic harmonic orbit rings at the center
+      // 2. Harmonic orbit rings at the center
       const centerX = width * 0.5 + currentMouseX * 0.2;
       const centerY = height * 0.42 + currentMouseY * 0.2;
       const time = now * 0.0006;
@@ -209,48 +273,51 @@ export const MotionCanvasBackground: React.FC<MotionCanvasBackgroundProps> = ({ 
       ctx.arc(centerX, centerY, 80 + Math.sin(time * 1.2) * 4, 0, Math.PI * 2);
       ctx.stroke();
 
-      // 3. Update & render connected constellation nodes
-      for (let i = 0; i < nodes.length; i++) {
+      // 3. Update & compute screen coordinates once per frame
+      const len = nodes.length;
+      const driftStep = 60 * delta;
+      for (let i = 0; i < len; i++) {
         const node = nodes[i];
+        node.x += node.vx * driftStep;
+        node.y += node.vy * driftStep;
 
-        // Smooth natural drift
-        node.x += node.vx * 60 * delta;
-        node.y += node.vy * 60 * delta;
-
-        // Wrap around boundaries smoothly
         if (node.x < -30) node.x = width + 30;
-        if (node.x > width + 30) node.x = -30;
+        else if (node.x > width + 30) node.x = -30;
         if (node.y < -30) node.y = height + 30;
-        if (node.y > height + 30) node.y = -30;
+        else if (node.y > height + 30) node.y = -30;
+      }
 
-        // Gentle breathing pulse
+      ctx.lineWidth = 0.8;
+      for (let i = 0; i < len; i++) {
+        const node = nodes[i];
         const pulse = Math.sin(now * node.speed + node.phase);
         const currentRadius = node.radius + pulse * 0.4;
 
-        // Layer parallax offset
         const layerMultiplier = (node.layer + 1) * 0.35;
         const renderX = node.x + currentMouseX * layerMultiplier;
         const renderY = node.y + currentMouseY * layerMultiplier;
 
-        // Draw connections between nearby nodes
-        for (let j = i + 1; j < nodes.length; j++) {
+        // Draw connections between nearby nodes using precomputed alpha LUT
+        for (let j = i + 1; j < len; j++) {
           const other = nodes[j];
-          const otherX = other.x + currentMouseX * ((other.layer + 1) * 0.35);
-          const otherY = other.y + currentMouseY * ((other.layer + 1) * 0.35);
+          const otherLayerMul = (other.layer + 1) * 0.35;
+          const otherX = other.x + currentMouseX * otherLayerMul;
+          const otherY = other.y + currentMouseY * otherLayerMul;
 
           const dx = renderX - otherX;
           const dy = renderY - otherY;
           const distSq = dx * dx + dy * dy;
-          const maxDist = 135;
 
-          if (distSq < maxDist * maxDist) {
-            const alpha = (1 - Math.sqrt(distSq) / maxDist) * 0.085;
-            ctx.strokeStyle = `rgba(17, 17, 17, ${alpha})`;
-            ctx.lineWidth = 0.8;
-            ctx.beginPath();
-            ctx.moveTo(renderX, renderY);
-            ctx.lineTo(otherX, otherY);
-            ctx.stroke();
+          if (distSq < maxDistSq) {
+            const ratio = 1 - Math.sqrt(distSq) / maxDist;
+            const styleIdx = Math.min(EDGE_ALPHA_STEPS, Math.max(0, Math.round(ratio * EDGE_ALPHA_STEPS)));
+            if (styleIdx > 0) {
+              ctx.strokeStyle = EDGE_STROKE_STYLES[styleIdx];
+              ctx.beginPath();
+              ctx.moveTo(renderX, renderY);
+              ctx.lineTo(otherX, otherY);
+              ctx.stroke();
+            }
           }
         }
 
@@ -273,18 +340,18 @@ export const MotionCanvasBackground: React.FC<MotionCanvasBackgroundProps> = ({ 
           ctx.strokeStyle = 'rgba(135, 206, 235, 0.12)';
           ctx.lineWidth = 0.75;
           ctx.stroke();
+          ctx.lineWidth = 0.8;
         }
       }
 
       animationFrameId = requestAnimationFrame(render);
     };
 
-    if (!prefersReducedMotion) {
-      animationFrameId = requestAnimationFrame(render);
-    }
+    startLoopIfActive();
 
     return () => {
-      cancelAnimationFrame(animationFrameId);
+      stopLoop();
+      observer?.disconnect();
       window.removeEventListener('resize', resize);
       window.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('visibilitychange', handleVisibilityChange);

@@ -1,12 +1,15 @@
-import React, { useState } from 'react';
-import { BarChart3, Download, TrendingUp, TrendingDown, PiggyBank, FileText } from 'lucide-react';
+import React, { useState, useMemo, lazy, Suspense } from 'react';
+import { BarChart3, FileText } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts';
 import { useXOSData } from '../../hooks/useXOSData';
 import { DateFilterPreset } from '../../types';
 import { calculateAttendanceStatsForRecords, calculateDebtSummary, calculateFinancialTotals, calculatePeriodSalarySummary, filterRecordsByDateRange } from '../../utils/calculations';
 import { formatCurrency, getMonthString } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
-import { PDFExportModal } from '../modals/PDFExportModal';
+
+const PDFExportModal = lazy(() =>
+  import('../modals/PDFExportModal').then(m => ({ default: m.PDFExportModal }))
+);
 
 const CHART_PALETTE = ['#87CEEB', '#111111', '#525252', '#737373', '#A3A3A3', '#D4D4D4'];
 
@@ -17,60 +20,103 @@ export const ReportsView: React.FC = () => {
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
 
-  const filteredIncomes = filterRecordsByDateRange(data.incomes, periodPreset, customStart, customEnd);
-  const filteredExpenses = filterRecordsByDateRange(data.expenses, periodPreset, customStart, customEnd);
-  const filteredAttendance = filterRecordsByDateRange(data.attendance, periodPreset, customStart, customEnd);
+  const [isPDFModalOpen, setIsPDFModalOpen] = useState(false);
+  const [hasOpenedPDFModal, setHasOpenedPDFModal] = useState(false);
 
-  const totals = calculateFinancialTotals(filteredIncomes, filteredExpenses, data.savingsGoals, data.savingsTransactions);
+  const openPDFModal = () => {
+    setHasOpenedPDFModal(true);
+    setIsPDFModalOpen(true);
+  };
+
+  const filteredIncomes = useMemo(
+    () => filterRecordsByDateRange(data.incomes, periodPreset, customStart, customEnd),
+    [data.incomes, periodPreset, customStart, customEnd]
+  );
+
+  const filteredExpenses = useMemo(
+    () => filterRecordsByDateRange(data.expenses, periodPreset, customStart, customEnd),
+    [data.expenses, periodPreset, customStart, customEnd]
+  );
+
+  const filteredAttendance = useMemo(
+    () => filterRecordsByDateRange(data.attendance, periodPreset, customStart, customEnd),
+    [data.attendance, periodPreset, customStart, customEnd]
+  );
+
+  const totals = useMemo(
+    () => calculateFinancialTotals(filteredIncomes, filteredExpenses, data.savingsGoals, data.savingsTransactions),
+    [filteredIncomes, filteredExpenses, data.savingsGoals, data.savingsTransactions]
+  );
 
   const currentMonth = getMonthString();
-  const attStats = calculateAttendanceStatsForRecords(filteredAttendance, data.settings.salaryConfig.standardWorkingHours);
-  const periodSalary = calculatePeriodSalarySummary(
-    data.attendance,
-    data.salaryPayouts,
-    data.settings.salaryConfig,
-    periodPreset,
-    customStart,
-    customEnd
+
+  const attStats = useMemo(
+    () => calculateAttendanceStatsForRecords(filteredAttendance, data.settings.salaryConfig.standardWorkingHours),
+    [filteredAttendance, data.settings.salaryConfig.standardWorkingHours]
   );
-  const debtSummary = calculateDebtSummary(data.debts, data.debtRepayments);
+
+  const periodSalary = useMemo(
+    () =>
+      calculatePeriodSalarySummary(
+        data.attendance,
+        data.salaryPayouts,
+        data.settings.salaryConfig,
+        periodPreset,
+        customStart,
+        customEnd
+      ),
+    [data.attendance, data.salaryPayouts, data.settings.salaryConfig, periodPreset, customStart, customEnd]
+  );
+
+  const debtSummary = useMemo(
+    () => calculateDebtSummary(data.debts, data.debtRepayments),
+    [data.debts, data.debtRepayments]
+  );
 
   // Group cash flow by date
-  const dateMap: Record<string, { date: string; income: number; expense: number }> = {};
+  const cashFlowTimelineData = useMemo(() => {
+    const dateMap: Record<string, { date: string; income: number; expense: number }> = {};
 
-  filteredIncomes.forEach(i => {
-    if (!dateMap[i.date]) dateMap[i.date] = { date: i.date, income: 0, expense: 0 };
-    dateMap[i.date].income += i.amount;
-  });
+    filteredIncomes.forEach(i => {
+      if (!dateMap[i.date]) dateMap[i.date] = { date: i.date, income: 0, expense: 0 };
+      dateMap[i.date].income += i.amount;
+    });
 
-  filteredExpenses.forEach(e => {
-    if (!dateMap[e.date]) dateMap[e.date] = { date: e.date, income: 0, expense: 0 };
-    dateMap[e.date].expense += e.amount;
-  });
+    filteredExpenses.forEach(e => {
+      if (!dateMap[e.date]) dateMap[e.date] = { date: e.date, income: 0, expense: 0 };
+      dateMap[e.date].expense += e.amount;
+    });
 
-  const cashFlowTimelineData = Object.values(dateMap).sort((a, b) => a.date.localeCompare(b.date));
+    return Object.values(dateMap).sort((a, b) => a.date.localeCompare(b.date));
+  }, [filteredIncomes, filteredExpenses]);
 
   // Category breakdown
-  const catMap: Record<string, number> = {};
-  filteredExpenses.forEach(e => {
-    catMap[e.category] = (catMap[e.category] || 0) + e.amount;
-  });
+  const categoryData = useMemo(() => {
+    const catMap: Record<string, number> = {};
+    filteredExpenses.forEach(e => {
+      catMap[e.category] = (catMap[e.category] || 0) + e.amount;
+    });
 
-  const categoryData = Object.entries(catMap).map(([name, value]) => ({
-    name,
-    amount: Number(value.toFixed(2))
-  })).sort((a, b) => b.amount - a.amount);
+    return Object.entries(catMap)
+      .map(([name, value]) => ({
+        name,
+        amount: Number(value.toFixed(2))
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [filteredExpenses]);
 
-  const attendancePieData = [
-    { name: 'Present', count: attStats.presentDays, fill: '#111111' },
-    { name: 'Absent', count: attStats.absentDays, fill: '#737373' },
-    { name: 'Leave', count: attStats.leaveDays, fill: '#A3A3A3' },
-    { name: 'Holiday', count: attStats.holidayDays, fill: '#87CEEB' }
-  ].filter(d => d.count > 0);
+  const attendancePieData = useMemo(
+    () =>
+      [
+        { name: 'Present', count: attStats.presentDays, fill: '#111111' },
+        { name: 'Absent', count: attStats.absentDays, fill: '#737373' },
+        { name: 'Leave', count: attStats.leaveDays, fill: '#A3A3A3' },
+        { name: 'Holiday', count: attStats.holidayDays, fill: '#87CEEB' }
+      ].filter(d => d.count > 0),
+    [attStats.presentDays, attStats.absentDays, attStats.leaveDays, attStats.holidayDays]
+  );
 
   const hasData = data.incomes.length > 0 || data.expenses.length > 0 || data.attendance.length > 0;
-
-  const [isPDFModalOpen, setIsPDFModalOpen] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -86,7 +132,7 @@ export const ReportsView: React.FC = () => {
         </div>
 
         <button
-          onClick={() => setIsPDFModalOpen(true)}
+          onClick={openPDFModal}
           type="button"
           className="self-start sm:self-auto flex items-center gap-1.5 px-3.5 py-2 bg-[#111111] text-white text-xs font-semibold rounded-xl hover:bg-black transition-colors shadow-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
         >
@@ -166,7 +212,7 @@ export const ReportsView: React.FC = () => {
 
               <div className="space-y-2">
                 <button
-                  onClick={() => setIsPDFModalOpen(true)}
+                  onClick={openPDFModal}
                   type="button"
                   className="w-full flex items-center justify-center gap-1.5 px-3.5 py-2 bg-[#87CEEB] text-[#111111] text-xs font-bold rounded-xl hover:bg-[#70c2e3] transition-colors cursor-pointer"
                 >
@@ -312,12 +358,16 @@ export const ReportsView: React.FC = () => {
         </>
       )}
 
-      {/* PDF Export Options Modal */}
-      <PDFExportModal
-        isOpen={isPDFModalOpen}
-        onClose={() => setIsPDFModalOpen(false)}
-        defaultPreset={periodPreset}
-      />
+      {/* PDF Export Options Modal (lazy-loaded on demand) */}
+      {hasOpenedPDFModal && (
+        <Suspense fallback={null}>
+          <PDFExportModal
+            isOpen={isPDFModalOpen}
+            onClose={() => setIsPDFModalOpen(false)}
+            defaultPreset={periodPreset}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };

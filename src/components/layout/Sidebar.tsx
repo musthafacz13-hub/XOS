@@ -82,7 +82,7 @@ const NAV_GROUPS: NavGroup[] = [
   }
 ];
 
-export const Sidebar: React.FC<SidebarProps> = ({
+export const Sidebar: React.FC<SidebarProps> = React.memo(({
   activeTab,
   setActiveTab,
   collapsed,
@@ -338,4 +338,4 @@ export const Sidebar: React.FC<SidebarProps> = ({
       />
     </aside>
   );
-};
+});

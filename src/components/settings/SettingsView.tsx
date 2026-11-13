@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import {
   Check,
   AlertCircle,
@@ -10,9 +10,12 @@ import { useXOSData } from '../../hooks/useXOSData';
 import { CURRENCIES } from '../../utils/formatters';
 import { CurrencyCode, DateFormat, WeekStartDay, SalaryConfig } from '../../types';
 import { ConfirmDialog } from '../common/ConfirmDialog';
-import { PDFExportModal } from '../modals/PDFExportModal';
 import { useAuth } from '../../context/AuthContext';
 import { SettingsBundleSaveError, SettingsBundleSection } from '../../services/repository';
+
+const PDFExportModal = lazy(() =>
+  import('../modals/PDFExportModal').then(m => ({ default: m.PDFExportModal }))
+);
 
 const INPUT_CLASS =
   'w-full h-10 px-3 text-sm text-[#111111] bg-white border border-neutral-200 rounded-lg transition-colors placeholder:text-neutral-400 hover:border-neutral-300 focus-visible:outline-none focus-visible:border-[#111111] focus-visible:ring-2 focus-visible:ring-[#111111]/10';
@@ -102,6 +105,7 @@ export const SettingsView: React.FC = () => {
   const [resetError, setResetError] = useState<string | null>(null);
   const isResettingRef = useRef<boolean>(false);
   const [isPDFModalOpen, setIsPDFModalOpen] = useState<boolean>(false);
+  const [hasOpenedPDFModal, setHasOpenedPDFModal] = useState<boolean>(false);
   const [bannerMessage, setBannerMessage] = useState<string | null>(null);
 
   // Clear timers on unmount
@@ -921,7 +925,10 @@ export const SettingsView: React.FC = () => {
                 </p>
               </div>
               <button
-                onClick={() => setIsPDFModalOpen(true)}
+                onClick={() => {
+                  setHasOpenedPDFModal(true);
+                  setIsPDFModalOpen(true);
+                }}
                 type="button"
                 className="inline-flex items-center justify-center h-10 px-4 text-xs sm:text-sm font-medium text-[#111111] bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-neutral-300 rounded-lg transition-colors whitespace-nowrap shrink-0 self-start sm:self-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/15"
               >
@@ -1009,12 +1016,16 @@ export const SettingsView: React.FC = () => {
         onCancel={() => setIsSignOutModalOpen(false)}
       />
 
-      {/* PDF Export Modal */}
-      <PDFExportModal
-        isOpen={isPDFModalOpen}
-        onClose={() => setIsPDFModalOpen(false)}
-        defaultPreset="all"
-      />
+      {/* PDF Export Modal (lazy-loaded on demand) */}
+      {hasOpenedPDFModal && (
+        <Suspense fallback={null}>
+          <PDFExportModal
+            isOpen={isPDFModalOpen}
+            onClose={() => setIsPDFModalOpen(false)}
+            defaultPreset="all"
+          />
+        </Suspense>
+      )}
     </div>
   );
 };

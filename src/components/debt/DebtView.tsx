@@ -196,7 +196,7 @@ export const DebtView: React.FC = () => {
                   return (
                     <div 
                       key={debt.id} 
-                      className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between gap-3"
+                      className="cv-auto p-3.5 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between gap-3"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
@@ -300,7 +300,7 @@ export const DebtView: React.FC = () => {
                   return (
                     <div 
                       key={debt.id} 
-                      className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between gap-3"
+                      className="cv-auto p-3.5 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between gap-3"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">

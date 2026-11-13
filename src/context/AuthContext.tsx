@@ -52,12 +52,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const currentSettings = repository.getSettings();
     const fallbackName = u.user_metadata?.full_name || u.email?.split('@')[0] || 'XOS User';
     const email = u.email || '';
+    const nextName = currentSettings.profile.name || fallbackName;
+
+    if (currentSettings.profile.name === nextName && currentSettings.profile.email === email) {
+      return;
+    }
 
     repository.saveSettings({
       ...currentSettings,
       profile: {
         ...currentSettings.profile,
-        name: currentSettings.profile.name || fallbackName,
+        name: nextName,
         email
       }
     });

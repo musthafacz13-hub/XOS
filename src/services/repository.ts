@@ -131,6 +131,49 @@ const memoryState: InMemoryState = {
 type Listener = () => void;
 const listeners = new Set<Listener>();
 
+function createCachedArrayGetter<T>(readSource: () => T[]): () => T[] {
+  let cachedSource: T[] | null = null;
+  let cachedSnapshot: T[] = [];
+  return () => {
+    const source = readSource();
+    if (source !== cachedSource) {
+      cachedSource = source;
+      cachedSnapshot = [...source];
+    }
+    return cachedSnapshot;
+  };
+}
+
+let cachedSettingsSource: UserSettings | null = null;
+let cachedSettingsSnapshot: UserSettings | null = null;
+
+const getCachedFetchErrors = createCachedArrayGetter(() => memoryState.fetchErrors);
+const getCachedGoals = createCachedArrayGetter(() => memoryState.goals);
+const getCachedExpenses = createCachedArrayGetter(() => memoryState.expenses);
+const getCachedIncomes = createCachedArrayGetter(() => memoryState.incomes);
+const getCachedAttendance = createCachedArrayGetter(() => memoryState.attendance);
+const getCachedSavingsGoals = createCachedArrayGetter(() => memoryState.savingsGoals);
+const getCachedSavingsTransactions = createCachedArrayGetter(() => memoryState.savingsTransactions);
+const getCachedSalaryPayouts = createCachedArrayGetter(() => memoryState.salaryPayouts);
+const getCachedDebts = createCachedArrayGetter(() => memoryState.debts);
+const getCachedDebtRepayments = createCachedArrayGetter(() => memoryState.debtRepayments);
+
+const SUPABASE_BACKEND_STATUS = {
+  isBackendConfigured: true,
+  persistenceMode: 'supabase' as const,
+  statusLabel: 'Supabase Connected',
+  syncStatus: 'Connected',
+  backendNotice: 'Connected to your private Supabase database with Row Level Security active.'
+};
+
+const LOCAL_BACKEND_STATUS = {
+  isBackendConfigured: false,
+  persistenceMode: 'in-memory' as const,
+  statusLabel: 'Local Session Active',
+  syncStatus: 'Local-First Mode',
+  backendNotice: 'Operating in local workspace mode.'
+};
+
 function notifyListeners() {
   listeners.forEach(cb => cb());
 }
@@ -645,23 +688,14 @@ export const repository = {
   },
 
   getFetchErrors(): FetchTableError[] {
-    return [...memoryState.fetchErrors];
+    return getCachedFetchErrors();
   },
 
   /**
    * Diagnostic backend integration status
    */
   getBackendStatus() {
-    const active = isBackendActive();
-    return {
-      isBackendConfigured: active,
-      persistenceMode: active ? ('supabase' as const) : ('in-memory' as const),
-      statusLabel: active ? 'Supabase Connected' : 'Local Session Active',
-      syncStatus: active ? 'Connected' : 'Local-First Mode',
-      backendNotice: active
-        ? 'Connected to your private Supabase database with Row Level Security active.'
-        : 'Operating in local workspace mode.'
-    };
+    return isBackendActive() ? SUPABASE_BACKEND_STATUS : LOCAL_BACKEND_STATUS;
   },
 
   /**
@@ -811,52 +845,64 @@ export const repository = {
     const savedSalaryCurrency = salaryConfigRes.ok ? salaryConfigRes.data?.currency_code : undefined;
     const resolvedCurrency = (savedSettingsCurrency || savedSalaryCurrency || 'INR') as CurrencyCode;
 
+    let nextSettings: UserSettings = { ...memoryState.settings };
+
     if (settingsRes.ok) {
       const sData = settingsRes.data;
       if (sData) {
-        memoryState.settings = {
-          ...memoryState.settings,
+        nextSettings = {
+          ...nextSettings,
           currency: resolvedCurrency,
-          dateFormat: (sData.date_format as DateFormat) || memoryState.settings.dateFormat,
-          weekStartDay: fromDbWeekStartDay(sData.week_starts_on, memoryState.settings.weekStartDay),
+          dateFormat: (sData.date_format as DateFormat) || nextSettings.dateFormat,
+          weekStartDay: fromDbWeekStartDay(sData.week_starts_on, nextSettings.weekStartDay),
           customExpenseCategories:
             Array.isArray(sData.expense_categories) && sData.expense_categories.length > 0
               ? sData.expense_categories
-              : memoryState.settings.customExpenseCategories,
+              : nextSettings.customExpenseCategories,
           customIncomeSources:
             Array.isArray(sData.income_sources) && sData.income_sources.length > 0
               ? sData.income_sources
-              : memoryState.settings.customIncomeSources,
-          widgets: mergeWidgets(sData.dashboard_widgets, memoryState.settings.widgets)
+              : nextSettings.customIncomeSources,
+          widgets: mergeWidgets(sData.dashboard_widgets, nextSettings.widgets)
         };
       } else {
-        memoryState.settings = {
-          ...memoryState.settings,
+        nextSettings = {
+          ...nextSettings,
           currency: resolvedCurrency
         };
       }
     }
 
     if (profileRes.ok && profileRes.data) {
-      memoryState.settings.profile = {
-        ...memoryState.settings.profile,
-        name: profileRes.data.display_name ?? memoryState.settings.profile.name,
-        avatarUrl: profileRes.data.avatar_url || memoryState.settings.profile.avatarUrl
+      nextSettings = {
+        ...nextSettings,
+        profile: {
+          ...nextSettings.profile,
+          name: profileRes.data.display_name ?? nextSettings.profile.name,
+          avatarUrl: profileRes.data.avatar_url || nextSettings.profile.avatarUrl
+        }
       };
     }
 
     if (salaryConfigRes.ok && salaryConfigRes.data) {
-      memoryState.settings.salaryConfig = mapSalaryConfigRow(salaryConfigRes.data, {
-        ...memoryState.settings.salaryConfig,
-        currency: resolvedCurrency
-      });
+      nextSettings = {
+        ...nextSettings,
+        salaryConfig: mapSalaryConfigRow(salaryConfigRes.data, {
+          ...nextSettings.salaryConfig,
+          currency: resolvedCurrency
+        })
+      };
     } else if (settingsRes.ok) {
-      memoryState.settings.salaryConfig = {
-        ...memoryState.settings.salaryConfig,
-        currency: resolvedCurrency
+      nextSettings = {
+        ...nextSettings,
+        salaryConfig: {
+          ...nextSettings.salaryConfig,
+          currency: resolvedCurrency
+        }
       };
     }
 
+    memoryState.settings = nextSettings;
     memoryState.fetchErrors = partialErrors;
     if (partialErrors.length > 0) {
       console.warn('Partial errors during fetchAllUserData:', partialErrors);
@@ -888,18 +934,22 @@ export const repository = {
 
   // USER SETTINGS
   getSettings(): UserSettings {
-    return {
-      ...memoryState.settings,
-      profile: {
-        ...memoryState.settings.profile
-      },
-      salaryConfig: {
-        ...memoryState.settings.salaryConfig
-      },
-      widgets: memoryState.settings.widgets.map(w => ({ ...w })),
-      customExpenseCategories: [...memoryState.settings.customExpenseCategories],
-      customIncomeSources: [...memoryState.settings.customIncomeSources]
-    };
+    if (cachedSettingsSource !== memoryState.settings || !cachedSettingsSnapshot) {
+      cachedSettingsSource = memoryState.settings;
+      cachedSettingsSnapshot = {
+        ...memoryState.settings,
+        profile: {
+          ...memoryState.settings.profile
+        },
+        salaryConfig: {
+          ...memoryState.settings.salaryConfig
+        },
+        widgets: memoryState.settings.widgets.map(w => ({ ...w })),
+        customExpenseCategories: [...memoryState.settings.customExpenseCategories],
+        customIncomeSources: [...memoryState.settings.customIncomeSources]
+      };
+    }
+    return cachedSettingsSnapshot;
   },
 
   saveSettings(settings: UserSettings) {
@@ -1169,7 +1219,7 @@ export const repository = {
 
   // GOALS (Backed by public.goals)
   getGoals(): Goal[] {
-    return [...memoryState.goals];
+    return getCachedGoals();
   },
 
   saveGoals(goals: Goal[]) {
@@ -1446,7 +1496,7 @@ export const repository = {
 
   // EXPENSES (Backed by public.expenses)
   getExpenses(): Expense[] {
-    return [...memoryState.expenses];
+    return getCachedExpenses();
   },
 
   saveExpenses(expenses: Expense[]) {
@@ -1629,7 +1679,7 @@ export const repository = {
 
   // INCOMES (Backed by public.incomes)
   getIncomes(): Income[] {
-    return [...memoryState.incomes];
+    return getCachedIncomes();
   },
 
   saveIncomes(incomes: Income[]) {
@@ -1759,7 +1809,7 @@ export const repository = {
 
   // ATTENDANCE (Backed by public.attendance_records)
   getAttendance(): AttendanceRecord[] {
-    return [...memoryState.attendance];
+    return getCachedAttendance();
   },
 
   saveAttendance(records: AttendanceRecord[]) {
@@ -1888,7 +1938,7 @@ export const repository = {
 
   // SAVINGS GOALS & TRANSACTIONS (Backed by public.savings_goals & public.savings_transactions)
   getSavingsGoals(): SavingsGoal[] {
-    return [...memoryState.savingsGoals];
+    return getCachedSavingsGoals();
   },
 
   saveSavingsGoals(goals: SavingsGoal[]) {
@@ -2056,7 +2106,7 @@ export const repository = {
   },
 
   getSavingsTransactions(): SavingsTransaction[] {
-    return [...memoryState.savingsTransactions];
+    return getCachedSavingsTransactions();
   },
 
   saveSavingsTransactions(txs: SavingsTransaction[]) {
@@ -2256,7 +2306,7 @@ export const repository = {
 
   // SALARY PAYOUTS (Backed by RPCs xos_record_salary_payout & xos_delete_salary_payout)
   getSalaryPayouts(): SalaryPayout[] {
-    return [...memoryState.salaryPayouts];
+    return getCachedSalaryPayouts();
   },
 
   saveSalaryPayouts(payouts: SalaryPayout[]) {
@@ -2411,7 +2461,7 @@ export const repository = {
 
   // DEBTS (Backed by public.debts & public.debt_repayments)
   getDebts(): Debt[] {
-    return [...memoryState.debts];
+    return getCachedDebts();
   },
 
   saveDebts(debts: Debt[]) {
@@ -2582,7 +2632,7 @@ export const repository = {
 
   // DEBT REPAYMENTS (Backed by public.debt_repayments)
   getDebtRepayments(): DebtRepayment[] {
-    return [...memoryState.debtRepayments];
+    return getCachedDebtRepayments();
   },
 
   saveDebtRepayments(repayments: DebtRepayment[]) {
@@ -2799,7 +2849,7 @@ export const repository = {
         apiOptimization.invalidateCache();
         this.clearAllData();
         if (wasDemoMode) {
-          memoryState.settings.isDemoMode = true;
+          memoryState.settings = { ...memoryState.settings, isDemoMode: true };
           notifyListeners();
         }
         return;
@@ -2831,22 +2881,29 @@ export const repository = {
       memoryState.debts = [];
       memoryState.debtRepayments = [];
       memoryState.fetchErrors = [];
-      memoryState.settings = createDefaultSettings();
+      const freshSettings = createDefaultSettings();
       if (preservedEmail) {
-        memoryState.settings.profile.email = preservedEmail;
+        freshSettings.profile.email = preservedEmail;
       }
+      memoryState.settings = freshSettings;
       notifyListeners();
 
       // Re-fetch backend state so default settings and preserved profile hydrate cleanly
       const fetchResult = await this.fetchAllUserData(ctx.user.id);
       if (!fetchResult.stale) {
-        if (!memoryState.settings.profile.email && preservedEmail) {
-          memoryState.settings.profile.email = preservedEmail;
+        const needsEmail = !memoryState.settings.profile.email && Boolean(preservedEmail);
+        const needsName = !memoryState.settings.profile.name && Boolean(fallbackDisplayName);
+        if (needsEmail || needsName) {
+          memoryState.settings = {
+            ...memoryState.settings,
+            profile: {
+              ...memoryState.settings.profile,
+              ...(needsEmail ? { email: preservedEmail } : {}),
+              ...(needsName ? { name: fallbackDisplayName } : {})
+            }
+          };
+          notifyListeners();
         }
-        if (!memoryState.settings.profile.name && fallbackDisplayName) {
-          memoryState.settings.profile.name = fallbackDisplayName;
-        }
-        notifyListeners();
       }
     })().finally(() => {
       resetInFlightPromise = null;

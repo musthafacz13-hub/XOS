@@ -8,7 +8,47 @@ export default defineConfig(() => {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
+      },
+    },
+    build: {
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            groups: [
+              {
+                name: 'vendor-react',
+                test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+                priority: 40,
+              },
+              {
+                name: 'vendor-supabase',
+                test: /[\\/]node_modules[\\/]@supabase[\\/]/,
+                priority: 30,
+              },
+              {
+                name: 'vendor-motion',
+                test: /[\\/]node_modules[\\/](motion|framer-motion)[\\/]/,
+                priority: 25,
+              },
+              {
+                name: 'vendor-icons',
+                test: /[\\/]node_modules[\\/]lucide-react[\\/]/,
+                priority: 20,
+              },
+              {
+                name: 'vendor-charts',
+                test: /[\\/]node_modules[\\/](recharts|recharts-scale|victory-vendor|d3-[^\\/]+)[\\/]/,
+                priority: 15,
+              },
+              {
+                name: 'vendor-pdf',
+                test: /[\\/]node_modules[\\/](jspdf|jspdf-autotable|fflate)[\\/]/,
+                priority: 15,
+              },
+            ],
+          },
+        },
       },
     },
     server: {

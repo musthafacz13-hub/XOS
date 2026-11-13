@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { CalendarCheck, Plus, ChevronLeft, ChevronRight, CheckCircle2, Trash2, Edit3, X, AlertCircle } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
 import { AttendanceRecord, AttendanceStatus } from '../../types';
@@ -48,10 +48,24 @@ export const WorkView: React.FC = () => {
   const currentMonthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
   const monthName = new Date(currentYear, currentMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-  const monthlyStats = calculateAttendanceStats(
-    data.attendance,
-    currentMonthStr,
-    data.settings.salaryConfig.standardWorkingHours
+  const monthlyStats = useMemo(
+    () =>
+      calculateAttendanceStats(
+        data.attendance,
+        currentMonthStr,
+        data.settings.salaryConfig.standardWorkingHours
+      ),
+    [data.attendance, currentMonthStr, data.settings.salaryConfig.standardWorkingHours]
+  );
+
+  const attendanceByDate = useMemo(
+    () => new Map(data.attendance.map(r => [r.date, r])),
+    [data.attendance]
+  );
+
+  const sortedAttendance = useMemo(
+    () => [...data.attendance].sort((a, b) => b.date.localeCompare(a.date)),
+    [data.attendance]
   );
 
   const openLogModalForDate = (dStr: string) => {
@@ -62,7 +76,7 @@ export const WorkView: React.FC = () => {
     setPageError(null);
     setFormError(null);
     setIsSubmitting(false);
-    const existing = data.attendance.find(r => r.date === dStr);
+    const existing = attendanceByDate.get(dStr);
     if (existing) {
       setEditingRecord(existing);
       setDate(existing.date);
@@ -142,25 +156,29 @@ export const WorkView: React.FC = () => {
   };
 
   // Calendar Days Grid respecting configured weekStartDay ('Sunday' vs 'Monday')
-  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  const rawFirstDayOfWeek = new Date(currentYear, currentMonth, 1).getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
   const isMondayStart = data.settings.weekStartDay === 'Monday';
-  const leadingBlankCount = isMondayStart ? (rawFirstDayOfWeek + 6) % 7 : rawFirstDayOfWeek;
 
-  const calendarCells = [];
-  for (let i = 0; i < leadingBlankCount; i++) {
-    calendarCells.push(null);
-  }
-  for (let day = 1; day <= daysInMonth; day++) {
-    const dStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    calendarCells.push(dStr);
-  }
+  const calendarCells = useMemo(() => {
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const rawFirstDayOfWeek = new Date(currentYear, currentMonth, 1).getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
+    const leadingBlankCount = isMondayStart ? (rawFirstDayOfWeek + 6) % 7 : rawFirstDayOfWeek;
 
-  const dayLabels = isMondayStart 
-    ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] 
+    const cells: (string | null)[] = [];
+    for (let i = 0; i < leadingBlankCount; i++) {
+      cells.push(null);
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      cells.push(dStr);
+    }
+    return cells;
+  }, [currentYear, currentMonth, isMondayStart]);
+
+  const dayLabels = isMondayStart
+    ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  const todayRecord = data.attendance.find(r => r.date === todayStr);
+  const todayRecord = attendanceByDate.get(todayStr);
 
   return (
     <div className="space-y-6">
@@ -322,7 +340,7 @@ export const WorkView: React.FC = () => {
             }
 
             const dayNum = parseInt(dStr.split('-')[2]);
-            const rec = data.attendance.find(r => r.date === dStr);
+            const rec = attendanceByDate.get(dStr);
             const isToday = dStr === todayStr;
             const isFuture = dStr > todayStr;
 
@@ -382,8 +400,8 @@ export const WorkView: React.FC = () => {
             <div className="text-xs font-bold text-neutral-500 uppercase tracking-wider px-1">
               Attendance Records
             </div>
-            {[...data.attendance].sort((a, b) => b.date.localeCompare(a.date)).map((rec) => (
-              <div key={rec.id} className="p-4 rounded-2xl border border-black/[0.08] bg-white space-y-2 shadow-xs">
+            {sortedAttendance.map((rec) => (
+              <div key={rec.id} className="cv-auto p-4 rounded-2xl border border-black/[0.08] bg-white space-y-2 shadow-xs">
                 <div className="flex items-center justify-between">
                   <span className="font-mono font-bold text-sm text-[#111111]">
                     {formatHumanDate(rec.date)}
@@ -441,7 +459,7 @@ export const WorkView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/[0.06] text-xs text-neutral-700">
-                {[...data.attendance].sort((a, b) => b.date.localeCompare(a.date)).map((rec) => (
+                {sortedAttendance.map((rec) => (
                   <tr key={rec.id} className="hover:bg-neutral-50/70 transition-colors">
                     <td className="py-3 px-4 font-mono font-semibold text-[#111111] tabular-nums">
                       {formatHumanDate(rec.date)}

@@ -4,11 +4,25 @@
   body {
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   }
+
+  button,
+  a,
+  select,
+  input,
+  textarea,
+  [role="button"] {
+    touch-action: manipulation;
+  }
   
   .font-mono, tabular-nums {
     font-family: 'JetBrains Mono', monospace;
     font-variant-numeric: tabular-nums;
   }
+}
+
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 76px;
 }
 
 /* Custom scrollbar for minimal design */
