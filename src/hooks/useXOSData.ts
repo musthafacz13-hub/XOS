@@ -27,6 +27,7 @@ export function useXOSData() {
     
     // Actions
     saveSettings: (s: Parameters<typeof repository.saveSettings>[0]) => repository.saveSettings(s),
+    persistSettingsBundle: (b: Parameters<typeof repository.persistSettingsBundle>[0]) => repository.persistSettingsBundle(b),
     persistSalaryConfig: (c: Parameters<typeof repository.persistSalaryConfig>[0]) => repository.persistSalaryConfig(c),
     addGoal: (g: Parameters<typeof repository.addGoal>[0]) => repository.addGoal(g),
     updateGoal: (id: string, u: Parameters<typeof repository.updateGoal>[1]) => repository.updateGoal(id, u),
@@ -53,6 +54,7 @@ export function useXOSData() {
     updateSavingsGoal: (id: string, u: Parameters<typeof repository.updateSavingsGoal>[1]) => repository.updateSavingsGoal(id, u),
     deleteSavingsGoal: (id: string) => repository.deleteSavingsGoal(id),
     addSavingsTransaction: (tx: Parameters<typeof repository.addSavingsTransaction>[0]) => repository.addSavingsTransaction(tx),
+    deleteSavingsTransaction: (id: string) => repository.deleteSavingsTransaction(id),
 
     recordSalaryPayout: (p: Parameters<typeof repository.recordSalaryPayout>[0], sync?: boolean, allowReplace?: boolean) => repository.recordSalaryPayout(p, sync, allowReplace),
     getPayoutByPeriod: (periodMonth: string) => repository.getPayoutByPeriod(periodMonth),

@@ -16,7 +16,7 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
   email, 
   onNavigateLogin 
 }) => {
-  const { loginWithMagicLink } = useAuth();
+  const { resendVerificationEmail } = useAuth();
   const [cooldownSeconds, setCooldownSeconds] = useState(60);
   const [resending, setResending] = useState(false);
   const [resendNotice, setResendNotice] = useState<string | null>(null);
@@ -34,7 +34,7 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
 
     setResending(true);
     setResendNotice(null);
-    const { error } = await loginWithMagicLink(email);
+    const { error } = await resendVerificationEmail(email);
     setResending(false);
 
     if (error) {

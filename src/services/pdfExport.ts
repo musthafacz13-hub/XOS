@@ -13,8 +13,8 @@ import {
   Goal,
   DateFilterPreset
 } from '../types';
-import { formatCurrency, formatDate } from '../utils/formatters';
-import { calculateDebtSummary } from '../utils/calculations';
+import { formatCurrency, formatDate, getTodayString } from '../utils/formatters';
+import { calculateDebtOutstanding, calculateDebtSummary } from '../utils/calculations';
 
 export interface PDFExportOptions {
   datePreset?: DateFilterPreset | 'all';
@@ -80,7 +80,7 @@ export async function generateXOSReportPDF(
   const marginX = 14;
   let currentY = 14;
 
-  const currencyCode = data.settings.currency || 'USD';
+  const currencyCode = data.settings.currency || 'INR';
   const dateFormat = data.settings.dateFormat || 'YYYY-MM-DD';
 
   // Apply date filters if not 'all'
@@ -95,10 +95,10 @@ export async function generateXOSReportPDF(
     ? data.attendance.filter(a => isDateInRange(a.date, startDate, endDate))
     : data.attendance;
   const filteredDebts = filterByDate
-    ? data.debts.filter(d => isDateInRange(d.transaction_date, startDate, endDate))
+    ? data.debts.filter(d => isDateInRange(d.lent_date, startDate, endDate))
     : data.debts;
   const filteredPayouts = filterByDate
-    ? data.salaryPayouts.filter(p => isDateInRange(p.paymentDate, startDate, endDate))
+    ? data.salaryPayouts.filter(p => isDateInRange(p.paidAt, startDate, endDate))
     : data.salaryPayouts;
 
   // Key Totals
@@ -108,10 +108,8 @@ export async function generateXOSReportPDF(
 
   // Debt calculations using unified calculateDebtSummary
   const debtSummary = calculateDebtSummary(filteredDebts, data.debtRepayments);
-  const totalLent = debtSummary.totalLent;
-  const totalBorrowed = debtSummary.totalBorrowed;
   const outstandingReceivable = debtSummary.outstandingReceivable;
-  const outstandingPayable = debtSummary.outstandingPayable;
+  const totalRepaid = debtSummary.totalRepaid;
 
   // Savings total
   const totalSavings = data.savingsGoals.reduce((acc, g) => acc + (Number(g.currentAmount) || 0), 0);
@@ -172,11 +170,10 @@ export async function generateXOSReportPDF(
   doc.setFontSize(9);
   doc.setTextColor(200, 200, 200);
   const profileName = data.settings.profile?.name?.trim() || 'Workspace Master';
-  const occupation = data.settings.profile?.occupation?.trim() || 'Personal Audit';
-  doc.text(`Executive Summary Report | Prepared for: ${profileName} (${occupation})`, marginX + 6, currentY + 16);
+  doc.text(`Executive Summary Report | Prepared for: ${profileName}`, marginX + 6, currentY + 16);
 
   // Date and Scope badge in header banner
-  const todayFormatted = new Date().toISOString().split('T')[0];
+  const todayFormatted = getTodayString();
   const dateRangeLabel = datePreset === 'all'
     ? 'All Time (Complete History)'
     : startDate && endDate
@@ -199,7 +196,7 @@ export async function generateXOSReportPDF(
     { label: 'Total Expenses', value: formatCurrency(totalExpenses, currencyCode), color: [17, 17, 17] },
     { label: 'Net Cash Flow', value: (netCashFlow >= 0 ? '+' : '') + formatCurrency(netCashFlow, currencyCode), color: netCashFlow >= 0 ? [16, 120, 70] : [180, 40, 40] },
     { label: 'Money Lent (Receivable)', value: formatCurrency(outstandingReceivable, currencyCode), color: [17, 17, 17] },
-    { label: 'Money Borrowed (Payable)', value: formatCurrency(outstandingPayable, currencyCode), color: [180, 40, 40] },
+    { label: 'Debt Recovered', value: formatCurrency(totalRepaid, currencyCode), color: [16, 120, 70] },
     { label: 'Total Savings Saved', value: formatCurrency(totalSavings, currencyCode), color: [16, 120, 70] }
   ];
 
@@ -371,21 +368,23 @@ export async function generateXOSReportPDF(
 
     const debtRows = filteredDebts.length > 0
       ? filteredDebts.map(d => {
-          const repaymentsForDebt = data.debtRepayments
-            .filter(r => r.debt_id === d.id)
-            .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
-          const remaining = Math.max(0, (Number(d.original_amount) || 0) - repaymentsForDebt);
-          const typeLabel = d.type === 'lent' ? 'Lent (Receivable)' : 'Borrowed (Payable)';
+          const remaining = calculateDebtOutstanding(d, data.debtRepayments);
+          const repaid = Math.max(0, (Number(d.original_amount) || 0) - remaining);
+          const statusLabel = d.status === 'paid'
+            ? 'Paid'
+            : d.status === 'partially_paid'
+            ? 'Partially Paid'
+            : 'Outstanding';
 
           return [
-            formatDate(d.transaction_date, dateFormat),
+            formatDate(d.lent_date, dateFormat),
             d.person_name,
-            typeLabel,
+            d.description || d.notes || '—',
             formatCurrency(d.original_amount, currencyCode),
-            formatCurrency(repaymentsForDebt, currencyCode),
+            formatCurrency(repaid, currencyCode),
             formatCurrency(remaining, currencyCode),
             d.due_date ? formatDate(d.due_date, dateFormat) : 'None',
-            d.status
+            statusLabel
           ];
         })
       : [['—', '—', 'No debt records logged.', '—', '—', '—', '—', '—']];
@@ -394,7 +393,7 @@ export async function generateXOSReportPDF(
     autoTableFn(doc, {
       startY: currentY,
       margin: { left: marginX, right: marginX },
-      head: [['Date', 'Person', 'Direction', 'Original', 'Repaid', 'Balance', 'Due Date', 'Status']],
+      head: [['Lent Date', 'Person', 'Description', 'Original', 'Repaid', 'Balance', 'Due Date', 'Status']],
       body: debtRows,
       theme: 'grid',
       styles: {
@@ -412,8 +411,8 @@ export async function generateXOSReportPDF(
       },
       columnStyles: {
         0: { cellWidth: 20 },
-        1: { cellWidth: 28 },
-        2: { cellWidth: 28 },
+        1: { cellWidth: 26 },
+        2: { cellWidth: 30 },
         3: { cellWidth: 22, halign: 'right' },
         4: { cellWidth: 20, halign: 'right' },
         5: { cellWidth: 22, halign: 'right', fontStyle: 'bold' },
@@ -481,28 +480,25 @@ export async function generateXOSReportPDF(
   if (includeSalary) {
     const salaryCfg = data.settings.salaryConfig;
     const salarySubtitle = salaryCfg
-      ? `Model: ${(salaryCfg.salaryType || 'daily_wage').replace('_', ' ').toUpperCase()} | Base: ${formatCurrency(salaryCfg.baseAmount || 0, currencyCode)}`
+      ? `Daily Base: ${formatCurrency(salaryCfg.dailyBaseSalary || 0, currencyCode)} | Standard Hours: ${salaryCfg.standardWorkingHours || 8}h | Extra Rate: ${formatCurrency(salaryCfg.extraHourRate || 0, currencyCode)}/hr`
       : undefined;
 
     drawSectionHeader('Salary Information & Payout Records', salarySubtitle);
 
     const salaryRows = filteredPayouts.length > 0
       ? filteredPayouts.map(p => [
-          p.periodMonth,
-          formatDate(p.paymentDate, dateFormat),
-          formatCurrency(p.grossSalary, currencyCode),
-          formatCurrency(p.totalAllowances, currencyCode),
-          formatCurrency(p.totalDeductions, currencyCode),
-          formatCurrency(p.netSalary, currencyCode),
-          p.status
+          `${formatDate(p.periodStart, dateFormat)} to ${formatDate(p.periodEnd, dateFormat)}`,
+          formatDate(p.paidAt, dateFormat),
+          formatCurrency(p.amountPaid, currencyCode),
+          p.notes || '—'
         ])
-      : [['—', '—', 'No recorded salary payout slips.', '—', '—', '—', '—']];
+      : [['—', '—', 'No recorded salary payout slips.', '—']];
 
     const autoTableFn = (autoTable as unknown as { default?: typeof autoTable }).default || autoTable;
     autoTableFn(doc, {
       startY: currentY,
       margin: { left: marginX, right: marginX },
-      head: [['Period', 'Payment Date', 'Gross', 'Allowances', 'Deductions', 'Net Salary', 'Status']],
+      head: [['Pay Period', 'Paid Date', 'Amount Paid', 'Notes']],
       body: salaryRows,
       theme: 'grid',
       styles: {
@@ -519,13 +515,10 @@ export async function generateXOSReportPDF(
         fontSize: 7.2
       },
       columnStyles: {
-        0: { cellWidth: 24 },
-        1: { cellWidth: 26 },
-        2: { cellWidth: 28, halign: 'right' },
-        3: { cellWidth: 26, halign: 'right' },
-        4: { cellWidth: 26, halign: 'right' },
-        5: { cellWidth: 30, halign: 'right', fontStyle: 'bold' },
-        6: { cellWidth: 22, halign: 'center' }
+        0: { cellWidth: 46 },
+        1: { cellWidth: 30 },
+        2: { cellWidth: 36, halign: 'right', fontStyle: 'bold' },
+        3: { cellWidth: 70 }
       }
     });
 
@@ -596,10 +589,10 @@ export async function generateXOSReportPDF(
     const goalRows = data.goals.length > 0
       ? data.goals.map(g => [
           g.title,
-          g.type === 'dream' ? 'Dream' : 'Goal',
           g.category || 'General',
           g.priority,
           g.status,
+          `${g.progressPercentage ?? 0}%`,
           g.targetDate ? formatDate(g.targetDate, dateFormat) : 'Open',
           g.targetAmount ? formatCurrency(g.targetAmount, currencyCode) : '—'
         ])
@@ -609,7 +602,7 @@ export async function generateXOSReportPDF(
     autoTableFn(doc, {
       startY: currentY,
       margin: { left: marginX, right: marginX },
-      head: [['Title', 'Type', 'Category', 'Priority', 'Status', 'Target Date', 'Target Value']],
+      head: [['Title', 'Category', 'Priority', 'Status', 'Progress', 'Target Date', 'Target Value']],
       body: goalRows,
       theme: 'grid',
       styles: {
@@ -627,10 +620,10 @@ export async function generateXOSReportPDF(
       },
       columnStyles: {
         0: { cellWidth: 42 },
-        1: { cellWidth: 18, halign: 'center' },
-        2: { cellWidth: 26 },
-        3: { cellWidth: 20, halign: 'center' },
-        4: { cellWidth: 24, halign: 'center' },
+        1: { cellWidth: 26 },
+        2: { cellWidth: 20, halign: 'center' },
+        3: { cellWidth: 24, halign: 'center' },
+        4: { cellWidth: 18, halign: 'center' },
         5: { cellWidth: 24 },
         6: { cellWidth: 28, halign: 'right' }
       }

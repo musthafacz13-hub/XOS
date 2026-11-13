@@ -3,7 +3,7 @@ import { BarChart3, Download, TrendingUp, TrendingDown, PiggyBank, FileText } fr
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts';
 import { useXOSData } from '../../hooks/useXOSData';
 import { DateFilterPreset } from '../../types';
-import { calculateAttendanceStatsForRecords, calculateEstimatedSalary, calculateFinancialTotals, filterRecordsByDateRange } from '../../utils/calculations';
+import { calculateAttendanceStatsForRecords, calculateDebtSummary, calculateFinancialTotals, calculatePeriodSalarySummary, filterRecordsByDateRange } from '../../utils/calculations';
 import { formatCurrency, getMonthString } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
 import { PDFExportModal } from '../modals/PDFExportModal';
@@ -24,8 +24,16 @@ export const ReportsView: React.FC = () => {
   const totals = calculateFinancialTotals(filteredIncomes, filteredExpenses, data.savingsGoals, data.savingsTransactions);
 
   const currentMonth = getMonthString();
-  const attStats = calculateAttendanceStatsForRecords(filteredAttendance, data.settings.salaryConfig.expectedWorkingHoursPerDay);
-  const salaryEst = calculateEstimatedSalary(data.settings.salaryConfig, filteredAttendance, currentMonth);
+  const attStats = calculateAttendanceStatsForRecords(filteredAttendance, data.settings.salaryConfig.standardWorkingHours);
+  const periodSalary = calculatePeriodSalarySummary(
+    data.attendance,
+    data.salaryPayouts,
+    data.settings.salaryConfig,
+    periodPreset,
+    customStart,
+    customEnd
+  );
+  const debtSummary = calculateDebtSummary(data.debts, data.debtRepayments);
 
   // Group cash flow by date
   const dateMap: Record<string, { date: string; income: number; expense: number }> = {};
@@ -40,7 +48,7 @@ export const ReportsView: React.FC = () => {
     dateMap[e.date].expense += e.amount;
   });
 
-  const cashFlowTimelineData = Object.values(dateMap).sort((a, b) => (a.date > b.date ? 1 : -1));
+  const cashFlowTimelineData = Object.values(dateMap).sort((a, b) => a.date.localeCompare(b.date));
 
   // Category breakdown
   const catMap: Record<string, number> = {};
@@ -190,14 +198,14 @@ export const ReportsView: React.FC = () => {
 
               <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs">
                 <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Remaining Salary</span>
-                <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(salaryEst.netSalary, data.settings.currency)}</div>
-                <span className="text-[11px] text-neutral-400">Est. Salary Due</span>
+                <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(periodSalary.remainingSalary, data.settings.currency)}</div>
+                <span className="text-[11px] text-neutral-400">Earned: {formatCurrency(periodSalary.earnedSalary, data.settings.currency)}</span>
               </div>
 
               <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs sm:col-span-2 lg:col-span-1">
                 <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Money Owed to Me</span>
-                <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(data.debts.filter(d => d.type === 'lent').reduce((acc, d) => acc + d.original_amount, 0), data.settings.currency)}</div>
-                <span className="text-[11px] text-neutral-400">Total Receivables</span>
+                <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(debtSummary.outstandingReceivable, data.settings.currency)}</div>
+                <span className="text-[11px] text-neutral-400">Outstanding Receivables</span>
               </div>
             </div>
           </div>
@@ -268,7 +276,9 @@ export const ReportsView: React.FC = () => {
                 <h3 className="font-bold text-sm text-[#111111]">
                   Attendance Breakdown ({periodPreset === 'this_month' ? currentMonth : periodPreset.replace('_', ' ')})
                 </h3>
-                <span className="text-xs text-neutral-500 font-mono">Est Salary: ${salaryEst.netSalary}</span>
+                <span className="text-xs text-neutral-500 font-mono">
+                  Est Salary: {formatCurrency(periodSalary.earnedSalary, data.settings.currency)}
+                </span>
               </div>
 
               {attendancePieData.length === 0 ? (

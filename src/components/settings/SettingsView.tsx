@@ -1,8 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  User, 
   DollarSign, 
-  Calendar, 
   Briefcase, 
   Tags, 
   FileText, 
@@ -12,8 +10,7 @@ import {
   Loader2, 
   ShieldCheck, 
   LogOut, 
-  Trash2, 
-  Plus 
+  Trash2
 } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
 import { CURRENCIES, formatCurrency } from '../../utils/formatters';
@@ -21,39 +18,29 @@ import { CurrencyCode, DateFormat, WeekStartDay, SalaryConfig } from '../../type
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { PDFExportModal } from '../modals/PDFExportModal';
 import { useAuth } from '../../context/AuthContext';
-import { supabase, isSupabaseConfigured } from '../../services/supabase';
+import { isSupabaseConfigured } from '../../services/supabase';
 
-type ConnectionStatus = 'connected' | 'checking' | 'unavailable' | 'signed_out';
+type ConnectionStatus = 'connected' | 'unavailable' | 'signed_out';
 
 export const SettingsView: React.FC = () => {
   const data = useXOSData();
   const { user, isDemoUser, signOut, exitDemoMode } = useAuth();
 
-  // Connection & Initial Data Loading State
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
-    user ? 'checking' : isDemoUser ? 'signed_out' : 'unavailable'
+  // Form State hydrated reactively from repository.getSettings()
+  const [profileName, setProfileName] = useState<string>(
+    () => data.settings.profile.name || user?.user_metadata?.full_name || ''
   );
-  const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [isLoadingSettings, setIsLoadingSettings] = useState<boolean>(true);
-
-  // Form State
-  const [profileName, setProfileName] = useState<string>('');
-  const [profileOccupation, setProfileOccupation] = useState<string>('');
-  const [profileTagline, setProfileTagline] = useState<string>('');
-
-  // Primary Currency: fallback to INR if no saved preference exists
-  const [currency, setCurrency] = useState<CurrencyCode>('INR');
-  const [dateFormat, setDateFormat] = useState<DateFormat>('YYYY-MM-DD');
-  const [weekStartDay, setWeekStartDay] = useState<WeekStartDay>('Monday');
-
-  // Salary Settings
-  const [salaryConfig, setSalaryConfig] = useState<SalaryConfig>(data.settings.salaryConfig);
-
-  // Categories
-  const [expenseCategories, setExpenseCategories] = useState<string[]>(data.settings.customExpenseCategories);
+  const [currency, setCurrency] = useState<CurrencyCode>(() => data.settings.currency || 'INR');
+  const [dateFormat, setDateFormat] = useState<DateFormat>(() => data.settings.dateFormat || 'YYYY-MM-DD');
+  const [weekStartDay, setWeekStartDay] = useState<WeekStartDay>(() => data.settings.weekStartDay || 'Monday');
+  const [salaryConfig, setSalaryConfig] = useState<SalaryConfig>(() => data.settings.salaryConfig);
+  const [expenseCategories, setExpenseCategories] = useState<string[]>(
+    () => data.settings.customExpenseCategories || []
+  );
   const [newCatName, setNewCatName] = useState<string>('');
-
-  const [incomeSources, setIncomeSources] = useState<string[]>(data.settings.customIncomeSources);
+  const [incomeSources, setIncomeSources] = useState<string[]>(
+    () => data.settings.customIncomeSources || []
+  );
   const [newIncName, setNewIncName] = useState<string>('');
 
   // Save feedback state
@@ -67,160 +54,32 @@ export const SettingsView: React.FC = () => {
   const [isPDFModalOpen, setIsPDFModalOpen] = useState<boolean>(false);
   const [bannerMessage, setBannerMessage] = useState<string | null>(null);
 
-  // 1. Initial Load: Read real values from Supabase tables or local state fallback
-  const loadSavedSettings = useCallback(async () => {
-    setIsLoadingSettings(true);
-    setConnectionError(null);
-
-    // Initial fallback from memory/local defaults
-    const local = data.settings;
-    setProfileName(local.profile.name || user?.user_metadata?.full_name || '');
-    setProfileOccupation(local.profile.occupation || '');
-    setProfileTagline(local.profile.tagline || '');
-    setCurrency(local.currency || 'INR');
-    setDateFormat(local.dateFormat || 'YYYY-MM-DD');
-    setWeekStartDay(local.weekStartDay || 'Monday');
-    setSalaryConfig(local.salaryConfig);
-    setExpenseCategories(local.customExpenseCategories || []);
-    setIncomeSources(local.customIncomeSources || []);
-
-    if (!user) {
-      setConnectionStatus(isDemoUser ? 'signed_out' : 'unavailable');
-      setIsLoadingSettings(false);
-      return;
-    }
-
-    if (!isSupabaseConfigured) {
-      setConnectionStatus('unavailable');
-      setConnectionError('Supabase environment variables not configured.');
-      setIsLoadingSettings(false);
-      return;
-    }
-
-    setConnectionStatus('checking');
-
-    try {
-      // Safe, read-only parallel query to existing user-owned tables respecting RLS
-      const [profileRes, settingsRes, salaryRes] = await Promise.all([
-        supabase
-          .from('profiles')
-          .select('display_name, occupation, tagline')
-          .eq('id', user.id)
-          .maybeSingle(),
-        supabase
-          .from('user_settings')
-          .select('currency_code, date_format, week_start_day, custom_expense_categories, custom_income_sources')
-          .eq('user_id', user.id)
-          .maybeSingle(),
-        supabase
-          .from('salary_configs')
-          .select('*')
-          .eq('user_id', user.id)
-          .maybeSingle()
-      ]);
-
-      if (profileRes.error || settingsRes.error || salaryRes.error) {
-        const err = profileRes.error || settingsRes.error || salaryRes.error;
-        console.warn('Supabase settings query warning:', err?.message);
-        setConnectionStatus('unavailable');
-        setConnectionError(err?.message || 'Database query failed.');
-      } else {
-        setConnectionStatus('connected');
-      }
-
-      // Populate Profile
-      if (profileRes.data) {
-        setProfileName(profileRes.data.display_name || user?.user_metadata?.full_name || '');
-        setProfileOccupation(profileRes.data.occupation || '');
-        setProfileTagline(profileRes.data.tagline || '');
-      }
-
-      const salData = salaryRes.data;
-      const savedCurrencyCode =
-        (settingsRes.data?.currency_code as CurrencyCode | null | undefined) ||
-        (salData?.currency_code as CurrencyCode | null | undefined) ||
-        undefined;
-      const resolvedCurrency: CurrencyCode = !settingsRes.error
-        ? (savedCurrencyCode || 'INR')
-        : (local.currency || 'INR');
-
-      // Populate User Settings (preserving saved USD/EUR/other currency_code, defaulting to INR only when absent)
-      if (!settingsRes.error) {
-        setCurrency(resolvedCurrency);
-      }
-      if (settingsRes.data) {
-        if (settingsRes.data.date_format) {
-          setDateFormat(settingsRes.data.date_format as DateFormat);
-        }
-        if (settingsRes.data.week_start_day) {
-          setWeekStartDay(settingsRes.data.week_start_day as WeekStartDay);
-        }
-        if (Array.isArray(settingsRes.data.custom_expense_categories) && settingsRes.data.custom_expense_categories.length > 0) {
-          setExpenseCategories(settingsRes.data.custom_expense_categories);
-        }
-        if (Array.isArray(settingsRes.data.custom_income_sources) && settingsRes.data.custom_income_sources.length > 0) {
-          setIncomeSources(settingsRes.data.custom_income_sources);
-        }
-      }
-
-      // Populate Salary Config
-      const hydratedSalaryConfig: SalaryConfig = salData ? {
-        ...local.salaryConfig,
-        currency: (salData.currency_code as CurrencyCode) || resolvedCurrency,
-        salaryType: salData.salary_type || local.salaryConfig.salaryType,
-        dailyBaseSalary: salData.daily_base_salary !== undefined && salData.daily_base_salary !== null ? Number(salData.daily_base_salary) : local.salaryConfig.dailyBaseSalary,
-        standardWorkingHours: salData.standard_working_hours !== undefined && salData.standard_working_hours !== null ? Number(salData.standard_working_hours) : local.salaryConfig.standardWorkingHours,
-        extraHourRate: salData.extra_hour_rate !== undefined && salData.extra_hour_rate !== null ? Number(salData.extra_hour_rate) : local.salaryConfig.extraHourRate,
-        baseAmount: salData.base_amount !== undefined && salData.base_amount !== null ? Number(salData.base_amount) : local.salaryConfig.baseAmount,
-        expectedWorkingDaysPerMonth: salData.expected_working_days_per_month ?? local.salaryConfig.expectedWorkingDaysPerMonth,
-        expectedWorkingHoursPerDay: salData.expected_working_hours_per_day !== undefined && salData.expected_working_hours_per_day !== null ? Number(salData.expected_working_hours_per_day) : local.salaryConfig.expectedWorkingHoursPerDay,
-        weeklyHolidays: Array.isArray(salData.weekly_holidays) ? salData.weekly_holidays : local.salaryConfig.weeklyHolidays,
-        paidLeaveAllowancePerMonth: salData.paid_leave_allowance_per_month ?? local.salaryConfig.paidLeaveAllowancePerMonth,
-        overtimeRateMultiplier: salData.overtime_rate_multiplier !== undefined && salData.overtime_rate_multiplier !== null ? Number(salData.overtime_rate_multiplier) : local.salaryConfig.overtimeRateMultiplier,
-        paymentDateOfMonth: salData.payment_date_of_month ?? local.salaryConfig.paymentDateOfMonth,
-        fixedMonthlyAbsencePolicy: salData.fixed_monthly_absence_policy || local.salaryConfig.fixedMonthlyAbsencePolicy,
-        includeOvertimeInMonthly: salData.include_overtime_in_monthly !== undefined && salData.include_overtime_in_monthly !== null ? Boolean(salData.include_overtime_in_monthly) : local.salaryConfig.includeOvertimeInMonthly,
-        allowances: Array.isArray(salData.allowances) ? salData.allowances : local.salaryConfig.allowances,
-        deductions: Array.isArray(salData.deductions) ? salData.deductions : local.salaryConfig.deductions
-      } : {
-        ...local.salaryConfig,
-        currency: resolvedCurrency
-      };
-
-      if (salData) {
-        setSalaryConfig(hydratedSalaryConfig);
-      }
-
-      // Sync local repository state so other sections reflect real database settings
-      data.saveSettings({
-        ...data.settings,
-        profile: {
-          name: profileRes.data?.display_name || user?.user_metadata?.full_name || local.profile.name,
-          email: user.email || '',
-          occupation: profileRes.data?.occupation || local.profile.occupation,
-          tagline: profileRes.data?.tagline || local.profile.tagline
-        },
-        currency: resolvedCurrency,
-        dateFormat: (settingsRes.data?.date_format as DateFormat) || local.dateFormat,
-        weekStartDay: (settingsRes.data?.week_start_day as WeekStartDay) || local.weekStartDay,
-        customExpenseCategories: settingsRes.data?.custom_expense_categories || local.customExpenseCategories,
-        customIncomeSources: settingsRes.data?.custom_income_sources || local.customIncomeSources,
-        salaryConfig: hydratedSalaryConfig
-      });
-    } catch (err) {
-      console.error('Error loading Supabase settings:', err);
-      setConnectionStatus('unavailable');
-      setConnectionError(err instanceof Error ? err.message : 'Connection check failed.');
-    } finally {
-      setIsLoadingSettings(false);
-    }
-  }, [user, isDemoUser, isSupabaseConfigured]);
-
+  // Sync local form state when repository settings hydrate from Supabase or user switches
   useEffect(() => {
-    loadSavedSettings();
-  }, [loadSavedSettings]);
+    if (isSaving) return;
+    setProfileName(data.settings.profile.name || user?.user_metadata?.full_name || '');
+    setCurrency(data.settings.currency || 'INR');
+    setDateFormat(data.settings.dateFormat || 'YYYY-MM-DD');
+    setWeekStartDay(data.settings.weekStartDay || 'Monday');
+    setSalaryConfig(data.settings.salaryConfig);
+    setExpenseCategories(data.settings.customExpenseCategories || []);
+    setIncomeSources(data.settings.customIncomeSources || []);
+  }, [data.settings, user?.user_metadata?.full_name, isSaving]);
 
-  // 2. Save Settings Handler: Persists to Supabase tables, then synchronizes local repository
+  const settingsFetchErrors = data.fetchErrors.filter(e =>
+    e.table === 'user_settings' || e.table === 'profiles' || e.table === 'salary_configs'
+  );
+  const connectionError = settingsFetchErrors.length > 0
+    ? settingsFetchErrors.map(e => `${e.table}: ${e.message}`).join(' · ')
+    : null;
+
+  const connectionStatus: ConnectionStatus = !user
+    ? (isDemoUser ? 'signed_out' : 'unavailable')
+    : !isSupabaseConfigured || settingsFetchErrors.length > 0
+      ? 'unavailable'
+      : 'connected';
+
+  // Persist to user_settings, salary_configs, and profiles via repository
   const handleSaveSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (isSaving) return;
@@ -230,66 +89,29 @@ export const SettingsView: React.FC = () => {
     setSaveErrorMessage(null);
 
     try {
-      if (user && isSupabaseConfigured) {
-        // A. Update profiles table (RLS allows SELECT & UPDATE for auth.uid(); no INSERT policy)
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .update({
-            display_name: profileName.trim(),
-            occupation: profileOccupation.trim(),
-            tagline: profileTagline.trim(),
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', user.id)
-          .select('id')
-          .single();
+      const nextSalaryConfig: SalaryConfig = {
+        dailyBaseSalary: Math.max(0, Number(salaryConfig.dailyBaseSalary) || 0),
+        standardWorkingHours: Math.max(1, Math.min(24, Number(salaryConfig.standardWorkingHours) || 8)),
+        extraHourRate: Math.max(0, Number(salaryConfig.extraHourRate) || 0),
+        currency
+      };
 
-        if (profileError) throw profileError;
-
-        // B. Update user_settings table (uses live currency_code column)
-        const { error: settingsError } = await supabase
-          .from('user_settings')
-          .upsert({
-            user_id: user.id,
-            currency_code: currency,
-            date_format: dateFormat,
-            week_start_day: weekStartDay,
-            custom_expense_categories: expenseCategories,
-            custom_income_sources: incomeSources,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'user_id' });
-
-        if (settingsError) throw settingsError;
-
-        // C. Persist full salary_configs row via repository (including currency_code)
-        const updatedSalaryConfig: SalaryConfig = { ...salaryConfig, currency };
-        setSalaryConfig(updatedSalaryConfig);
-        await data.persistSalaryConfig(updatedSalaryConfig);
-      }
-
-      const nextSalaryConfig: SalaryConfig = { ...salaryConfig, currency };
-
-      // Synchronize local workspace state
-      data.saveSettings({
-        ...data.settings,
-        profile: {
-          name: profileName.trim(),
-          email: user?.email || data.settings.profile.email,
-          occupation: profileOccupation.trim(),
-          tagline: profileTagline.trim()
-        },
+      await data.persistSettingsBundle({
+        displayName: profileName.trim(),
         currency,
         dateFormat,
         weekStartDay,
-        salaryConfig: nextSalaryConfig,
         customExpenseCategories: expenseCategories,
-        customIncomeSources: incomeSources
+        customIncomeSources: incomeSources,
+        widgets: data.settings.widgets,
+        salaryConfig: nextSalaryConfig
       });
 
+      setSalaryConfig(nextSalaryConfig);
       setSaveSuccessMessage('Settings saved successfully.');
       setTimeout(() => setSaveSuccessMessage(null), 3500);
     } catch (err) {
-      console.error('Failed to save settings to Supabase:', err);
+      console.error('Failed to save settings:', err);
       const msg = err instanceof Error ? err.message : 'Database update failed. Please try again.';
       setSaveErrorMessage(`Error saving settings: ${msg}`);
       setTimeout(() => setSaveErrorMessage(null), 6000);
@@ -360,7 +182,7 @@ export const SettingsView: React.FC = () => {
           <button
             onClick={() => handleSaveSettings()}
             type="button"
-            disabled={isSaving || isLoadingSettings}
+            disabled={isSaving}
             className="inline-flex items-center gap-2 px-4 py-2 bg-[#111111] text-white text-xs font-semibold rounded-xl hover:bg-black transition-colors shadow-xs disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
           >
             {isSaving ? (
@@ -399,18 +221,11 @@ export const SettingsView: React.FC = () => {
             <h3 className="font-bold text-sm text-[#111111]">Account & Authentication</h3>
           </div>
 
-          {/* Real Connection Status Indicator */}
           <div className="flex items-center gap-2 text-xs">
             {connectionStatus === 'connected' && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-semibold text-[11px] border border-emerald-200">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 Connected
-              </span>
-            )}
-            {connectionStatus === 'checking' && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-600 font-medium text-[11px]">
-                <Loader2 className="w-3 h-3 animate-spin text-[#87CEEB]" />
-                Checking connection...
               </span>
             )}
             {connectionStatus === 'unavailable' && (
@@ -421,7 +236,7 @@ export const SettingsView: React.FC = () => {
             )}
             {connectionStatus === 'signed_out' && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-600 font-medium text-[11px]">
-                Signed out
+                Demo session
               </span>
             )}
           </div>
@@ -477,19 +292,37 @@ export const SettingsView: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. SECTION B: Preferences (Currency, Date, Week) */}
+      {/* 3. SECTION B: Preferences (Currency, Date, Week, Profile Display Name) */}
       <div className="p-5 rounded-2xl bg-white border border-black/[0.08] space-y-4 shadow-xs">
         <div className="flex items-center justify-between border-b border-black/[0.06] pb-3">
           <div className="flex items-center gap-2">
             <DollarSign className="w-4 h-4 text-[#87CEEB]" />
-            <h3 className="font-bold text-sm text-[#111111]">Regional Preferences</h3>
+            <h3 className="font-bold text-sm text-[#111111]">Regional & Profile Preferences</h3>
           </div>
           <span className="text-xs text-neutral-500 font-medium">
             Preview: <span className="font-bold font-mono text-[#111111]">{formatCurrency(100000, currency)}</span>
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Profile Name */}
+          <div className="space-y-1.5 text-left">
+            <label htmlFor="profile-name" className="block text-xs font-semibold text-neutral-700">
+              Display Name
+            </label>
+            <input
+              id="profile-name"
+              type="text"
+              placeholder="e.g. Rahul Sharma"
+              value={profileName}
+              onChange={(e) => setProfileName(e.target.value)}
+              className="w-full px-3 py-2 text-xs sm:text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+            />
+            <span className="text-[11px] text-neutral-400 block">
+              Shown on dashboard & PDF exports.
+            </span>
+          </div>
+
           {/* Primary Currency */}
           <div className="space-y-1.5 text-left">
             <label htmlFor="currency-select" className="block text-xs font-semibold text-neutral-700">
@@ -508,7 +341,7 @@ export const SettingsView: React.FC = () => {
               ))}
             </select>
             <span className="text-[11px] text-neutral-400 block">
-              Default is INR (₹) with Indian number formatting.
+              Default is INR (₹) when unset.
             </span>
           </div>
 
@@ -528,7 +361,7 @@ export const SettingsView: React.FC = () => {
               <option value="MM/DD/YYYY">MM/DD/YYYY (Month / Day / Year)</option>
             </select>
             <span className="text-[11px] text-neutral-400 block">
-              Used across transaction history and attendance.
+              Used across transactions & attendance.
             </span>
           </div>
 
@@ -551,51 +384,6 @@ export const SettingsView: React.FC = () => {
             </span>
           </div>
         </div>
-
-        {/* Profile Details (Editable Display Name, Occupation, Tagline) */}
-        <div className="pt-3 border-t border-neutral-100 grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="space-y-1 text-left">
-            <label htmlFor="profile-name" className="block text-xs font-semibold text-neutral-700">
-              Profile Name
-            </label>
-            <input
-              id="profile-name"
-              type="text"
-              placeholder="e.g. Rahul Sharma"
-              value={profileName}
-              onChange={(e) => setProfileName(e.target.value)}
-              className="w-full px-3 py-2 text-xs sm:text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-            />
-          </div>
-
-          <div className="space-y-1 text-left">
-            <label htmlFor="profile-occupation" className="block text-xs font-semibold text-neutral-700">
-              Occupation / Role
-            </label>
-            <input
-              id="profile-occupation"
-              type="text"
-              placeholder="e.g. Software Engineer"
-              value={profileOccupation}
-              onChange={(e) => setProfileOccupation(e.target.value)}
-              className="w-full px-3 py-2 text-xs sm:text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-            />
-          </div>
-
-          <div className="space-y-1 text-left">
-            <label htmlFor="profile-tagline" className="block text-xs font-semibold text-neutral-700">
-              Personal Headline
-            </label>
-            <input
-              id="profile-tagline"
-              type="text"
-              placeholder="e.g. Master time & financial clarity"
-              value={profileTagline}
-              onChange={(e) => setProfileTagline(e.target.value)}
-              className="w-full px-3 py-2 text-xs sm:text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-            />
-          </div>
-        </div>
       </div>
 
       {/* 4. SECTION C: Salary Settings */}
@@ -606,7 +394,7 @@ export const SettingsView: React.FC = () => {
             <h3 className="font-bold text-sm text-[#111111]">Salary Configuration</h3>
           </div>
           <span className="text-xs text-neutral-500 font-medium">
-            Contract: <span className="font-semibold text-neutral-800 capitalize">{(salaryConfig.salaryType || 'daily_wage').replace('_', ' ')}</span>
+            Daily Rate Model · {salaryConfig.standardWorkingHours || 8}h/day
           </span>
         </div>
 
@@ -805,7 +593,7 @@ export const SettingsView: React.FC = () => {
         </div>
       </div>
 
-      {/* 6. SECTION E: Data & Workspace Management (PDF Export & Local Reset) */}
+      {/* 6. SECTION E: Data & Workspace Management */}
       <div className="p-5 sm:p-6 rounded-2xl bg-white border border-black/[0.08] space-y-4 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-black/[0.06] pb-3">
           <div className="flex items-center gap-2">
@@ -813,7 +601,7 @@ export const SettingsView: React.FC = () => {
             <h3 className="font-bold text-sm text-[#111111]">Data Export & Workspace Controls</h3>
           </div>
           <span className="text-xs text-neutral-500 font-medium">
-            Export real audit reports or clear local temporary state
+            Export audit reports or clear local temporary state
           </span>
         </div>
 

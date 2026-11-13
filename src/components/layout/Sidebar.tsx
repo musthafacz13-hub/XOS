@@ -94,7 +94,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [isSignOutDialogOpen, setIsSignOutDialogOpen] = useState(false);
 
   const userName = settings.profile.name.trim() || 'My Workspace';
-  const userRole = settings.profile.occupation.trim() || 'Personal System';
+  const userRole = 'Personal System';
   const avatarLetter = (userName.charAt(0) || 'X').toUpperCase();
 
   return (

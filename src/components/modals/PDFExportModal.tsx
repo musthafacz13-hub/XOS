@@ -20,6 +20,7 @@ import { generateXOSReportPDF, PDFExportOptions } from '../../services/pdfExport
 import { WaterRippleContainer } from '../common/WaterRipple';
 import { modalBackdropVariants, modalContentVariants } from '../../utils/motion';
 import { DateFilterPreset } from '../../types';
+import { getTodayString } from '../../utils/formatters';
 
 interface PDFExportModalProps {
   isOpen: boolean;
@@ -114,7 +115,7 @@ export const PDFExportModal: React.FC<PDFExportModalProps> = ({
       const pdfBlob = await generateXOSReportPDF(data, options);
 
       // Trigger native download
-      const filename = `XOS_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      const filename = `XOS_Report_${getTodayString()}.pdf`;
       const url = URL.createObjectURL(pdfBlob);
       const link = document.createElement('a');
       link.href = url;

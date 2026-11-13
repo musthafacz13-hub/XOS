@@ -14,6 +14,10 @@ export const SavingsView: React.FC = () => {
   const [isDeletingGoal, setIsDeletingGoal] = useState(false);
   const [deleteGoalError, setDeleteGoalError] = useState<string | null>(null);
 
+  const [deleteTxTargetId, setDeleteTxTargetId] = useState<string | null>(null);
+  const [isDeletingTx, setIsDeletingTx] = useState(false);
+  const [deleteTxError, setDeleteTxError] = useState<string | null>(null);
+
   // Modal State
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<SavingsGoal | null>(null);
@@ -28,7 +32,7 @@ export const SavingsView: React.FC = () => {
   const [name, setName] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
   const [initialDeposit, setInitialDeposit] = useState('');
-  const [startDate, setStartDate] = useState(getTodayString());
+  const [initialDepositDate, setInitialDepositDate] = useState(getTodayString());
   const [targetDate, setTargetDate] = useState('');
   const [description, setDescription] = useState('');
 
@@ -56,7 +60,7 @@ export const SavingsView: React.FC = () => {
     setName('');
     setTargetAmount('');
     setInitialDeposit('');
-    setStartDate(getTodayString());
+    setInitialDepositDate(getTodayString());
     setTargetDate('');
     setDescription('');
     setIsGoalModalOpen(true);
@@ -68,7 +72,7 @@ export const SavingsView: React.FC = () => {
     setName(sg.name);
     setTargetAmount(String(sg.targetAmount));
     setInitialDeposit('0');
-    setStartDate(sg.startDate);
+    setInitialDepositDate(getTodayString());
     setTargetDate(sg.targetDate || '');
     setDescription(sg.description || '');
     setIsGoalModalOpen(true);
@@ -110,7 +114,6 @@ export const SavingsView: React.FC = () => {
         await data.updateSavingsGoal(editingGoal.id, {
           name: name.trim(),
           targetAmount: parsedTarget,
-          startDate,
           targetDate: targetDate || undefined,
           description: description.trim()
         });
@@ -119,7 +122,7 @@ export const SavingsView: React.FC = () => {
           name: name.trim(),
           targetAmount: parsedTarget,
           initialDeposit: parsedInitial,
-          startDate,
+          initialDepositDate: parsedInitial > 0 ? initialDepositDate : undefined,
           targetDate: targetDate || undefined,
           description: description.trim()
         });
@@ -146,7 +149,7 @@ export const SavingsView: React.FC = () => {
     }
 
     const targetGoal = data.savingsGoals.find(g => g.id === selectedTxGoalId);
-    if (txType === 'withdrawal' && targetGoal && parsedAmount > (targetGoal.currentAmount || 0)) {
+    if (txType === 'withdrawal' && targetGoal && parsedAmount > (targetGoal.currentAmount || 0) + 0.001) {
       setTxError(`Withdrawal amount cannot exceed available balance of ${formatCurrency(targetGoal.currentAmount || 0, data.settings.currency)}.`);
       return;
     }
@@ -385,7 +388,20 @@ export const SavingsView: React.FC = () => {
 
                     <div className="flex items-center justify-between text-xs text-neutral-500">
                       <span>{isDeposit ? 'Deposit' : 'Withdrawal'}</span>
-                      <span className="font-mono">{formatHumanDate(tx.date)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono">{formatHumanDate(tx.date)}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteTxError(null);
+                            setDeleteTxTargetId(tx.id);
+                          }}
+                          className="p-1 text-neutral-400 hover:text-rose-600 cursor-pointer"
+                          title="Delete transaction"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
                     {tx.note && (
@@ -412,12 +428,13 @@ export const SavingsView: React.FC = () => {
                   <th className="py-3 px-4">Date</th>
                   <th className="py-3 px-4">Note</th>
                   <th className="py-3 px-4 text-right">Amount</th>
+                  <th className="py-3 px-4 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/[0.06] text-xs text-neutral-700">
                 {data.savingsTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-neutral-400">
+                    <td colSpan={6} className="py-8 text-center text-neutral-400">
                       No savings contributions or withdrawals logged yet.
                     </td>
                   </tr>
@@ -445,6 +462,19 @@ export const SavingsView: React.FC = () => {
                         <td className={`py-3 px-4 text-right font-mono font-bold tabular-nums ${isDeposit ? 'text-emerald-600' : 'text-[#111111]'}`}>
                           {isDeposit ? '+' : '-'}{formatCurrency(tx.amount, data.settings.currency)}
                         </td>
+                        <td className="py-3 px-4 text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeleteTxError(null);
+                              setDeleteTxTargetId(tx.id);
+                            }}
+                            className="p-1 text-neutral-400 hover:text-rose-600 cursor-pointer"
+                            title="Delete transaction"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
                       </tr>
                     );
                   })
@@ -459,7 +489,7 @@ export const SavingsView: React.FC = () => {
       {isGoalModalOpen && (
         <div 
           className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
-          onClick={() => setIsGoalModalOpen(false)}
+          onClick={() => { if (!isSubmittingGoal) setIsGoalModalOpen(false); }}
           role="dialog"
           aria-modal="true"
         >
@@ -529,16 +559,18 @@ export const SavingsView: React.FC = () => {
                 )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Start Date</label>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                  />
-                </div>
+              <div className={`grid grid-cols-1 ${!editingGoal ? 'sm:grid-cols-2' : ''} gap-3`}>
+                {!editingGoal && (
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-700 mb-1">Initial Deposit Date</label>
+                    <input
+                      type="date"
+                      value={initialDepositDate}
+                      onChange={(e) => setInitialDepositDate(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs font-semibold text-neutral-700 mb-1">Target Date (Optional)</label>
                   <input
@@ -587,7 +619,7 @@ export const SavingsView: React.FC = () => {
       {isTxModalOpen && (
         <div 
           className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
-          onClick={() => setIsTxModalOpen(false)}
+          onClick={() => { if (!isSubmittingTx) setIsTxModalOpen(false); }}
           role="dialog"
           aria-modal="true"
         >
@@ -600,8 +632,10 @@ export const SavingsView: React.FC = () => {
                 Record Savings {txType === 'deposit' ? 'Deposit (+)' : 'Withdrawal (-)'}
               </h3>
               <button
+                type="button"
+                disabled={isSubmittingTx}
                 onClick={() => setIsTxModalOpen(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-black cursor-pointer"
+                className="p-1 rounded-lg text-neutral-400 hover:text-black cursor-pointer disabled:opacity-50"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -685,6 +719,33 @@ export const SavingsView: React.FC = () => {
         onCancel={() => {
           setDeleteGoalError(null);
           setDeleteTargetId(null);
+        }}
+      />
+
+      {/* Transaction Deletion Confirmation */}
+      <ConfirmDialog
+        isOpen={deleteTxTargetId !== null}
+        title="Delete Savings Transaction"
+        message="Are you sure you want to delete this savings transaction? The fund balance will be recalculated automatically."
+        confirmLabel="Delete Transaction"
+        isLoading={isDeletingTx}
+        error={deleteTxError}
+        onConfirm={async () => {
+          if (!deleteTxTargetId || isDeletingTx) return;
+          setDeleteTxError(null);
+          setIsDeletingTx(true);
+          try {
+            await data.deleteSavingsTransaction(deleteTxTargetId);
+            setDeleteTxTargetId(null);
+          } catch (err) {
+            setDeleteTxError(err instanceof Error ? err.message : 'Database error: Could not delete savings transaction.');
+          } finally {
+            setIsDeletingTx(false);
+          }
+        }}
+        onCancel={() => {
+          setDeleteTxError(null);
+          setDeleteTxTargetId(null);
         }}
       />
     </div>

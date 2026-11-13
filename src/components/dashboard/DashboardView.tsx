@@ -94,10 +94,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // Recent Activity (Expenses & Incomes sorted by date)
   const recentExpenses = [...data.expenses]
-    .sort((a, b) => (b.date > a.date ? 1 : -1))
+    .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 5);
   const recentIncomes = [...data.incomes]
-    .sort((a, b) => (b.date > a.date ? 1 : -1))
+    .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 5);
 
   const recentActivity = [
@@ -117,7 +117,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       type: 'income' as const, 
       category: i.source 
     }))
-  ].sort((a, b) => (b.date > a.date ? 1 : -1)).slice(0, 6);
+  ].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6);
 
   const displayName = data.settings.profile.name.trim();
 
@@ -130,7 +130,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {displayName ? `Welcome, ${displayName}` : 'Personal Life Dashboard'}
           </h2>
           <p className="text-xs sm:text-sm text-neutral-500 font-normal mt-0.5">
-            {data.settings.profile.tagline || 'Your personal command center for finances, work, and goals.'}
+            Your personal command center for finances, work, and goals.
           </p>
         </div>
       </div>
@@ -289,7 +289,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         </div>
 
-        {attendanceStats.totalRecorded === 0 && data.settings.salaryConfig.baseAmount === 0 ? (
+        {attendanceStats.totalRecorded === 0 ? (
           <div className="py-6 text-center space-y-2">
             <p className="text-xs sm:text-sm text-neutral-500">
               No attendance recorded yet for this month.
@@ -322,8 +322,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">
                 {attendanceStats.totalHours}h
               </div>
-              <p className="text-xs text-neutral-500 pt-1 border-t border-neutral-200 truncate capitalize">
-                Type: {(data.settings.salaryConfig.salaryType || 'daily_wage').replace('_', ' ')}
+              <p className="text-xs text-neutral-500 pt-1 border-t border-neutral-200 truncate">
+                Daily Base: {formatCurrency(data.settings.salaryConfig.dailyBaseSalary, data.settings.currency)} · {data.settings.salaryConfig.standardWorkingHours}h/day
               </p>
             </div>
 
@@ -379,16 +379,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {activeGoals.slice(0, 4).map((goal) => {
               const hasAmount = goal.targetAmount && goal.targetAmount > 0;
-              const progressPct = hasAmount
-                ? Math.min(100, Math.round(((goal.currentAmount || 0) / goal.targetAmount!) * 100))
-                : 0;
+              const progressPct = Math.max(0, Math.min(100, Math.round(goal.progressPercentage || 0)));
 
               return (
                 <div key={goal.id} className="p-4 rounded-xl border border-black/[0.06] bg-neutral-50/60 space-y-2.5">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 block">
-                        {goal.type === 'dream' ? 'Dream' : 'Goal'} · {goal.category}
+                        {goal.category}
                       </span>
                       <h4 className="font-bold text-sm text-[#111111] truncate">{goal.title}</h4>
                     </div>
@@ -397,24 +395,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </span>
                   </div>
 
-                  {hasAmount ? (
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-xs text-neutral-600 font-mono tabular-nums">
-                        <span>{formatCurrency(goal.currentAmount || 0, data.settings.currency)}</span>
-                        <span>{progressPct}%</span>
-                      </div>
-                      <div className="w-full h-1.5 bg-neutral-200 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-[#87CEEB] transition-all duration-300"
-                          style={{ width: `${progressPct}%` }}
-                        />
-                      </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs text-neutral-600 font-mono tabular-nums">
+                      <span>{hasAmount ? `Target: ${formatCurrency(goal.targetAmount!, data.settings.currency)}` : (goal.targetDate ? formatHumanDate(goal.targetDate) : 'Progress')}</span>
+                      <span>{progressPct}%</span>
                     </div>
-                  ) : (
-                    <p className="text-xs text-neutral-500 line-clamp-1">
-                      {goal.description || (goal.targetDate ? `Target: ${formatHumanDate(goal.targetDate)}` : 'Open deadline')}
-                    </p>
-                  )}
+                    <div className="w-full h-1.5 bg-neutral-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#87CEEB] transition-all duration-300"
+                        style={{ width: `${progressPct}%` }}
+                      />
+                    </div>
+                  </div>
                 </div>
               );
             })}

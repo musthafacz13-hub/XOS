@@ -15,26 +15,13 @@ export const DEFAULT_SALARY_CONFIG: SalaryConfig = {
   dailyBaseSalary: 500,
   standardWorkingHours: 8,
   extraHourRate: 100,
-  currency: 'INR',
-  salaryType: 'daily_wage',
-  baseAmount: 500,
-  expectedWorkingDaysPerMonth: 22,
-  expectedWorkingHoursPerDay: 8,
-  weeklyHolidays: ['Sunday'],
-  paidLeaveAllowancePerMonth: 0,
-  overtimeRateMultiplier: 1.5,
-  allowances: [],
-  deductions: [],
-  paymentDateOfMonth: 1,
-  fixedMonthlyAbsencePolicy: 'no_deduction'
+  currency: 'INR'
 };
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
   profile: {
     name: '',
-    email: '',
-    occupation: '',
-    tagline: ''
+    email: ''
   },
   currency: 'INR',
   dateFormat: 'YYYY-MM-DD',
@@ -44,7 +31,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     { id: 'balance_overview', name: 'Balance & Cash Flow', visible: true, order: 1 },
     { id: 'work_attendance', name: 'Work Attendance & Earned Salary', visible: true, order: 2 },
     { id: 'income_expense_summary', name: 'Income vs Expenses', visible: true, order: 3 },
-    { id: 'active_goals', name: 'Active Goals & Dreams', visible: true, order: 4 },
+    { id: 'active_goals', name: 'Active Goals & Targets', visible: true, order: 4 },
     { id: 'savings_progress', name: 'Savings Tracker', visible: true, order: 5 },
     { id: 'recent_activity', name: 'Recent Financial Activity', visible: true, order: 6 },
     { id: 'quick_actions', name: 'Quick Action Shortcuts', visible: true, order: 7 }
@@ -73,9 +60,8 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   isDemoMode: false
 };
 
-// Generates optional demo dataset ONLY when user explicitly triggers "Load Demo Data" in Settings
+// Generates optional demo dataset ONLY when user explicitly enters demo mode
 export function generateDemoDataset() {
-  const currentMonth = getMonthString();
   const todayObj = new Date();
   const currentYear = todayObj.getFullYear();
   const currentMonthIdx = todayObj.getMonth();
@@ -93,10 +79,9 @@ export function generateDemoDataset() {
       id: 'g1',
       title: 'Emergency Reserve Fund',
       description: 'Build a 6-month living expense reserve.',
-      type: 'goal',
       category: 'Financial',
       targetAmount: 10000,
-      currentAmount: 3500,
+      progressPercentage: 35,
       targetDate: `${currentYear}-12-31`,
       priority: 'High',
       status: 'In Progress',
@@ -106,10 +91,9 @@ export function generateDemoDataset() {
       id: 'g2',
       title: 'Design Systems Certification',
       description: 'Complete advanced human interface design program.',
-      type: 'goal',
       category: 'Learning',
       targetAmount: 850,
-      currentAmount: 850,
+      progressPercentage: 100,
       targetDate: getDateStr(10),
       priority: 'Medium',
       status: 'Completed',
@@ -120,10 +104,9 @@ export function generateDemoDataset() {
       id: 'g3',
       title: 'Northern Fjords & Auroras',
       description: 'Explore the Arctic coast and Nordic landscapes.',
-      type: 'dream',
       category: 'Travel',
       targetAmount: 4200,
-      currentAmount: 1200,
+      progressPercentage: 28,
       targetDate: `${currentYear + 1}-09-15`,
       priority: 'Medium',
       status: 'In Progress',
@@ -209,6 +192,10 @@ export function generateDemoDataset() {
         checkOutTime: '17:30',
         breakDurationMinutes: 30,
         calculatedHours: 8,
+        extraHours: 0,
+        dailyBaseSalary: 500,
+        extraHourRate: 100,
+        dailyEarnedSalary: 500,
         notes: 'Regular working day'
       });
     }
@@ -220,7 +207,6 @@ export function generateDemoDataset() {
       name: 'High-Yield Liquid Savings',
       targetAmount: 12000,
       currentAmount: 4800,
-      startDate: `${currentYear}-01-01`,
       targetDate: `${currentYear}-12-31`,
       description: 'Primary liquid emergency account.',
       createdAt: `${currentYear}-01-01`

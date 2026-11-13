@@ -48,7 +48,11 @@ export const WorkView: React.FC = () => {
   const currentMonthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
   const monthName = new Date(currentYear, currentMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-  const monthlyStats = calculateAttendanceStats(data.attendance, currentMonthStr);
+  const monthlyStats = calculateAttendanceStats(
+    data.attendance,
+    currentMonthStr,
+    data.settings.salaryConfig.standardWorkingHours
+  );
 
   const openLogModalForDate = (dStr: string) => {
     if (dStr > todayStr) {
@@ -101,8 +105,13 @@ export const WorkView: React.FC = () => {
     e.preventDefault();
     if (isSubmitting) return;
     let hours = 0;
+    const parsedBreak = status === 'Present' ? parseInt(breakDurationMinutes, 10) || 0 : 0;
     if (status === 'Present') {
-      hours = calculateWorkingHours(checkInTime, checkOutTime, parseInt(breakDurationMinutes) || 0);
+      if (parsedBreak < 0) {
+        setFormError('Break duration cannot be negative.');
+        return;
+      }
+      hours = calculateWorkingHours(checkInTime, checkOutTime, parsedBreak);
     }
 
     setFormError(null);
@@ -114,7 +123,7 @@ export const WorkView: React.FC = () => {
         status,
         checkInTime: status === 'Present' ? checkInTime : undefined,
         checkOutTime: status === 'Present' ? checkOutTime : undefined,
-        breakDurationMinutes: status === 'Present' ? parseInt(breakDurationMinutes) : 0,
+        breakDurationMinutes: status === 'Present' ? parsedBreak : 0,
         calculatedHours: hours,
         notes: notes.trim()
       });
@@ -373,7 +382,7 @@ export const WorkView: React.FC = () => {
             <div className="text-xs font-bold text-neutral-500 uppercase tracking-wider px-1">
               Attendance Records
             </div>
-            {data.attendance.sort((a, b) => (b.date > a.date ? 1 : -1)).map((rec) => (
+            {[...data.attendance].sort((a, b) => b.date.localeCompare(a.date)).map((rec) => (
               <div key={rec.id} className="p-4 rounded-2xl border border-black/[0.08] bg-white space-y-2 shadow-xs">
                 <div className="flex items-center justify-between">
                   <span className="font-mono font-bold text-sm text-[#111111]">
@@ -432,7 +441,7 @@ export const WorkView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/[0.06] text-xs text-neutral-700">
-                {data.attendance.sort((a, b) => (b.date > a.date ? 1 : -1)).map((rec) => (
+                {[...data.attendance].sort((a, b) => b.date.localeCompare(a.date)).map((rec) => (
                   <tr key={rec.id} className="hover:bg-neutral-50/70 transition-colors">
                     <td className="py-3 px-4 font-mono font-semibold text-[#111111] tabular-nums">
                       {formatHumanDate(rec.date)}

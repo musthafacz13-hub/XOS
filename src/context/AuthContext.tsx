@@ -18,6 +18,7 @@ export interface AuthContextType {
   loginWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
   signUpWithEmail: (email: string, password: string, fullName: string) => Promise<{ error: string | null; needsEmailVerification?: boolean }>;
   loginWithMagicLink: (email: string) => Promise<{ error: string | null }>;
+  resendVerificationEmail: (email: string) => Promise<{ error: string | null }>;
   requestPasswordReset: (email: string) => Promise<{ error: string | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -112,6 +113,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (!isSupabaseConfigured) {
+      if (isDemoUser) {
+        repository.loadDemoData();
+      }
       setLoading(false);
       return;
     }
@@ -156,6 +160,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           sessionStorage.removeItem(DEMO_USER_KEY);
         } catch {}
         await ensureUserHydrated(initialSession.user);
+      } else if (isDemoUser) {
+        repository.loadDemoData();
       }
       if (mounted) setLoading(false);
     }).catch(() => {
@@ -316,6 +322,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
+  const resendVerificationEmail = async (email: string) => {
+    if (!isSupabaseConfigured) {
+      return {
+        error: 'Supabase credentials are not yet configured in environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).'
+      };
+    }
+    const cleanEmail = email.trim();
+    const { allowed, remainingMs } = apiOptimization.checkCooldown(`auth:resend:${cleanEmail}`, 60000);
+    if (!allowed) {
+      const waitSec = Math.ceil(remainingMs / 1000);
+      return { error: `Too many requests. Please wait ${waitSec} second${waitSec > 1 ? 's' : ''} before resending.` };
+    }
+
+    return apiOptimization.coalesce(`auth:resend:${cleanEmail}`, async () => {
+      try {
+        const redirectUrl = `${window.location.origin}/auth/callback`;
+        const { error } = await supabase.auth.resend({
+          type: 'signup',
+          email: cleanEmail,
+          options: {
+            emailRedirectTo: redirectUrl
+          }
+        });
+        if (error) {
+          return { error: sanitizeError(error) };
+        }
+        apiOptimization.recordAction(`auth:resend:${cleanEmail}`);
+        return { error: null };
+      } catch (err) {
+        return { error: err instanceof Error ? sanitizeError(err) : 'Failed to resend verification email.' };
+      }
+    });
+  };
+
   const requestPasswordReset = async (email: string) => {
     if (!isSupabaseConfigured) {
       return { 
@@ -397,6 +437,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const enterDemoMode = () => {
+    completedUserIdRef.current = null;
+    inFlightHydrationRef.current = null;
+    repository.clearUserData();
+    repository.loadDemoData();
     setIsDemoUser(true);
     try {
       sessionStorage.setItem(DEMO_USER_KEY, 'true');
@@ -427,6 +471,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loginWithPassword,
     signUpWithEmail,
     loginWithMagicLink,
+    resendVerificationEmail,
     requestPasswordReset,
     updatePassword,
     signOut,

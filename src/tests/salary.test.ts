@@ -103,7 +103,7 @@ async function runTests() {
     name: 'Emergency Fund',
     targetAmount: 5000,
     initialDeposit: 500,
-    startDate: '2026-05-01'
+    initialDepositDate: '2026-05-01'
   });
 
   let overWithdrawalBlocked = false;
@@ -127,9 +127,8 @@ async function runTests() {
 
   const debtRecord = await repository.addDebt({
     person_name: 'Alex Johnson',
-    type: 'lent',
     original_amount: 500,
-    transaction_date: '2026-05-01'
+    lent_date: '2026-05-01'
   });
 
   let overRepaymentBlocked = false;
@@ -151,21 +150,10 @@ async function runTests() {
   console.log('Test 5: Repository duplicate payout prevention...');
 
   const payoutPayload = {
-    periodMonth: '2026-05',
-    paymentDate: '2026-05-31',
-    salaryType: 'daily_wage' as const,
-    baseAmount: 500,
-    presentDays: 20,
-    absentDays: 0,
-    leaveDays: 0,
-    holidayDays: 0,
-    totalWorkingHours: 160,
-    overtimeHours: 0,
-    grossSalary: 10000,
-    totalAllowances: 0,
-    totalDeductions: 0,
-    netSalary: 10000,
-    status: 'Paid' as const,
+    periodStart: '2026-05-01',
+    periodEnd: '2026-05-31',
+    amountPaid: 10000,
+    paidAt: '2026-05-31',
     notes: 'May 2026'
   };
 

@@ -44,7 +44,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   // Expense State
   const [expenseTitle, setExpenseTitle] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
-  const [expenseCategory, setExpenseCategory] = useState<ExpenseCategory>('Food & Dining');
+  const [expenseCategory, setExpenseCategory] = useState<ExpenseCategory>(() => data.settings.customExpenseCategories[0] || 'Other');
   const [expenseDate, setExpenseDate] = useState(getTodayString());
   const [expenseTime, setExpenseTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [expensePaymentMethod, setExpensePaymentMethod] = useState<PaymentMethod>('Credit Card');
@@ -53,7 +53,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   // Income State
   const [incomeTitle, setIncomeTitle] = useState('');
   const [incomeAmount, setIncomeAmount] = useState('');
-  const [incomeSource, setIncomeSource] = useState<IncomeSource>('Salary');
+  const [incomeSource, setIncomeSource] = useState<IncomeSource>(() => data.settings.customIncomeSources[0] || 'Other');
   const [incomeDate, setIncomeDate] = useState(getTodayString());
   const [incomeTime, setIncomeTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [incomeNotes, setIncomeNotes] = useState('');
@@ -68,7 +68,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
 
   // Goal State
   const [goalTitle, setGoalTitle] = useState('');
-  const [goalType, setGoalType] = useState<'goal' | 'dream'>('goal');
+  const [goalProgress, setGoalProgress] = useState('0');
   const [goalCategory, setGoalCategory] = useState('Personal');
   const [goalTargetAmount, setGoalTargetAmount] = useState('');
   const [goalTargetDate, setGoalTargetDate] = useState('');
@@ -84,6 +84,33 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       setSavingsGoalId(data.savingsGoals[0].id);
     }
   }, [data.savingsGoals, savingsGoalId]);
+
+  // Reset form values & dates when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const nowToday = getTodayString();
+      const nowTime = new Date().toTimeString().slice(0, 5);
+      setExpenseTitle('');
+      setExpenseAmount('');
+      setExpenseCategory(data.settings.customExpenseCategories[0] || 'Other');
+      setExpenseDate(nowToday);
+      setExpenseTime(nowTime);
+      setExpenseNotes('');
+      setIncomeTitle('');
+      setIncomeAmount('');
+      setIncomeSource(data.settings.customIncomeSources[0] || 'Other');
+      setIncomeDate(nowToday);
+      setIncomeTime(nowTime);
+      setIncomeNotes('');
+      setAttDate(nowToday);
+      setAttNotes('');
+      setGoalTitle('');
+      setGoalProgress('0');
+      setGoalTargetAmount('');
+      setGoalTargetDate('');
+      setSavingsAmount('');
+    }
+  }, [isOpen, data.settings.customExpenseCategories, data.settings.customIncomeSources]);
 
   // Clear errors when tab or open state changes
   useEffect(() => {
@@ -185,19 +212,19 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   const handleAddGoal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!goalTitle.trim() || isSubmitting) return;
+    const parsedProgress = Math.max(0, Math.min(100, Math.round(Number(goalProgress) || 0)));
     setActionError(null);
     setIsSubmitting(true);
     try {
       await data.addGoal({
         title: goalTitle.trim(),
         description: '',
-        type: goalType,
         category: goalCategory,
         targetAmount: goalTargetAmount ? parseFloat(goalTargetAmount) : undefined,
-        currentAmount: 0,
+        progressPercentage: parsedProgress,
         targetDate: goalTargetDate || undefined,
         priority: goalPriority,
-        status: 'In Progress'
+        status: parsedProgress >= 100 ? 'Completed' : 'In Progress'
       });
       onClose();
     } catch (err: any) {
@@ -600,15 +627,15 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Type</label>
-                  <select
-                    value={goalType}
-                    onChange={(e) => setGoalType(e.target.value as 'goal' | 'dream')}
-                    className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                  >
-                    <option value="goal">Actionable Goal</option>
-                    <option value="dream">Bucket List / Dream</option>
-                  </select>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Progress (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={goalProgress}
+                    onChange={(e) => setGoalProgress(e.target.value)}
+                    className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-neutral-700 mb-1">Category</label>

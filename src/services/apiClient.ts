@@ -152,18 +152,35 @@ class ApiOptimizationService {
       const method = (init?.method || 'GET').toUpperCase();
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
 
-      // Only coalesce safe idempotent GET requests
+      let authMarker = 'anon';
+      if (init?.headers) {
+        if (init.headers instanceof Headers) {
+          authMarker = init.headers.get('authorization')?.slice(-16) || 'anon';
+        } else if (Array.isArray(init.headers)) {
+          const found = init.headers.find(([k]) => k.toLowerCase() === 'authorization');
+          authMarker = found?.[1]?.slice(-16) || 'anon';
+        } else {
+          const rec = init.headers as Record<string, string>;
+          authMarker = (rec.Authorization || rec.authorization || '').slice(-16) || 'anon';
+        }
+      }
+
+      // Only coalesce safe idempotent GET requests scoped to auth marker
       const isCoalesceable = method === 'GET';
-      const coalesceKey = isCoalesceable ? `fetch:${url}` : null;
+      const coalesceKey = isCoalesceable ? `fetch:${authMarker}:${url}` : null;
 
       const performFetch = async (): Promise<Response> => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        const onParentAbort = () => controller.abort();
 
         try {
-          // Inherit user's abort signal if provided
           if (init?.signal) {
-            init.signal.addEventListener('abort', () => controller.abort());
+            if (init.signal.aborted) {
+              controller.abort();
+            } else {
+              init.signal.addEventListener('abort', onParentAbort, { once: true });
+            }
           }
 
           const response = await fetch(input, {
@@ -173,6 +190,9 @@ class ApiOptimizationService {
           return response;
         } finally {
           clearTimeout(timeoutId);
+          if (init?.signal) {
+            init.signal.removeEventListener('abort', onParentAbort);
+          }
         }
       };
 

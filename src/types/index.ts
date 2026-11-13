@@ -31,29 +31,16 @@ export interface Deduction {
 export type FixedMonthlyAbsencePolicy = 'no_deduction' | 'deduct_unpaid_absent';
 
 export interface SalaryConfig {
-  dailyBaseSalary: number; // default: 500
-  standardWorkingHours: number; // default: 8
-  extraHourRate: number; // default: 100
-  currency: CurrencyCode;
-  salaryType?: SalaryType;
-  baseAmount?: number;
-  expectedWorkingDaysPerMonth?: number;
-  expectedWorkingHoursPerDay?: number;
-  weeklyHolidays?: string[];
-  paidLeaveAllowancePerMonth?: number;
-  overtimeRateMultiplier?: number;
-  allowances?: Allowance[];
-  deductions?: Deduction[];
-  paymentDateOfMonth?: number;
-  fixedMonthlyAbsencePolicy?: FixedMonthlyAbsencePolicy;
-  includeOvertimeInMonthly?: boolean;
+  dailyBaseSalary: number; // default: 500 -> DB daily_base_salary
+  standardWorkingHours: number; // default: 8 -> DB standard_hours
+  extraHourRate: number; // default: 100 -> DB extra_hour_rate
+  currency: CurrencyCode; // DB currency_code
 }
 
 export interface UserProfile {
   name: string;
   email: string;
-  occupation: string;
-  tagline: string;
+  avatarUrl?: string;
 }
 
 export interface DashboardWidgetConfig {
@@ -78,20 +65,17 @@ export interface UserSettings {
 export type GoalCategory = 'Career' | 'Financial' | 'Health' | 'Travel' | 'Learning' | 'Life' | 'Personal' | string;
 export type GoalPriority = 'Low' | 'Medium' | 'High';
 export type GoalStatus = 'Not Started' | 'In Progress' | 'Completed' | 'Paused';
-export type GoalType = 'goal' | 'dream';
 
 export interface Goal {
   id: string;
   title: string;
   description: string;
-  type: GoalType;
   category: GoalCategory;
   targetAmount?: number;
-  currentAmount?: number;
+  progressPercentage: number; // 0-100 -> DB progress_percentage
   targetDate?: string; // YYYY-MM-DD
   priority: GoalPriority;
   status: GoalStatus;
-  coverImage?: string;
   createdAt: string;
   completedAt?: string;
 }
@@ -118,12 +102,13 @@ export interface Expense {
   title: string;
   amount: number;
   category: ExpenseCategory;
-  date: string; // YYYY-MM-DD
-  time?: string; // HH:mm
+  date: string; // YYYY-MM-DD -> DB expense_date
+  time?: string; // HH:mm -> DB expense_time
   paymentMethod: PaymentMethod;
   notes?: string;
   isRecurring?: boolean;
-  recurringFrequency?: RecurrenceFrequency;
+  recurringFrequency?: RecurrenceFrequency; // DB recurrence_frequency
+  recurrenceEndDate?: string; // YYYY-MM-DD -> DB recurrence_end_date
   createdAt: string;
 }
 
@@ -134,10 +119,10 @@ export interface Income {
   title: string;
   amount: number;
   source: IncomeSource;
-  date: string; // YYYY-MM-DD
-  time?: string; // HH:mm
+  date: string; // YYYY-MM-DD -> DB income_date
+  time?: string; // HH:mm -> DB income_time
   notes?: string;
-  salaryPayoutId?: string; // Links to salary payout if recorded from salary module
+  salaryPayoutId?: string; // DB salary_payout_id
   createdAt: string;
 }
 
@@ -145,58 +130,51 @@ export type AttendanceStatus = 'Present' | 'Absent' | 'Leave' | 'Holiday';
 
 export interface AttendanceRecord {
   id: string;
-  date: string; // YYYY-MM-DD
+  date: string; // YYYY-MM-DD -> DB attendance_date
   status: AttendanceStatus;
-  checkInTime?: string; // HH:mm
-  checkOutTime?: string; // HH:mm
-  breakDurationMinutes?: number;
-  calculatedHours?: number; // Total working hours
-  extraHours?: number; // max(0, calculatedHours - standardWorkingHours)
-  dailyEarnedSalary?: number; // 500 + (extraHours * 100) (0 for Leave/Absent)
+  checkInTime?: string; // HH:mm -> DB check_in
+  checkOutTime?: string; // HH:mm -> DB check_out
+  breakDurationMinutes?: number; // DB break_minutes
+  calculatedHours?: number; // DB hours_worked
+  extraHours?: number; // DB extra_hours
+  dailyBaseSalary?: number; // DB daily_base_salary
+  extraHourRate?: number; // DB extra_hour_rate
+  dailyEarnedSalary?: number; // DB calculated_salary
   notes?: string;
 }
 
 export interface SalaryPayout {
   id: string;
-  periodMonth: string; // YYYY-MM
-  paymentDate: string; // YYYY-MM-DD
-  salaryType: SalaryType;
-  baseAmount: number;
-  presentDays: number;
-  absentDays: number;
-  leaveDays: number;
-  holidayDays: number;
-  totalWorkingHours: number;
-  overtimeHours: number;
-  grossSalary: number;
-  totalAllowances: number;
-  totalDeductions: number;
-  netSalary: number;
-  status: 'Estimated' | 'Paid';
+  periodStart: string; // YYYY-MM-DD -> DB period_start
+  periodEnd: string; // YYYY-MM-DD -> DB period_end
+  amountPaid: number; // DB amount_paid
+  paidAt: string; // ISO/YYYY-MM-DD -> DB paid_at
   notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface SavingsGoal {
   id: string;
   name: string;
   targetAmount: number;
-  currentAmount: number;
-  startDate: string; // YYYY-MM-DD
+  currentAmount: number; // Trigger-maintained DB current_balance
   targetDate?: string; // YYYY-MM-DD
-  description?: string;
-  icon?: string;
+  description?: string; // DB notes
+  color?: string; // DB color
   createdAt: string;
+  updatedAt?: string;
 }
 
 export type SavingsTransactionType = 'deposit' | 'withdrawal';
 
 export interface SavingsTransaction {
   id: string;
-  savingsGoalId: string;
+  savingsGoalId: string; // DB savings_goal_id
   amount: number;
-  type: SavingsTransactionType;
-  date: string; // YYYY-MM-DD
-  note?: string;
+  type: SavingsTransactionType; // DB transaction_type
+  date: string; // YYYY-MM-DD -> DB transaction_date
+  note?: string; // DB notes
   createdAt: string;
 }
 
@@ -208,20 +186,19 @@ export interface DateRangeFilter {
   endDate?: string;
 }
 
-// DEBT MANAGEMENT
-export type DebtType = 'lent' | 'borrowed';
-export type DebtStatus = 'Pending' | 'Partial' | 'Paid';
+// DEBT MANAGEMENT (Receivables — live DB status enum)
+export type DebtStatus = 'outstanding' | 'partially_paid' | 'paid';
 
 export interface Debt {
   id: string;
   person_name: string;
-  type: DebtType;
   original_amount: number;
-  transaction_date: string; // YYYY-MM-DD
-  due_date?: string; // YYYY-MM-DD
+  remaining_amount: number; // Trigger-maintained DB remaining_amount
+  lent_date: string; // YYYY-MM-DD -> DB lent_date
+  due_date?: string; // YYYY-MM-DD -> DB due_date
   description?: string;
   notes?: string;
-  status: DebtStatus;
+  status: DebtStatus; // Trigger-maintained DB status
   created_at: string;
   updated_at?: string;
 }
@@ -231,6 +208,7 @@ export interface DebtRepayment {
   debt_id: string;
   amount: number;
   repayment_date: string; // YYYY-MM-DD
+  payment_method?: string;
   notes?: string;
   created_at: string;
 }

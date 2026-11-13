@@ -14,8 +14,8 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
-import { Debt, DebtStatus } from '../../types';
-import { calculateDebtOutstanding, calculateTotalRepaid } from '../../utils/calculations';
+import { Debt } from '../../types';
+import { calculateDebtOutstanding } from '../../utils/calculations';
 import { formatCurrency, formatHumanDate, getTodayString } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
 import { ConfirmDialog } from '../common/ConfirmDialog';
@@ -73,27 +73,25 @@ export const DebtView: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSubmittingDebt, isSubmittingRepayment]);
 
-  // Filter only 'lent' debts (Money Owed to Me)
-  const lentDebts = useMemo(() => {
-    return data.debts.filter(d => d.type === 'lent');
-  }, [data.debts]);
+  // Receivables list (public.debts stores money lent / owed to user)
+  const lentDebts = data.debts;
 
-  // Calculations for summary cards
+  // Calculations for summary cards using authoritative remaining_amount
   const totalLentAmount = useMemo(() => {
-    return lentDebts.reduce((sum, d) => sum + d.original_amount, 0);
+    return lentDebts.reduce((sum, d) => sum + (d.original_amount || 0), 0);
   }, [lentDebts]);
 
-  const totalRepaidAmount = useMemo(() => {
-    return lentDebts.reduce((sum, d) => sum + calculateTotalRepaid(d.id, data.debtRepayments), 0);
+  const totalOutstandingReceivable = useMemo(() => {
+    return lentDebts.reduce((sum, d) => sum + calculateDebtOutstanding(d, data.debtRepayments), 0);
   }, [lentDebts, data.debtRepayments]);
 
-  const totalOutstandingReceivable = Math.max(0, totalLentAmount - totalRepaidAmount);
+  const totalRepaidAmount = Math.max(0, Number((totalLentAmount - totalOutstandingReceivable).toFixed(2)));
 
   // Filtered debts list
   const filteredDebts = useMemo(() => {
     return lentDebts.filter(d => {
       const outstanding = calculateDebtOutstanding(d, data.debtRepayments);
-      const isRecovered = outstanding <= 0.0001;
+      const isRecovered = d.status === 'paid' || outstanding <= 0.0001;
 
       if (statusFilter === 'active' && isRecovered) return false;
       if (statusFilter === 'recovered' && !isRecovered) return false;
@@ -106,7 +104,7 @@ export const DebtView: React.FC = () => {
         if (!matchesPerson && !matchesDesc && !matchesNotes) return false;
       }
       return true;
-    }).sort((a, b) => (b.transaction_date > a.transaction_date ? 1 : -1));
+    }).sort((a, b) => b.lent_date.localeCompare(a.lent_date));
   }, [lentDebts, statusFilter, searchQuery, data.debtRepayments]);
 
   // Autocomplete names
@@ -136,7 +134,7 @@ export const DebtView: React.FC = () => {
     setEditingDebt(debt);
     setPersonName(debt.person_name);
     setOriginalAmount(String(debt.original_amount));
-    setTransactionDate(debt.transaction_date);
+    setTransactionDate(debt.lent_date);
     setDueDate(debt.due_date || '');
     setDescription(debt.description || '');
     setNotes(debt.notes || '');
@@ -170,9 +168,8 @@ export const DebtView: React.FC = () => {
       if (editingDebt) {
         await data.updateDebt(editingDebt.id, {
           person_name: personName.trim(),
-          type: 'lent',
           original_amount: parsedAmount,
-          transaction_date: transactionDate,
+          lent_date: transactionDate,
           due_date: dueDate.trim() || undefined,
           description: description.trim() || undefined,
           notes: notes.trim() || undefined
@@ -180,9 +177,8 @@ export const DebtView: React.FC = () => {
       } else {
         await data.addDebt({
           person_name: personName.trim(),
-          type: 'lent',
           original_amount: parsedAmount,
-          transaction_date: transactionDate,
+          lent_date: transactionDate,
           due_date: dueDate.trim() || undefined,
           description: description.trim() || undefined,
           notes: notes.trim() || undefined
@@ -384,9 +380,10 @@ export const DebtView: React.FC = () => {
       ) : (
         <div className="space-y-3">
           {filteredDebts.map(debt => {
-            const totalRepaid = calculateTotalRepaid(debt.id, data.debtRepayments);
             const outstanding = calculateDebtOutstanding(debt, data.debtRepayments);
-            const isRecovered = outstanding <= 0.0001;
+            const totalRepaid = Math.max(0, Number((debt.original_amount - outstanding).toFixed(2)));
+            const isRecovered = debt.status === 'paid' || outstanding <= 0.0001;
+            const isPartial = debt.status === 'partially_paid' || (!isRecovered && totalRepaid > 0);
             const percentRepaid = debt.original_amount > 0 ? Math.min(100, Math.round((totalRepaid / debt.original_amount) * 100)) : 0;
             const repayments = data.debtRepayments.filter(r => r.debt_id === debt.id);
 
@@ -409,11 +406,11 @@ export const DebtView: React.FC = () => {
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${
                         isRecovered 
                           ? 'bg-emerald-100 text-emerald-800' 
-                          : totalRepaid > 0
+                          : isPartial
                           ? 'bg-[#87CEEB]/30 text-neutral-900 font-semibold'
                           : 'bg-amber-100 text-amber-900'
                       }`}>
-                        {isRecovered ? 'Fully Recovered' : totalRepaid > 0 ? 'Partial Repayment' : 'Pending'}
+                        {isRecovered ? 'Paid' : isPartial ? 'Partially Paid' : 'Outstanding'}
                       </span>
                     </div>
 
@@ -426,7 +423,7 @@ export const DebtView: React.FC = () => {
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-400 mt-2">
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3.5 h-3.5 text-neutral-400" />
-                        <span>Lent on {formatHumanDate(debt.transaction_date)}</span>
+                        <span>Lent on {formatHumanDate(debt.lent_date)}</span>
                       </span>
 
                       {debt.due_date && (
@@ -529,7 +526,7 @@ export const DebtView: React.FC = () => {
       {isDebtModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs"
-          onClick={() => setIsDebtModalOpen(false)}
+          onClick={() => { if (!isSubmittingDebt) setIsDebtModalOpen(false); }}
           role="dialog"
           aria-modal="true"
         >
@@ -680,7 +677,7 @@ export const DebtView: React.FC = () => {
       {repaymentTargetDebt && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs"
-          onClick={() => setRepaymentTargetDebt(null)}
+          onClick={() => { if (!isSubmittingRepayment) setRepaymentTargetDebt(null); }}
           role="dialog"
           aria-modal="true"
         >
@@ -825,7 +822,7 @@ export const DebtView: React.FC = () => {
               <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                 {data.debtRepayments
                   .filter(r => r.debt_id === historyTargetDebt.id)
-                  .sort((a, b) => (b.repayment_date > a.repayment_date ? 1 : -1))
+                  .sort((a, b) => b.repayment_date.localeCompare(a.repayment_date))
                   .map(rep => (
                     <div key={rep.id} className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between text-xs">
                       <div>

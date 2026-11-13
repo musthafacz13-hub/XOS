@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calculator, Plus, Trash2, Banknote, Check, AlertCircle, Calendar, Clock, DollarSign } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
-import { calculateMonthlySalarySummary } from '../../utils/calculations';
+import { calculateMonthlySalarySummary, getMonthDateBounds, payoutMatchesMonth } from '../../utils/calculations';
 import { formatCurrency, formatHumanDate, getMonthString, getTodayString } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
 import { ConfirmDialog } from '../common/ConfirmDialog';
@@ -31,6 +31,7 @@ export const SalaryView: React.FC = () => {
   const [paymentDate, setPaymentDate] = useState(getTodayString());
   const [paymentNotes, setPaymentNotes] = useState('');
   const [isSyncingToIncome, setIsSyncingToIncome] = useState(true);
+  const [allowReplace, setAllowReplace] = useState(false);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
 
@@ -48,7 +49,7 @@ export const SalaryView: React.FC = () => {
     selectedMonth
   );
 
-  const monthPayouts = data.salaryPayouts.filter(p => p.periodMonth === selectedMonth);
+  const monthPayouts = data.salaryPayouts.filter(p => payoutMatchesMonth(p, selectedMonth));
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,7 +59,6 @@ export const SalaryView: React.FC = () => {
     setIsSavingSettings(true);
 
     const updatedSalaryConfig = {
-      ...data.settings.salaryConfig,
       currency: data.settings.currency || data.settings.salaryConfig.currency || 'INR',
       dailyBaseSalary,
       standardWorkingHours,
@@ -81,6 +81,7 @@ export const SalaryView: React.FC = () => {
     setPaymentDate(getTodayString());
     setPaymentNotes('');
     setIsSyncingToIncome(true);
+    setAllowReplace(false);
     setPaymentError(null);
     setIsSubmittingPayment(false);
     setIsPaymentModalOpen(true);
@@ -95,27 +96,18 @@ export const SalaryView: React.FC = () => {
       return;
     }
 
+    const { periodStart, periodEnd } = getMonthDateBounds(selectedMonth);
+
     setPaymentError(null);
     setIsSubmittingPayment(true);
     try {
       await data.recordSalaryPayout({
-        periodMonth: selectedMonth,
-        paymentDate,
-        salaryType: 'daily_wage',
-        baseAmount: data.settings.salaryConfig.dailyBaseSalary || 500,
-        presentDays: monthlySummary.presentDays,
-        absentDays: monthlySummary.absentDays,
-        leaveDays: monthlySummary.leaveDays,
-        holidayDays: 0,
-        totalWorkingHours: monthlySummary.totalWorkingHours,
-        overtimeHours: monthlySummary.totalExtraHours,
-        grossSalary: monthlySummary.earnedSalary,
-        totalAllowances: 0,
-        totalDeductions: 0,
-        netSalary: parsedAmount,
-        status: 'Paid',
+        periodStart,
+        periodEnd,
+        amountPaid: parsedAmount,
+        paidAt: paymentDate,
         notes: paymentNotes.trim() || `Salary payment for ${selectedMonth}`
-      }, isSyncingToIncome, false);
+      }, isSyncingToIncome, allowReplace);
 
       setIsPaymentModalOpen(false);
       setActiveTab('payments');
@@ -274,7 +266,7 @@ export const SalaryView: React.FC = () => {
               <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100">
                 <span className="text-[10px] font-semibold text-neutral-500 uppercase block">Leave / Absent</span>
                 <span className="text-xl font-bold font-mono text-neutral-700 block tabular-nums">{monthlySummary.leaveDays + monthlySummary.absentDays}</span>
-                <span className="text-[10px] text-neutral-400">₹0 earned on off days</span>
+                <span className="text-[10px] text-neutral-400">{formatCurrency(0, data.settings.currency)} earned on off days</span>
               </div>
             </div>
 
@@ -335,13 +327,13 @@ export const SalaryView: React.FC = () => {
                     return (
                       <tr key={pay.id} className="hover:bg-neutral-50/70 transition-colors">
                         <td className="py-3 px-4 font-mono font-bold text-[#111111]">
-                          {formatHumanDate(pay.paymentDate)}
+                          {formatHumanDate(pay.paidAt)}
                         </td>
                         <td className="py-3 px-4 font-mono text-neutral-600">
-                          {pay.periodMonth}
+                          {pay.periodStart} → {pay.periodEnd}
                         </td>
                         <td className="py-3 px-4 text-right font-mono font-bold text-emerald-600 tabular-nums">
-                          {formatCurrency(pay.netSalary, data.settings.currency)}
+                          {formatCurrency(pay.amountPaid, data.settings.currency)}
                         </td>
                         <td className="py-3 px-4 text-neutral-600">
                           {pay.notes || 'Salary Payment'}
@@ -411,7 +403,7 @@ export const SalaryView: React.FC = () => {
                 className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
               />
               <p className="text-[11px] text-neutral-400 mt-1">
-                Earned for working up to the standard daily hours. Default: ₹500
+                Earned for working up to the standard daily hours. Default: {formatCurrency(500, data.settings.currency)}
               </p>
             </div>
 
@@ -446,7 +438,7 @@ export const SalaryView: React.FC = () => {
                 className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
               />
               <p className="text-[11px] text-neutral-400 mt-1">
-                Additional rate per hour worked past standard hours. Default: ₹100/hr
+                Additional rate per hour worked past standard hours. Default: {formatCurrency(100, data.settings.currency)}/hr
               </p>
             </div>
 
@@ -542,7 +534,7 @@ export const SalaryView: React.FC = () => {
                 />
               </div>
 
-              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2">
                 <label className="flex items-center gap-2 text-xs text-neutral-800 font-medium cursor-pointer">
                   <input
                     type="checkbox"
@@ -552,6 +544,18 @@ export const SalaryView: React.FC = () => {
                   />
                   <span>Automatically sync to Income Module</span>
                 </label>
+
+                {monthPayouts.length > 0 && (
+                  <label className="flex items-center gap-2 text-xs text-neutral-700 font-medium cursor-pointer pt-1 border-t border-neutral-200">
+                    <input
+                      type="checkbox"
+                      checked={allowReplace}
+                      onChange={(e) => setAllowReplace(e.target.checked)}
+                      className="rounded text-[#111111] focus:ring-[#87CEEB]"
+                    />
+                    <span>Replace existing payout for {selectedMonth}</span>
+                  </label>
+                )}
               </div>
 
               <div className="pt-3 flex justify-end gap-2 border-t border-neutral-100">

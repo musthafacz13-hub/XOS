@@ -30,7 +30,7 @@ export const ExpensesView: React.FC = () => {
   // Form fields
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState<ExpenseCategory>('Food & Dining');
+  const [category, setCategory] = useState<ExpenseCategory>(() => data.settings.customExpenseCategories[0] || 'Other');
   const [date, setDate] = useState(getTodayString());
   const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Credit Card');
@@ -55,7 +55,7 @@ export const ExpensesView: React.FC = () => {
     setIsSubmitting(false);
     setTitle('');
     setAmount('');
-    setCategory('Food & Dining');
+    setCategory(data.settings.customExpenseCategories[0] || 'Other');
     setDate(getTodayString());
     setTime(new Date().toTimeString().slice(0, 5));
     setPaymentMethod('Credit Card');

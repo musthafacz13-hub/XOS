@@ -54,8 +54,8 @@ async function runPDFTests() {
       { id: 'e2', title: 'Cloud Infrastructure', amount: 240, category: 'Other', date: '2026-05-10', paymentMethod: 'Credit Card', createdAt: '2026-05-10' }
     ],
     debts: [
-      { id: 'd1', person_name: 'Marcus Vance', type: 'lent', original_amount: 500, transaction_date: '2026-05-05', status: 'Partial', created_at: '2026-05-05' },
-      { id: 'd2', person_name: 'Metro Leasing', type: 'borrowed', original_amount: 1500, transaction_date: '2026-05-01', status: 'Pending', created_at: '2026-05-01' }
+      { id: 'd1', person_name: 'Marcus Vance', original_amount: 500, remaining_amount: 300, lent_date: '2026-05-05', status: 'partially_paid', created_at: '2026-05-05' },
+      { id: 'd2', person_name: 'Metro Leasing', original_amount: 1500, remaining_amount: 1500, lent_date: '2026-05-01', status: 'outstanding', created_at: '2026-05-01' }
     ],
     debtRepayments: [
       { id: 'dr1', debt_id: 'd1', amount: 200, repayment_date: '2026-05-12', created_at: '2026-05-12' }
@@ -68,31 +68,21 @@ async function runPDFTests() {
     salaryPayouts: [
       {
         id: 'sp1',
-        periodMonth: '2026-04',
-        paymentDate: '2026-05-01',
-        salaryType: 'fixed_monthly',
-        baseAmount: 4000,
-        presentDays: 21,
-        absentDays: 0,
-        leaveDays: 1,
-        holidayDays: 0,
-        totalWorkingHours: 168,
-        overtimeHours: 0,
-        grossSalary: 4000,
-        totalAllowances: 200,
-        totalDeductions: 100,
-        netSalary: 4100,
-        status: 'Paid'
+        periodStart: '2026-04-01',
+        periodEnd: '2026-04-30',
+        amountPaid: 4100,
+        paidAt: '2026-05-01',
+        notes: 'April Salary Payout'
       }
     ],
     savingsGoals: [
-      { id: 'sg1', name: 'Emergency Reserve', targetAmount: 10000, currentAmount: 3500, startDate: '2026-01-01', createdAt: '2026-01-01' }
+      { id: 'sg1', name: 'Emergency Reserve', targetAmount: 10000, currentAmount: 3500, createdAt: '2026-01-01' }
     ],
     savingsTransactions: [
       { id: 'st1', savingsGoalId: 'sg1', amount: 500, type: 'deposit', date: '2026-05-01', createdAt: '2026-05-01' }
     ],
     goals: [
-      { id: 'g1', title: 'Complete Frontend Audit', description: 'Audit all views', category: 'Career', targetDate: '2026-05-31', currentAmount: 95, targetAmount: 100, status: 'In Progress', type: 'goal', priority: 'High', createdAt: '2026-05-01' }
+      { id: 'g1', title: 'Complete Frontend Audit', description: 'Audit all views', category: 'Career', targetDate: '2026-05-31', progressPercentage: 95, targetAmount: 100, status: 'In Progress', priority: 'High', createdAt: '2026-05-01' }
     ]
   };
 

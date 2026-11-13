@@ -29,7 +29,7 @@ export const IncomeView: React.FC = () => {
   // Form Fields
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
-  const [source, setSource] = useState<IncomeSource>('Salary');
+  const [source, setSource] = useState<IncomeSource>(() => data.settings.customIncomeSources[0] || 'Other');
   const [date, setDate] = useState(getTodayString());
   const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [notes, setNotes] = useState('');
@@ -51,7 +51,7 @@ export const IncomeView: React.FC = () => {
     setIsSubmitting(false);
     setTitle('');
     setAmount('');
-    setSource('Salary');
+    setSource(data.settings.customIncomeSources[0] || 'Other');
     setDate(getTodayString());
     setTime(new Date().toTimeString().slice(0, 5));
     setNotes('');
