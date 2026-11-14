@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CalendarCheck, Plus, ChevronLeft, ChevronRight, CheckCircle2, Trash2, Edit3, X, AlertCircle } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
 import { AttendanceRecord, AttendanceStatus } from '../../types';
@@ -24,6 +24,7 @@ export const WorkView: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Form Fields
@@ -117,7 +118,7 @@ export const WorkView: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting) return;
+    if (isSubmittingRef.current || isSubmitting) return;
     let hours = 0;
     const parsedBreak = status === 'Present' ? parseInt(breakDurationMinutes, 10) || 0 : 0;
     if (status === 'Present') {
@@ -128,24 +129,26 @@ export const WorkView: React.FC = () => {
       hours = calculateWorkingHours(checkInTime, checkOutTime, parsedBreak);
     }
 
+    const targetExisting = attendanceByDate.get(date) || null;
+    isSubmittingRef.current = true;
     setFormError(null);
     setIsSubmitting(true);
     try {
       await data.upsertAttendanceRecord({
-        id: editingRecord?.id,
+        id: targetExisting?.id,
         date,
         status,
         checkInTime: status === 'Present' ? checkInTime : undefined,
         checkOutTime: status === 'Present' ? checkOutTime : undefined,
         breakDurationMinutes: status === 'Present' ? parsedBreak : 0,
         calculatedHours: hours,
-        dailyBaseSalary: editingRecord?.dailyBaseSalary,
-        addonSalary: editingRecord?.addonSalary,
-        addonEnabled: editingRecord?.addonEnabled,
-        extraHourRate: editingRecord?.extraHourRate,
-        overtimeEnabled: editingRecord?.overtimeEnabled,
-        salaryOverrideEnabled: status === 'Present' ? editingRecord?.salaryOverrideEnabled : false,
-        salaryOverrideAmount: status === 'Present' ? editingRecord?.salaryOverrideAmount : undefined,
+        dailyBaseSalary: targetExisting?.dailyBaseSalary,
+        addonSalary: targetExisting?.addonSalary,
+        addonEnabled: targetExisting?.addonEnabled,
+        extraHourRate: targetExisting?.extraHourRate,
+        overtimeEnabled: targetExisting?.overtimeEnabled,
+        salaryOverrideEnabled: status === 'Present' ? targetExisting?.salaryOverrideEnabled : false,
+        salaryOverrideAmount: status === 'Present' ? targetExisting?.salaryOverrideAmount : undefined,
         notes: notes.trim()
       });
 
@@ -153,6 +156,7 @@ export const WorkView: React.FC = () => {
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Failed to save attendance record.');
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -520,7 +524,7 @@ export const WorkView: React.FC = () => {
           aria-modal="true"
         >
           <div 
-            className="bg-white rounded-2xl max-w-md w-full border border-black/[0.08] shadow-2xl p-5 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-2xl max-w-md w-full border border-black/[0.08] shadow-2xl p-5 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto overflow-x-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
@@ -552,7 +556,19 @@ export const WorkView: React.FC = () => {
                     required
                     max={todayStr}
                     value={date}
-                    onChange={(e) => setDate(e.target.value)}
+                    onChange={(e) => {
+                      const nextDate = e.target.value;
+                      setDate(nextDate);
+                      const existingForDate = attendanceByDate.get(nextDate) || null;
+                      setEditingRecord(existingForDate);
+                      if (existingForDate) {
+                        setStatus(existingForDate.status);
+                        setCheckInTime(existingForDate.checkInTime || '09:00');
+                        setCheckOutTime(existingForDate.checkOutTime || '17:30');
+                        setBreakDurationMinutes(String(existingForDate.breakDurationMinutes || 30));
+                        setNotes(existingForDate.notes || '');
+                      }
+                    }}
                     className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
                   />
                 </div>
@@ -572,32 +588,32 @@ export const WorkView: React.FC = () => {
               </div>
 
               {status === 'Present' && (
-                <div className="grid grid-cols-3 gap-2 p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                  <div className="min-w-0">
                     <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Check-In</label>
                     <input
                       type="time"
                       value={checkInTime}
                       onChange={(e) => setCheckInTime(e.target.value)}
-                      className="w-full px-2 py-1.5 text-xs font-mono border border-neutral-300 rounded-lg"
+                      className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
                     />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Check-Out</label>
                     <input
                       type="time"
                       value={checkOutTime}
                       onChange={(e) => setCheckOutTime(e.target.value)}
-                      className="w-full px-2 py-1.5 text-xs font-mono border border-neutral-300 rounded-lg"
+                      className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
                     />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Break (m)</label>
                     <input
                       type="number"
                       value={breakDurationMinutes}
                       onChange={(e) => setBreakDurationMinutes(e.target.value)}
-                      className="w-full px-2 py-1.5 text-xs font-mono border border-neutral-300 rounded-lg"
+                      className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
                     />
                   </div>
                 </div>

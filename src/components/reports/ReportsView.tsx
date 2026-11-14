@@ -173,19 +173,19 @@ export const ReportsView: React.FC = () => {
             </div>
 
             {periodPreset === 'custom' && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
                 <input
                   type="date"
                   value={customStart}
                   onChange={(e) => setCustomStart(e.target.value)}
-                  className="px-2.5 py-1 text-xs border border-neutral-300 rounded-lg bg-white"
+                  className="flex-1 min-w-[140px] min-h-[40px] px-2.5 py-2 text-xs border border-neutral-300 rounded-lg bg-white"
                 />
-                <span className="text-xs text-neutral-400">to</span>
+                <span className="text-xs text-neutral-400 shrink-0">to</span>
                 <input
                   type="date"
                   value={customEnd}
                   onChange={(e) => setCustomEnd(e.target.value)}
-                  className="px-2.5 py-1 text-xs border border-neutral-300 rounded-lg bg-white"
+                  className="flex-1 min-w-[140px] min-h-[40px] px-2.5 py-2 text-xs border border-neutral-300 rounded-lg bg-white"
                 />
               </div>
             )}

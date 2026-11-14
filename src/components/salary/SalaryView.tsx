@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Calculator,
   Plus,
@@ -63,6 +63,7 @@ export const SalaryView: React.FC = () => {
       : true
   );
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const isSavingSettingsRef = useRef(false);
   const [savedSettingsNotif, setSavedSettingsNotif] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [isResetDefaultsModalOpen, setIsResetDefaultsModalOpen] = useState(false);
@@ -97,6 +98,7 @@ export const SalaryView: React.FC = () => {
   const [directEarnedSalaryInput, setDirectEarnedSalaryInput] = useState('');
   const [dailyNotes, setDailyNotes] = useState('');
   const [isSavingDaily, setIsSavingDaily] = useState(false);
+  const isSavingDailyRef = useRef(false);
   const [dailyFormError, setDailyFormError] = useState<string | null>(null);
   const [dailyBannerMessage, setDailyBannerMessage] = useState<string | null>(null);
 
@@ -229,7 +231,7 @@ export const SalaryView: React.FC = () => {
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSavingSettings) return;
+    if (isSavingSettingsRef.current || isSavingSettings) return;
     setSettingsError(null);
     setSavedSettingsNotif(null);
 
@@ -259,6 +261,7 @@ export const SalaryView: React.FC = () => {
       return;
     }
 
+    isSavingSettingsRef.current = true;
     setIsSavingSettings(true);
     const updatedSalaryConfig = {
       currency: data.settings.currency || data.settings.salaryConfig.currency || 'INR',
@@ -277,6 +280,7 @@ export const SalaryView: React.FC = () => {
     } catch (err) {
       setSettingsError(err instanceof Error ? err.message : 'Failed to save salary rate settings.');
     } finally {
+      isSavingSettingsRef.current = false;
       setIsSavingSettings(false);
     }
   };
@@ -419,7 +423,7 @@ export const SalaryView: React.FC = () => {
 
   const handleSaveDailyCustomization = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSavingDaily) return;
+    if (isSavingDailyRef.current || isSavingDaily) return;
 
     if (!dailyDate) {
       setDailyFormError('Please select a date.');
@@ -478,6 +482,7 @@ export const SalaryView: React.FC = () => {
       }
     }
 
+    isSavingDailyRef.current = true;
     setDailyFormError(null);
     setIsSavingDaily(true);
     try {
@@ -513,6 +518,7 @@ export const SalaryView: React.FC = () => {
     } catch (err) {
       setDailyFormError(err instanceof Error ? err.message : 'Failed to save daily salary customization.');
     } finally {
+      isSavingDailyRef.current = false;
       setIsSavingDaily(false);
     }
   };

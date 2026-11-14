@@ -2,10 +2,11 @@
  * XOS Authentication Callback Processor
  * Handles incoming Supabase auth redirects (PKCE codes, token fragments, password recovery, email verification).
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Loader2, AlertCircle, ArrowRight } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../../services/supabase';
 import { AuthLayout } from './AuthLayout';
+import { clearAuthUrlParams, sanitizeAuthErrorMessage } from '../../utils/authValidation';
 
 interface AuthCallbackViewProps {
   onSuccess: () => void;
@@ -19,9 +20,14 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
   onNavigateLogin
 }) => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const hasProcessedRef = useRef(false);
 
   useEffect(() => {
+    if (hasProcessedRef.current) return;
+    hasProcessedRef.current = true;
+
     let active = true;
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
     const processAuthCallback = async () => {
       // 1. Check for explicit error in URL parameters
@@ -32,8 +38,15 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
       const errorMsg = urlParams.get('error') || hashParams.get('error');
 
       if (errorDesc || errorMsg) {
+        clearAuthUrlParams();
         if (active) {
-          setErrorMessage(decodeURIComponent(errorDesc || errorMsg || 'Authentication callback failed.'));
+          let decoded = errorDesc || errorMsg || 'Authentication callback failed.';
+          try {
+            decoded = decodeURIComponent(decoded);
+          } catch {
+            // Keep raw message if already decoded or malformed
+          }
+          setErrorMessage(sanitizeAuthErrorMessage(decoded));
         }
         return;
       }
@@ -42,7 +55,7 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
       const isRecovery = hashParams.get('type') === 'recovery' || urlParams.get('type') === 'recovery';
 
       if (!isSupabaseConfigured) {
-        // Fallback if testing without Supabase credentials
+        clearAuthUrlParams();
         if (active) {
           if (isRecovery) {
             onPasswordRecovery();
@@ -58,22 +71,26 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
       if (code) {
         try {
           const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          clearAuthUrlParams();
+          if (!active) return;
+
           if (error) {
-            if (active) setErrorMessage(error.message);
+            setErrorMessage(sanitizeAuthErrorMessage(error));
             return;
           }
 
-          if (active) {
-            if (isRecovery) {
-              onPasswordRecovery();
-            } else if (data.session) {
-              onSuccess();
-            }
+          if (isRecovery) {
+            onPasswordRecovery();
+          } else if (data.session) {
+            onSuccess();
+          } else {
+            onNavigateLogin();
           }
           return;
         } catch (err) {
+          clearAuthUrlParams();
           if (active) {
-            setErrorMessage(err instanceof Error ? err.message : 'Failed to exchange authorization code.');
+            setErrorMessage(sanitizeAuthErrorMessage(err));
           }
           return;
         }
@@ -82,32 +99,37 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
       // 4. Check for existing session or hash token
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
+        if (!active) return;
+
         if (error) {
-          if (active) setErrorMessage(error.message);
+          clearAuthUrlParams();
+          setErrorMessage(sanitizeAuthErrorMessage(error));
           return;
         }
 
-        if (active) {
-          if (isRecovery) {
-            onPasswordRecovery();
-          } else if (session) {
-            onSuccess();
-          } else {
-            // Wait slightly for onAuthStateChange to fire or redirect to login
-            setTimeout(() => {
-              if (active) {
-                if (window.location.hash.includes('type=recovery')) {
-                  onPasswordRecovery();
-                } else {
-                  onNavigateLogin();
-                }
-              }
-            }, 1200);
-          }
+        if (isRecovery) {
+          clearAuthUrlParams();
+          onPasswordRecovery();
+        } else if (session) {
+          clearAuthUrlParams();
+          onSuccess();
+        } else {
+          // Wait briefly for onAuthStateChange / implicit hash parsing before routing to login
+          fallbackTimer = setTimeout(() => {
+            if (!active) return;
+            const stillRecovery = window.location.hash.includes('type=recovery');
+            clearAuthUrlParams();
+            if (stillRecovery) {
+              onPasswordRecovery();
+            } else {
+              onNavigateLogin();
+            }
+          }, 1200);
         }
       } catch (err) {
+        clearAuthUrlParams();
         if (active) {
-          setErrorMessage(err instanceof Error ? err.message : 'Failed to retrieve session.');
+          setErrorMessage(sanitizeAuthErrorMessage(err));
         }
       }
     };
@@ -116,6 +138,9 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
 
     return () => {
       active = false;
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+      }
     };
   }, [onSuccess, onPasswordRecovery, onNavigateLogin]);
 
@@ -126,7 +151,7 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
     >
       <div className="py-8 text-center space-y-4">
         {errorMessage ? (
-          <div className="space-y-4 animate-in fade-in duration-200">
+          <div className="space-y-4">
             <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-100">
               <AlertCircle className="w-6 h-6" />
             </div>
@@ -141,7 +166,10 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
             </div>
 
             <button
-              onClick={onNavigateLogin}
+              onClick={() => {
+                clearAuthUrlParams();
+                onNavigateLogin();
+              }}
               type="button"
               className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-5 py-2.5 bg-[#111318] text-white text-xs font-semibold rounded-xl hover:bg-black transition-colors cursor-pointer"
             >

@@ -37,9 +37,15 @@ async function runPDFTests() {
   const emptyBlob = await generateXOSReportPDF(emptyData, { datePreset: 'all' });
   assert(emptyBlob.size > 1000, `Empty PDF size must be valid (>1KB), got ${emptyBlob.size} bytes`);
   const emptyArrayBuffer = await emptyBlob.arrayBuffer();
-  const emptyHeader = new TextDecoder().decode(new Uint8Array(emptyArrayBuffer).slice(0, 5));
-  assert(emptyHeader.startsWith('%PDF'), `PDF header must be %PDF, got ${emptyHeader}`);
-  console.log(`✓ Test 1 passed: Empty PDF generated successfully (${emptyBlob.size} bytes).`);
+  const emptyPdfText = new TextDecoder('latin1').decode(new Uint8Array(emptyArrayBuffer));
+  assert(emptyPdfText.startsWith('%PDF'), `PDF header must be %PDF, got ${emptyPdfText.slice(0, 8)}`);
+  assert(
+    /\/MediaBox \[0 0 595\.2[78]\d* 841\.8[89]\d*\]/.test(emptyPdfText),
+    'PDF page size must be standard A4 portrait (210 x 297 mm / 595.28 x 841.89 pt)'
+  );
+  // Ensure no legacy sky-blue (135, 206, 235 -> 0.529 0.808 0.922) or green/red colored fills/text exist
+  assert(!emptyPdfText.includes('0.529 0.808 0.922'), 'PDF must not contain decorative sky-blue accents');
+  console.log(`✓ Test 1 passed: Empty PDF generated cleanly as A4 (${emptyBlob.size} bytes).`);
 
   // Case 2: Populated Dataset (Normal Session)
   console.log('Test 2: Generating PDF with representative session records...');
@@ -123,7 +129,33 @@ async function runPDFTests() {
 
   const largeBlob = await generateXOSReportPDF(largeData, { datePreset: 'all' });
   assert(largeBlob.size > 8000, `Large dataset PDF size must be >8KB, got ${largeBlob.size} bytes`);
-  console.log(`✓ Test 3 passed: Multi-page stress PDF generated successfully (${largeBlob.size} bytes).`);
+  const largePdfText = new TextDecoder('latin1').decode(new Uint8Array(await largeBlob.arrayBuffer()));
+  assert(largePdfText.includes('Page 1 of '), 'Multi-page PDF must include Page X of Y numbering');
+  assert(largePdfText.includes('Page 2 of '), 'Multi-page PDF must include Page 2 of Y numbering');
+  console.log(`✓ Test 3 passed: Multi-page stress PDF generated with page numbering (${largeBlob.size} bytes).`);
+
+  // Case 4: Single-page INR export omits page numbers and avoids WinAnsi ₹ corruption
+  console.log('Test 4: Verifying single-page INR export & page-number omission...');
+  const singlePageBlob = await generateXOSReportPDF(
+    {
+      ...populatedData,
+      settings: { ...DEFAULT_USER_SETTINGS, currency: 'INR', dateFormat: 'DD/MM/YYYY' }
+    },
+    {
+      datePreset: 'all',
+      includeFinancial: false,
+      includeDebt: true,
+      includeAttendance: false,
+      includeSalary: false,
+      includeSavings: false,
+      includeGoals: false
+    }
+  );
+  const singlePageText = new TextDecoder('latin1').decode(new Uint8Array(await singlePageBlob.arrayBuffer()));
+  assert(!singlePageText.includes('Page 1 of 1'), 'Single-page PDF must omit Page 1 of 1');
+  assert(singlePageText.includes('INR 1,500'), 'INR amounts must render cleanly as INR in built-in Helvetica');
+  assert(!singlePageText.includes('¹1,500'), 'PDF must not contain garbled WinAnsi Rupee character');
+  console.log('✓ Test 4 passed: Single-page INR PDF cleanly formatted without page numbers or glyph corruption.');
 
   console.log('\n--- ALL PDF EXPORT TESTS PASSED SUCCESSFULLY! ---');
 }

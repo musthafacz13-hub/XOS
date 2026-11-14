@@ -3,10 +3,15 @@
  * Manages Supabase session, user state, authentication flows, and demo bypass mode.
  */
 import React, { createContext, useContext, useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import type { User, Session, AuthError } from '@supabase/supabase-js';
+import type { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
 import { repository } from '../services/repository';
 import { apiOptimization } from '../services/apiClient';
+import {
+  clearAuthUrlParams,
+  normalizeAuthEmail,
+  sanitizeAuthErrorMessage
+} from '../utils/authValidation';
 
 export interface AuthContextType {
   user: User | null;
@@ -51,6 +56,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const inFlightHydrationRef = useRef<{ userId: string; promise: Promise<void> } | null>(null);
   const completedUserIdRef = useRef<string | null>(null);
   const mountedRef = useRef<boolean>(true);
+  const isDemoUserRef = useRef<boolean>(isDemoUser);
+
+  useEffect(() => {
+    isDemoUserRef.current = isDemoUser;
+  }, [isDemoUser]);
 
   // Apply auth email & fallback display name AFTER DB hydration without overwriting persisted profile
   const applyAuthProfileFallback = useCallback((u: User) => {
@@ -116,7 +126,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const initializeSession = useCallback(async () => {
     if (!isSupabaseConfigured) {
-      if (isDemoUser) {
+      if (isDemoUserRef.current) {
         repository.loadDemoData();
       }
       if (mountedRef.current) {
@@ -149,11 +159,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(initialSession);
         setUser(initialSession.user);
         setIsDemoUser(false);
+        isDemoUserRef.current = false;
         try {
           sessionStorage.removeItem(DEMO_USER_KEY);
         } catch {}
         await ensureUserHydrated(initialSession.user);
-      } else if (isDemoUser) {
+      } else if (isDemoUserRef.current) {
         repository.loadDemoData();
       }
 
@@ -167,7 +178,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setLoading(false);
       }
     }
-  }, [ensureUserHydrated, isDemoUser]);
+  }, [ensureUserHydrated]);
 
   // Initialize session and listen for auth changes (never await DB calls inside onAuthStateChange!)
   useEffect(() => {
@@ -178,7 +189,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (!isSupabaseConfigured) {
-      if (isDemoUser) {
+      if (isDemoUserRef.current) {
         repository.loadDemoData();
       }
       setLoading(false);
@@ -209,6 +220,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession(currentSession);
       setUser(currentSession.user);
       setIsDemoUser(false);
+      isDemoUserRef.current = false;
       setInitError(null);
       try {
         sessionStorage.removeItem(DEMO_USER_KEY);
@@ -229,35 +241,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     ensureUserHydrated(user);
   }, [user?.id, ensureUserHydrated]);
 
-  const sanitizeError = (err: AuthError | Error | null): string => {
-    if (!err) return '';
-    const msg = err.message || '';
-    // Map common error messages to polite, sanitized user prose
-    if (msg.includes('Invalid login credentials') || msg.includes('invalid_grant')) {
-      return 'Incorrect email or password. Please verify and try again.';
-    }
-    if (msg.includes('Email not confirmed')) {
-      return 'Please verify your email address before logging in. Check your inbox for the confirmation link.';
-    }
-    if (msg.includes('User already registered')) {
-      return 'An account with this email address already exists. Please log in instead.';
-    }
-    if (msg.includes('Password should be at least')) {
-      return 'Password must be at least 8 characters long.';
-    }
-    if (msg.includes('rate limit') || msg.includes('over_email_send_rate_limit')) {
-      return 'Too many attempts. Please wait a moment before trying again.';
-    }
-    return msg || 'An unexpected error occurred. Please try again.';
-  };
-
-  const loginWithPassword = async (email: string, password: string) => {
+  const loginWithPassword = useCallback(async (email: string, password: string) => {
     if (!isSupabaseConfigured) {
       return { 
         error: 'Supabase credentials are not yet configured in environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).' 
       };
     }
-    const cleanEmail = email.trim();
+    const cleanEmail = normalizeAuthEmail(email);
     // Coalesce duplicate in-flight login requests (e.g. double-click submit)
     return apiOptimization.coalesce(`auth:login:${cleanEmail}`, async () => {
       try {
@@ -267,34 +257,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (error) {
-          return { error: sanitizeError(error) };
+          return { error: sanitizeAuthErrorMessage(error) };
         }
 
-        if (data.session) {
-          setSession(data.session);
-          setUser(data.user);
-          setIsDemoUser(false);
-          try { sessionStorage.removeItem(DEMO_USER_KEY); } catch {}
-          apiOptimization.invalidateCache();
-          if (data.user) {
-            await ensureUserHydrated(data.user);
-          }
+        if (!data.session || !data.user) {
+          return { error: 'Unable to establish an authenticated session. Please try again.' };
         }
+
+        setSession(data.session);
+        setUser(data.user);
+        setIsDemoUser(false);
+        isDemoUserRef.current = false;
+        try { sessionStorage.removeItem(DEMO_USER_KEY); } catch {}
+        apiOptimization.invalidateCache();
+        await ensureUserHydrated(data.user);
 
         return { error: null };
       } catch (err) {
-        return { error: err instanceof Error ? sanitizeError(err) : 'Network request failed.' };
+        return { error: sanitizeAuthErrorMessage(err) || 'Network request failed.' };
       }
     });
-  };
+  }, [ensureUserHydrated]);
 
-  const signUpWithEmail = async (email: string, password: string, fullName: string) => {
+  const signUpWithEmail = useCallback(async (email: string, password: string, fullName: string) => {
     if (!isSupabaseConfigured) {
       return { 
         error: 'Supabase credentials are not yet configured in environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).' 
       };
     }
-    const cleanEmail = email.trim();
+    const cleanEmail = normalizeAuthEmail(email);
     // Coalesce duplicate in-flight registration attempts
     return apiOptimization.coalesce(`auth:signup:${cleanEmail}`, async () => {
       try {
@@ -311,7 +302,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (error) {
-          return { error: sanitizeError(error) };
+          return { error: sanitizeAuthErrorMessage(error) };
+        }
+
+        // In Supabase GoTrue v2 with email confirmation enabled, signing up with an
+        // already-registered email returns a user with an empty identities array and no session.
+        if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0 && !data.session) {
+          return { error: 'An account with this email address already exists. Please log in instead.' };
         }
 
         // If user created but session is null, email confirmation is required by Supabase settings
@@ -321,6 +318,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setSession(data.session);
           setUser(data.user);
           setIsDemoUser(false);
+          isDemoUserRef.current = false;
           try { sessionStorage.removeItem(DEMO_USER_KEY); } catch {}
           apiOptimization.invalidateCache();
           await ensureUserHydrated(data.user);
@@ -328,18 +326,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         return { error: null, needsEmailVerification };
       } catch (err) {
-        return { error: err instanceof Error ? sanitizeError(err) : 'Registration failed.' };
+        return { error: sanitizeAuthErrorMessage(err) || 'Registration failed.' };
       }
     });
-  };
+  }, [ensureUserHydrated]);
 
-  const loginWithMagicLink = async (email: string) => {
+  const loginWithMagicLink = useCallback(async (email: string) => {
     if (!isSupabaseConfigured) {
       return { 
         error: 'Supabase credentials are not yet configured in environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).' 
       };
     }
-    const cleanEmail = email.trim();
+    const cleanEmail = normalizeAuthEmail(email);
     
     // Client-side rate-limit protection: prevent firing requests within 60s cooldown
     const { allowed, remainingMs } = apiOptimization.checkCooldown(`auth:magiclink:${cleanEmail}`, 60000);
@@ -359,25 +357,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (error) {
-          return { error: sanitizeError(error) };
+          return { error: sanitizeAuthErrorMessage(error) };
         }
 
         // Record cooldown timestamp only upon successful dispatch
         apiOptimization.recordAction(`auth:magiclink:${cleanEmail}`);
         return { error: null };
       } catch (err) {
-        return { error: err instanceof Error ? sanitizeError(err) : 'Failed to send magic link.' };
+        return { error: sanitizeAuthErrorMessage(err) || 'Failed to send magic link.' };
       }
     });
-  };
+  }, []);
 
-  const resendVerificationEmail = async (email: string) => {
+  const resendVerificationEmail = useCallback(async (email: string) => {
     if (!isSupabaseConfigured) {
       return {
         error: 'Supabase credentials are not yet configured in environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).'
       };
     }
-    const cleanEmail = email.trim();
+    const cleanEmail = normalizeAuthEmail(email);
     const { allowed, remainingMs } = apiOptimization.checkCooldown(`auth:resend:${cleanEmail}`, 60000);
     if (!allowed) {
       const waitSec = Math.ceil(remainingMs / 1000);
@@ -395,23 +393,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         });
         if (error) {
-          return { error: sanitizeError(error) };
+          return { error: sanitizeAuthErrorMessage(error) };
         }
         apiOptimization.recordAction(`auth:resend:${cleanEmail}`);
         return { error: null };
       } catch (err) {
-        return { error: err instanceof Error ? sanitizeError(err) : 'Failed to resend verification email.' };
+        return { error: sanitizeAuthErrorMessage(err) || 'Failed to resend verification email.' };
       }
     });
-  };
+  }, []);
 
-  const requestPasswordReset = async (email: string) => {
+  const requestPasswordReset = useCallback(async (email: string) => {
     if (!isSupabaseConfigured) {
       return { 
         error: 'Supabase credentials are not yet configured in environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).' 
       };
     }
-    const cleanEmail = email.trim();
+    const cleanEmail = normalizeAuthEmail(email);
 
     // Client-side rate-limit protection: prevent firing requests within 60s cooldown
     const { allowed, remainingMs } = apiOptimization.checkCooldown(`auth:reset:${cleanEmail}`, 60000);
@@ -428,19 +426,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (error) {
-          return { error: sanitizeError(error) };
+          return { error: sanitizeAuthErrorMessage(error) };
         }
 
         // Record cooldown timestamp only upon successful dispatch
         apiOptimization.recordAction(`auth:reset:${cleanEmail}`);
         return { error: null };
       } catch (err) {
-        return { error: err instanceof Error ? sanitizeError(err) : 'Failed to send reset link.' };
+        return { error: sanitizeAuthErrorMessage(err) || 'Failed to send reset link.' };
       }
     });
-  };
+  }, []);
 
-  const updatePassword = async (newPassword: string) => {
+  const updatePassword = useCallback(async (newPassword: string) => {
     if (!isSupabaseConfigured) {
       return { 
         error: 'Supabase credentials are not yet configured in environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).' 
@@ -453,18 +451,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (error) {
-          return { error: sanitizeError(error) };
+          return { error: sanitizeAuthErrorMessage(error) };
         }
 
         setIsPasswordRecovery(false);
         return { error: null };
       } catch (err) {
-        return { error: err instanceof Error ? sanitizeError(err) : 'Failed to update password.' };
+        return { error: sanitizeAuthErrorMessage(err) || 'Failed to update password.' };
       }
     });
-  };
+  }, []);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     try {
       if (isSupabaseConfigured) {
         await supabase.auth.signOut();
@@ -477,38 +475,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(null);
       setSession(null);
       setIsDemoUser(false);
+      isDemoUserRef.current = false;
+      setIsPasswordRecovery(false);
       apiOptimization.invalidateCache();
       repository.clearUserData();
+      clearAuthUrlParams();
       try {
         sessionStorage.removeItem(DEMO_USER_KEY);
       } catch {}
     }
-  };
+  }, []);
 
-  const enterDemoMode = () => {
+  const enterDemoMode = useCallback(() => {
     completedUserIdRef.current = null;
     inFlightHydrationRef.current = null;
     repository.clearUserData();
     repository.loadDemoData();
+    isDemoUserRef.current = true;
     setIsDemoUser(true);
     try {
       sessionStorage.setItem(DEMO_USER_KEY, 'true');
     } catch {}
-  };
+  }, []);
 
-  const exitDemoMode = () => {
+  const exitDemoMode = useCallback(() => {
     completedUserIdRef.current = null;
     inFlightHydrationRef.current = null;
+    isDemoUserRef.current = false;
     setIsDemoUser(false);
     repository.clearUserData();
     try {
       sessionStorage.removeItem(DEMO_USER_KEY);
     } catch {}
-  };
+  }, []);
 
-  const clearPasswordRecoveryFlag = () => {
+  const clearPasswordRecoveryFlag = useCallback(() => {
     setIsPasswordRecovery(false);
-  };
+  }, []);
 
   const retryInitialization = useCallback(async () => {
     await initializeSession();
@@ -539,7 +542,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     clearPasswordRecoveryFlag,
     retryInitialization,
     dismissInitError
-  }), [user, session, loading, initError, isDemoUser, isPasswordRecovery, retryInitialization, dismissInitError]);
+  }), [
+    user,
+    session,
+    loading,
+    initError,
+    isDemoUser,
+    isPasswordRecovery,
+    loginWithPassword,
+    signUpWithEmail,
+    loginWithMagicLink,
+    resendVerificationEmail,
+    requestPasswordReset,
+    updatePassword,
+    signOut,
+    enterDemoMode,
+    exitDemoMode,
+    clearPasswordRecoveryFlag,
+    retryInitialization,
+    dismissInitError
+  ]);
 
   return (
     <AuthContext.Provider value={value}>

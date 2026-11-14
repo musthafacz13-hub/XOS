@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, CreditCard, TrendingUp, CalendarCheck, Target, PiggyBank } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useXOSData } from '../../hooks/useXOSData';
@@ -21,6 +21,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   const [activeTab, setActiveTab] = useState<'expense' | 'income' | 'attendance' | 'goal' | 'savings'>(defaultAction);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Sync tab with defaultAction prop when opened
@@ -179,14 +180,16 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
 
   const handleSaveAttendance = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting) return;
+    if (isSubmittingRef.current || isSubmitting) return;
+    const parsedBreak = attStatus === 'Present' ? Math.max(0, parseInt(attBreak, 10) || 0) : 0;
     let hours = 8;
     if (attIn && attOut) {
       const [inH, inM] = attIn.split(':').map(Number);
       const [outH, outM] = attOut.split(':').map(Number);
-      const totalMins = (outH * 60 + outM) - (inH * 60 + inM) - (parseInt(attBreak) || 0);
+      const totalMins = (outH * 60 + outM) - (inH * 60 + inM) - parsedBreak;
       hours = Math.max(0, Number((totalMins / 60).toFixed(2)));
     }
+    isSubmittingRef.current = true;
     setActionError(null);
     setIsSubmitting(true);
     try {
@@ -195,7 +198,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
         status: attStatus,
         checkInTime: attStatus === 'Present' ? attIn : undefined,
         checkOutTime: attStatus === 'Present' ? attOut : undefined,
-        breakDurationMinutes: attStatus === 'Present' ? parseInt(attBreak) : 0,
+        breakDurationMinutes: parsedBreak,
         calculatedHours: attStatus === 'Present' ? hours : 0,
         notes: attNotes.trim()
       });
@@ -203,6 +206,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
     } catch (err: any) {
       setActionError(err?.message || 'Database error: Could not log attendance.');
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -549,32 +553,32 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
               </div>
 
               {attStatus === 'Present' && (
-                <div className="grid grid-cols-3 gap-2 p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                  <div className="min-w-0">
                     <label className="block text-[11px] font-semibold text-neutral-700 mb-1">In Time</label>
                     <input
                       type="time"
                       value={attIn}
                       onChange={(e) => setAttIn(e.target.value)}
-                      className="w-full px-2 py-1.5 text-xs font-mono border border-neutral-300 rounded-lg"
+                      className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
                     />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Out Time</label>
                     <input
                       type="time"
                       value={attOut}
                       onChange={(e) => setAttOut(e.target.value)}
-                      className="w-full px-2 py-1.5 text-xs font-mono border border-neutral-300 rounded-lg"
+                      className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
                     />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Break (m)</label>
                     <input
                       type="number"
                       value={attBreak}
                       onChange={(e) => setAttBreak(e.target.value)}
-                      className="w-full px-2 py-1.5 text-xs font-mono border border-neutral-300 rounded-lg"
+                      className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
                     />
                   </div>
                 </div>

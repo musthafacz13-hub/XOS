@@ -112,6 +112,7 @@ export const SettingsView: React.FC = () => {
 
   // Save & section failure tracking
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const isSavingRef = useRef<boolean>(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
   const failedSectionsRef = useRef<Set<SettingsBundleSection>>(new Set());
@@ -321,7 +322,7 @@ export const SettingsView: React.FC = () => {
   // Persist to user_settings, salary_configs, and profiles via repository
   const handleSaveSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (isSaving || isResetting) return;
+    if (isSavingRef.current || isSaving || isResetting) return;
 
     setSaveSuccessMessage(null);
     setSaveErrorMessage(null);
@@ -374,6 +375,7 @@ export const SettingsView: React.FC = () => {
     }
 
     failedSectionsRef.current.clear();
+    isSavingRef.current = true;
     setIsSaving(true);
 
     try {
@@ -420,6 +422,7 @@ export const SettingsView: React.FC = () => {
         setSaveErrorMessage(msg);
       }
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   };

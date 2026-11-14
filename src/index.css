@@ -23,17 +23,25 @@
     touch-action: manipulation;
   }
 
-  @media (max-width: 767px) {
-    input:not([type="checkbox"]):not([type="radio"]),
-    select,
-    textarea {
-      font-size: 16px;
-    }
-  }
-  
   .font-mono, tabular-nums {
     font-family: 'JetBrains Mono', monospace;
     font-variant-numeric: tabular-nums;
+  }
+}
+
+/*
+ * Prevent iOS / iPadOS Safari automatic zoom on input/select/textarea focus.
+ * Kept outside @layer base so it cleanly overrides Tailwind v4 @layer utilities
+ * (such as text-xs / text-sm) on mobile viewports and touch devices while
+ * keeping normal user pinch-zoom intact.
+ */
+@media (max-width: 767px), (hover: none) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+  select,
+  textarea {
+    font-size: 16px;
+    max-width: 100%;
+    box-sizing: border-box;
   }
 }
 

@@ -3,12 +3,13 @@
  * Dispatches password recovery instructions via Supabase Auth without exposing
  * account registration existence (prevents account-enumeration attacks).
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { KeyRound, Loader2, ArrowRight, CheckCircle2, RotateCcw } from 'lucide-react';
 import { AuthLayout } from './AuthLayout';
 import { useAuth } from '../../context/AuthContext';
 import { tapScale } from '../../utils/motion';
+import { validateEmailAddress, normalizeAuthEmail } from '../../utils/authValidation';
 
 interface ForgotPasswordViewProps {
   onNavigate: (view: 'login' | 'signup') => void;
@@ -18,42 +19,72 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
   const { requestPasswordReset, isConfigured } = useAuth();
 
   const [email, setEmail] = useState('');
+  const [submittedEmail, setSubmittedEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
 
+  const mountedRef = useRef(true);
+  const isSubmittingRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     if (cooldownSeconds <= 0) return;
     const interval = setInterval(() => {
-      setCooldownSeconds(prev => prev - 1);
+      setCooldownSeconds(prev => (prev > 0 ? prev - 1 : 0));
     }, 1000);
     return () => clearInterval(interval);
   }, [cooldownSeconds]);
 
   const handleResetRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (loading || cooldownSeconds > 0) return;
+    if (isSubmittingRef.current || loading || cooldownSeconds > 0) return;
 
     setErrorMessage(null);
 
-    const cleanEmail = email.trim();
-    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
-      setErrorMessage('Please enter a valid email address.');
+    const validationError = validateEmailAddress(email);
+    if (validationError) {
+      setErrorMessage(validationError);
       return;
     }
 
+    const cleanEmail = normalizeAuthEmail(email);
+    isSubmittingRef.current = true;
     setLoading(true);
-    const { error } = await requestPasswordReset(cleanEmail);
-    setLoading(false);
 
-    // To prevent account enumeration attacks, always display the confirmation message
-    // even if an account does not exist, unless there's a network/configuration issue
-    if (error && error.includes('credentials are not yet configured')) {
-      setErrorMessage(error);
-    } else {
-      setSubmitted(true);
-      setCooldownSeconds(60);
+    try {
+      const { error } = await requestPasswordReset(cleanEmail);
+      if (!mountedRef.current) return;
+
+      // Preserve anti-enumeration for nonexistent accounts, while surfacing connectivity/config/rate errors
+      const isOperationalError = Boolean(
+        error &&
+        (error.includes('credentials') ||
+          error.includes('timed out') ||
+          error.includes('interrupted') ||
+          error.includes('Network connection') ||
+          error.includes('Too many attempts'))
+      );
+
+      if (isOperationalError && error) {
+        setErrorMessage(error);
+      } else {
+        setSubmittedEmail(cleanEmail);
+        setSubmitted(true);
+        setCooldownSeconds(60);
+      }
+    } finally {
+      isSubmittingRef.current = false;
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -65,7 +96,7 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
       backLabel="Back to Login"
     >
       {submitted ? (
-        <div className="space-y-5 text-center py-2 animate-in fade-in duration-200">
+        <div className="space-y-5 text-center py-2">
           <div className="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center mx-auto border border-sky-100 shadow-xs">
             <CheckCircle2 className="w-6 h-6 text-[#87CEEB]" />
           </div>
@@ -77,8 +108,8 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
             <p className="text-xs text-neutral-600 leading-relaxed font-normal">
               If an account is associated with this email, you will receive password reset instructions shortly:
             </p>
-            <p className="text-xs font-mono font-semibold text-[#111111] bg-neutral-50 py-1.5 px-3 rounded-lg border border-neutral-200 inline-block">
-              {email}
+            <p className="text-xs font-mono font-semibold text-[#111111] bg-neutral-50 py-1.5 px-3 rounded-lg border border-neutral-200 inline-block break-all max-w-full">
+              {submittedEmail}
             </p>
           </div>
 
@@ -113,9 +144,9 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
       ) : (
         <form onSubmit={handleResetRequest} className="space-y-4" noValidate>
           {errorMessage && (
-            <div 
-              role="alert" 
-              className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start gap-2 animate-in fade-in duration-150"
+            <div
+              role="alert"
+              className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start gap-2"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 shrink-0" />
               <span className="leading-relaxed">{errorMessage}</span>
@@ -138,14 +169,20 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
             <input
               id="recovery-email"
               type="email"
+              inputMode="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               required
               autoComplete="email"
-              autoFocus
               disabled={loading}
               placeholder="name@example.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full min-h-[44px] px-3.5 py-2.5 text-base sm:text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] transition-all disabled:opacity-60"
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (errorMessage) setErrorMessage(null);
+              }}
+              className="w-full min-h-[44px] px-3.5 py-2.5 text-base md:text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] transition-all disabled:opacity-60"
             />
           </div>
 
@@ -173,8 +210,9 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({ onNaviga
             <span>Remembered your password? </span>
             <button
               type="button"
+              disabled={loading}
               onClick={() => onNavigate('login')}
-              className="font-semibold text-[#111111] hover:underline cursor-pointer"
+              className="font-semibold text-[#111111] hover:underline cursor-pointer disabled:opacity-50"
             >
               Back to Login
             </button>

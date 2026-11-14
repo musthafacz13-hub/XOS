@@ -24,10 +24,37 @@ export function useWelcomeScrollReveal() {
       return;
     }
 
+    const evaluateElements = () => {
+      const viewportH = window.innerHeight || document.documentElement.clientHeight;
+      elementsRef.current.forEach((el) => {
+        const rect = el.getBoundingClientRect();
+        // Skip elements inside display:none containers (e.g. hidden md:flex when viewport < 768px)
+        if (rect.width === 0 && rect.height === 0) {
+          delete el.dataset.welcomeReveal;
+          stateMapRef.current.delete(el);
+          return;
+        }
+        if (rect.top >= viewportH) {
+          stateMapRef.current.set(el, 'below');
+          el.dataset.welcomeReveal = 'hidden-below';
+        } else if (rect.bottom <= 0) {
+          stateMapRef.current.set(el, 'above');
+          el.dataset.welcomeReveal = 'hidden-above';
+        } else {
+          stateMapRef.current.set(el, 'visible');
+          el.dataset.welcomeReveal = 'visible-from-below';
+        }
+      });
+    };
+
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           const target = entry.target as HTMLElement;
+          const rect = entry.boundingClientRect;
+          if (rect.width === 0 && rect.height === 0) {
+            continue;
+          }
           const prevState = stateMapRef.current.get(target);
 
           if (entry.isIntersecting) {
@@ -37,7 +64,7 @@ export function useWelcomeScrollReveal() {
             stateMapRef.current.set(target, 'visible');
           } else {
             const rootTop = entry.rootBounds ? entry.rootBounds.top : 0;
-            const exitedAbove = entry.boundingClientRect.top < rootTop + 4;
+            const exitedAbove = rect.top < rootTop + 4;
             const nextPos: RevealPosition = exitedAbove ? 'above' : 'below';
             stateMapRef.current.set(target, nextPos);
             target.dataset.welcomeReveal = exitedAbove ? 'hidden-above' : 'hidden-below';
@@ -51,24 +78,21 @@ export function useWelcomeScrollReveal() {
     );
 
     observerRef.current = observer;
+    evaluateElements();
+    elementsRef.current.forEach((el) => observer.observe(el));
 
-    const viewportH = window.innerHeight || document.documentElement.clientHeight;
-    elementsRef.current.forEach((el) => {
-      const rect = el.getBoundingClientRect();
-      if (rect.top >= viewportH) {
-        stateMapRef.current.set(el, 'below');
-        el.dataset.welcomeReveal = 'hidden-below';
-      } else if (rect.bottom <= 0) {
-        stateMapRef.current.set(el, 'above');
-        el.dataset.welcomeReveal = 'hidden-above';
-      } else {
-        stateMapRef.current.set(el, 'visible');
-        el.dataset.welcomeReveal = 'visible-from-below';
-      }
-      observer.observe(el);
-    });
+    let resizeRaf: number | null = null;
+    const handleResize = () => {
+      if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
+      resizeRaf = requestAnimationFrame(() => {
+        evaluateElements();
+      });
+    };
+    window.addEventListener('resize', handleResize, { passive: true });
 
     return () => {
+      if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
+      window.removeEventListener('resize', handleResize);
       observer.disconnect();
       observerRef.current = null;
     };

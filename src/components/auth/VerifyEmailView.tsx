@@ -2,7 +2,7 @@
  * XOS Verify Email Confirmation Screen
  * Rendered after user registration to guide the user through inbox confirmation.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Mail, CheckCircle, RotateCcw, ArrowRight } from 'lucide-react';
 import { AuthLayout } from './AuthLayout';
 import { useAuth } from '../../context/AuthContext';
@@ -12,36 +12,58 @@ interface VerifyEmailViewProps {
   onNavigateLogin: () => void;
 }
 
-export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ 
-  email, 
-  onNavigateLogin 
+export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
+  email,
+  onNavigateLogin
 }) => {
   const { resendVerificationEmail } = useAuth();
   const [cooldownSeconds, setCooldownSeconds] = useState(60);
   const [resending, setResending] = useState(false);
-  const [resendNotice, setResendNotice] = useState<string | null>(null);
+  const [resendNotice, setResendNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const mountedRef = useRef(true);
+  const isResendingRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (cooldownSeconds <= 0) return;
     const timer = setInterval(() => {
-      setCooldownSeconds(prev => prev - 1);
+      setCooldownSeconds(prev => (prev > 0 ? prev - 1 : 0));
     }, 1000);
     return () => clearInterval(timer);
   }, [cooldownSeconds]);
 
   const handleResend = async () => {
-    if (cooldownSeconds > 0 || resending || !email) return;
+    if (cooldownSeconds > 0 || isResendingRef.current || resending || !email) return;
 
+    isResendingRef.current = true;
     setResending(true);
     setResendNotice(null);
-    const { error } = await resendVerificationEmail(email);
-    setResending(false);
 
-    if (error) {
-      setResendNotice(error);
-    } else {
-      setResendNotice('A fresh verification link has been sent to your email.');
-      setCooldownSeconds(60);
+    try {
+      const { error } = await resendVerificationEmail(email);
+      if (!mountedRef.current) return;
+
+      if (error) {
+        setResendNotice({ type: 'error', text: error });
+      } else {
+        setResendNotice({
+          type: 'success',
+          text: 'A fresh verification link has been sent to your email.'
+        });
+        setCooldownSeconds(60);
+      }
+    } finally {
+      isResendingRef.current = false;
+      if (mountedRef.current) {
+        setResending(false);
+      }
     }
   };
 
@@ -52,7 +74,7 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
       onBack={onNavigateLogin}
       backLabel="Back to Login"
     >
-      <div className="space-y-5 text-center py-2 animate-in fade-in duration-200">
+      <div className="space-y-5 text-center py-2">
         {/* Email Icon */}
         <div className="w-14 h-14 rounded-2xl bg-[#87CEEB]/15 text-[#111111] flex items-center justify-center mx-auto border border-[#87CEEB]/30 shadow-xs">
           <Mail className="w-7 h-7 text-[#111111]" />
@@ -66,7 +88,7 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
           <p className="text-xs text-neutral-600 leading-relaxed font-normal">
             We sent a verification link to:
           </p>
-          <div className="text-xs font-mono font-semibold text-[#111111] bg-neutral-50 py-1.5 px-3 rounded-lg border border-neutral-200 inline-block">
+          <div className="text-xs font-mono font-semibold text-[#111111] bg-neutral-50 py-1.5 px-3 rounded-lg border border-neutral-200 inline-block break-all max-w-full">
             {email || 'your email address'}
           </div>
         </div>
@@ -92,8 +114,15 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
 
         {/* Resend Notice */}
         {resendNotice && (
-          <div className="p-3 bg-neutral-100 border border-neutral-200 text-neutral-700 text-xs rounded-xl">
-            {resendNotice}
+          <div
+            role={resendNotice.type === 'error' ? 'alert' : 'status'}
+            className={`p-3 border text-xs rounded-xl ${
+              resendNotice.type === 'error'
+                ? 'bg-rose-50 border-rose-200 text-rose-800'
+                : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            }`}
+          >
+            {resendNotice.text}
           </div>
         )}
 
@@ -101,7 +130,7 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
         <div className="pt-2 space-y-2.5">
           <button
             type="button"
-            disabled={cooldownSeconds > 0 || resending}
+            disabled={cooldownSeconds > 0 || resending || !email}
             onClick={handleResend}
             className="w-full min-h-[44px] flex items-center justify-center gap-2 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-semibold rounded-xl border border-neutral-200 transition-colors cursor-pointer disabled:opacity-50"
           >

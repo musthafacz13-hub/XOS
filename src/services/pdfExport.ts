@@ -11,7 +11,8 @@ import {
   SavingsGoal,
   SavingsTransaction,
   Goal,
-  DateFilterPreset
+  DateFilterPreset,
+  CurrencyCode
 } from '../types';
 import { formatCurrency, formatDate, getTodayString } from '../utils/formatters';
 import { calculateDebtOutstanding, calculateDebtSummary } from '../utils/calculations';
@@ -41,6 +42,14 @@ export interface PDFExportData {
   goals: Goal[];
 }
 
+// Color tokens: pure white surface, crisp black ink, subtle grey secondary text & hairlines
+const COLOR_WHITE: [number, number, number] = [255, 255, 255];
+const COLOR_BLACK: [number, number, number] = [17, 17, 17];
+const COLOR_SECONDARY: [number, number, number] = [107, 114, 128];
+const COLOR_MUTED: [number, number, number] = [138, 143, 152];
+const COLOR_RULE_LIGHT: [number, number, number] = [226, 228, 232];
+const COLOR_RULE_DARK: [number, number, number] = [24, 24, 27];
+
 /**
  * Filter items by date string in YYYY-MM-DD
  */
@@ -50,6 +59,38 @@ function isDateInRange(dateStr?: string, startDate?: string, endDate?: string): 
   if (startDate && d < startDate) return false;
   if (endDate && d > endDate) return false;
   return true;
+}
+
+/**
+ * Built-in Type1 Helvetica in jsPDF uses WinAnsiEncoding and cannot render U+20B9 (₹).
+ * Normalize ₹ -> "INR " and strip unsupported non-WinAnsi glyphs so text spacing and
+ * alignment remain crisp in all PDF viewers and print drivers.
+ */
+function sanitizePdfText(value: unknown): string {
+  const raw = value === null || value === undefined ? '' : String(value);
+  return raw
+    .replace(/\u20B9/g, 'INR ')
+    .replace(/\u2026/g, '...')
+    .replace(/[^\x20-\xFF\u2013\u2014\u20AC]/g, '');
+}
+
+function formatPdfCurrency(amount: number, currencyCode: CurrencyCode = 'INR'): string {
+  return sanitizePdfText(formatCurrency(amount, currencyCode));
+}
+
+function formatDateRangeLabel(
+  datePreset: DateFilterPreset | 'all',
+  startDate?: string,
+  endDate?: string,
+  dateFormat: UserSettings['dateFormat'] = 'YYYY-MM-DD'
+): string {
+  if (datePreset === 'all') return 'All Time (Complete History)';
+  if (startDate && endDate) {
+    return `${formatDate(startDate, dateFormat)} to ${formatDate(endDate, dateFormat)}`;
+  }
+  if (startDate) return `From ${formatDate(startDate, dateFormat)}`;
+  if (endDate) return `Through ${formatDate(endDate, dateFormat)}`;
+  return datePreset.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 export async function generateXOSReportPDF(
@@ -75,16 +116,19 @@ export async function generateXOSReportPDF(
     format: 'a4'
   });
 
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const marginX = 14;
-  let currentY = 14;
+  const pageWidth = doc.internal.pageSize.getWidth(); // 210 mm
+  const pageHeight = doc.internal.pageSize.getHeight(); // 297 mm
+  const marginX = 16;
+  const topMargin = 20;
+  const bottomMargin = 18;
+  const contentWidth = pageWidth - marginX * 2; // 178 mm
+  let currentY = 18;
 
   const currencyCode = data.settings.currency || 'INR';
   const dateFormat = data.settings.dateFormat || 'YYYY-MM-DD';
 
   // Apply date filters if not 'all'
-  const filterByDate = datePreset !== 'all' && (startDate || endDate);
+  const filterByDate = datePreset !== 'all' && Boolean(startDate || endDate);
   const filteredIncomes = filterByDate
     ? data.incomes.filter(i => isDateInRange(i.date, startDate, endDate))
     : data.incomes;
@@ -101,272 +145,344 @@ export async function generateXOSReportPDF(
     ? data.salaryPayouts.filter(p => isDateInRange(p.paidAt, startDate, endDate))
     : data.salaryPayouts;
 
-  // Key Totals
+  // Key Totals (preserved from existing calculations)
   const totalIncome = filteredIncomes.reduce((acc, i) => acc + (Number(i.amount) || 0), 0);
   const totalExpenses = filteredExpenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
   const netCashFlow = totalIncome - totalExpenses;
 
-  // Debt calculations using unified calculateDebtSummary
   const debtSummary = calculateDebtSummary(filteredDebts, data.debtRepayments);
   const outstandingReceivable = debtSummary.outstandingReceivable;
   const totalRepaid = debtSummary.totalRepaid;
 
-  // Savings total
   const totalSavings = data.savingsGoals.reduce((acc, g) => acc + (Number(g.currentAmount) || 0), 0);
 
-  // Helper to ensure enough vertical space for next section header
-  const ensureSpace = (neededHeight: number = 30) => {
-    if (currentY + neededHeight > pageHeight - 18) {
+  const autoTableFn = (autoTable as unknown as { default?: typeof autoTable }).default || autoTable;
+
+  // Ensure enough vertical space before starting a new section so headings never orphan
+  const ensureSpace = (neededHeight: number = 34) => {
+    if (currentY + neededHeight > pageHeight - bottomMargin) {
       doc.addPage();
-      currentY = 18;
+      currentY = topMargin;
     }
   };
 
-  // Helper for Section Titles
-  const drawSectionHeader = (title: string, badge?: string) => {
-    ensureSpace(24);
-    
-    // Top subtle bar
-    doc.setFillColor(244, 244, 245);
-    doc.roundedRect(marginX, currentY, pageWidth - marginX * 2, 8, 1.5, 1.5, 'F');
+  // Clean typographic section header with thin rule
+  const drawSectionHeader = (title: string, meta?: string, subtitle?: string) => {
+    const subtitleLines = subtitle
+      ? (doc.splitTextToSize(sanitizePdfText(subtitle), contentWidth) as string[])
+      : [];
+    const headerHeight = 9 + (subtitleLines.length > 0 ? subtitleLines.length * 3.8 + 1.5 : 0);
 
-    // Sky blue accent pip
-    doc.setFillColor(135, 206, 235);
-    doc.roundedRect(marginX + 2, currentY + 1.8, 2.5, 4.4, 0.6, 0.6, 'F');
+    // Reserve space for header + table head + at least one table row
+    ensureSpace(headerHeight + 24);
 
-    // Section title text
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(17, 17, 17);
-    doc.text(title.toUpperCase(), marginX + 7, currentY + 5.5);
+    doc.setFontSize(10.5);
+    doc.setTextColor(...COLOR_BLACK);
+    doc.text(sanitizePdfText(title), marginX, currentY + 4);
 
-    if (badge) {
+    if (meta) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
-      doc.setTextColor(100, 100, 100);
-      doc.text(badge, pageWidth - marginX - 4, currentY + 5.5, { align: 'right' });
+      doc.setTextColor(...COLOR_SECONDARY);
+      doc.text(sanitizePdfText(meta), pageWidth - marginX, currentY + 4, { align: 'right' });
     }
 
-    currentY += 11;
+    currentY += 6;
+
+    if (subtitleLines.length > 0) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(...COLOR_SECONDARY);
+      doc.text(subtitleLines, marginX, currentY + 2.5);
+      currentY += subtitleLines.length * 3.8 + 1.5;
+    }
+
+    doc.setDrawColor(...COLOR_RULE_DARK);
+    doc.setLineWidth(0.35);
+    doc.line(marginX, currentY, pageWidth - marginX, currentY);
+
+    currentY += 3.5;
   };
 
-  // ==========================================
-  // PAGE 1: DOCUMENT HEADER & BRAND BANNER
-  // ==========================================
-  doc.setFillColor(17, 17, 17);
-  doc.rect(marginX, currentY, pageWidth - marginX * 2, 28, 'F');
+  // Shared table renderer enforcing white background, aligned headers, clean hairlines, and no broken rows
+  const renderStatementTable = (config: {
+    head: string[];
+    body: any[][];
+    columnStyles: Record<number, any>;
+    fontSize?: number;
+    cellPaddingX?: number;
+    hasTotalRow?: boolean;
+  }) => {
+    const fontSize = config.fontSize ?? 8;
+    const padX = config.cellPaddingX ?? 2;
+    const bodyLength = config.body.length;
 
-  // Sky Blue Top Accent Line
-  doc.setFillColor(135, 206, 235);
-  doc.rect(marginX, currentY, pageWidth - marginX * 2, 2, 'F');
-
-  // Title inside banner
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.setTextColor(255, 255, 255);
-  doc.text('XOS — PERSONAL LIFE OPERATING SYSTEM', marginX + 6, currentY + 10);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(200, 200, 200);
-  const profileName = data.settings.profile?.name?.trim() || 'Workspace Master';
-  doc.text(`Executive Summary Report | Prepared for: ${profileName}`, marginX + 6, currentY + 16);
-
-  // Date and Scope badge in header banner
-  const todayFormatted = getTodayString();
-  const dateRangeLabel = datePreset === 'all'
-    ? 'All Time (Complete History)'
-    : startDate && endDate
-      ? `${startDate} to ${endDate}`
-      : datePreset.replace('_', ' ').toUpperCase();
-
-  doc.setFontSize(7.5);
-  doc.setTextColor(135, 206, 235);
-  doc.text(`Generated: ${todayFormatted}  |  Scope: ${dateRangeLabel}  |  Base Currency: ${currencyCode}`, marginX + 6, currentY + 22);
-
-  currentY += 32;
-
-  // ==========================================
-  // EXECUTIVE SUMMARY KPI TILES (6-Card Grid)
-  // ==========================================
-  const cardWidth = (pageWidth - marginX * 2 - 10) / 3;
-  const cardHeight = 16;
-  const kpis = [
-    { label: 'Total Income', value: formatCurrency(totalIncome, currencyCode), color: [17, 17, 17] },
-    { label: 'Total Expenses', value: formatCurrency(totalExpenses, currencyCode), color: [17, 17, 17] },
-    { label: 'Net Cash Flow', value: (netCashFlow >= 0 ? '+' : '') + formatCurrency(netCashFlow, currencyCode), color: netCashFlow >= 0 ? [16, 120, 70] : [180, 40, 40] },
-    { label: 'Money Lent (Receivable)', value: formatCurrency(outstandingReceivable, currencyCode), color: [17, 17, 17] },
-    { label: 'Debt Recovered', value: formatCurrency(totalRepaid, currencyCode), color: [16, 120, 70] },
-    { label: 'Total Savings Saved', value: formatCurrency(totalSavings, currencyCode), color: [16, 120, 70] }
-  ];
-
-  kpis.forEach((kpi, idx) => {
-    const col = idx % 3;
-    const row = Math.floor(idx / 3);
-    const x = marginX + col * (cardWidth + 5);
-    const y = currentY + row * (cardHeight + 4);
-
-    // Card background
-    doc.setFillColor(250, 250, 250);
-    doc.setDrawColor(228, 228, 231);
-    doc.setLineWidth(0.3);
-    doc.roundedRect(x, y, cardWidth, cardHeight, 1.5, 1.5, 'FD');
-
-    // Mini sky-blue left pill
-    doc.setFillColor(135, 206, 235);
-    doc.rect(x, y + 2, 1.2, cardHeight - 4, 'F');
-
-    // KPI Label
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.setTextColor(115, 115, 115);
-    doc.text(kpi.label.toUpperCase(), x + 3.5, y + 5);
-
-    // KPI Value
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9.5);
-    doc.setTextColor(kpi.color[0], kpi.color[1], kpi.color[2]);
-    doc.text(kpi.value, x + 3.5, y + 11.5);
-  });
-
-  currentY += (cardHeight + 4) * 2 + 5;
-
-  // ==========================================
-  // SECTION 1: FINANCIAL RECORDS — INCOMES
-  // ==========================================
-  if (includeFinancial) {
-    drawSectionHeader('Financial Records — Income', `${filteredIncomes.length} records`);
-
-    const incomeRows = filteredIncomes.length > 0
-      ? filteredIncomes.map(item => [
-          formatDate(item.date, dateFormat),
-          item.source || 'General',
-          item.title,
-          item.notes || '—',
-          formatCurrency(Number(item.amount) || 0, currencyCode)
-        ])
-      : [['—', '—', 'No income records found for this period.', '—', formatCurrency(0, currencyCode)]];
-
-    // Append total row if records exist
-    if (filteredIncomes.length > 0) {
-      incomeRows.push([
-        'TOTAL',
-        '',
-        '',
-        `${filteredIncomes.length} Transactions`,
-        formatCurrency(totalIncome, currencyCode)
-      ]);
-    }
-
-    const autoTableFn = (autoTable as unknown as { default?: typeof autoTable }).default || autoTable;
     autoTableFn(doc, {
       startY: currentY,
-      margin: { left: marginX, right: marginX },
-      head: [['Date', 'Source', 'Title', 'Notes', 'Amount']],
-      body: incomeRows,
-      theme: 'grid',
+      margin: { top: topMargin, right: marginX, bottom: bottomMargin, left: marginX },
+      tableWidth: contentWidth,
+      head: [config.head],
+      body: config.body,
+      theme: 'plain',
+      showHead: 'everyPage',
+      rowPageBreak: 'avoid',
       styles: {
-        fontSize: 7.5,
-        cellPadding: 2,
-        textColor: [20, 20, 20],
-        lineColor: [230, 230, 230],
-        lineWidth: 0.15
+        font: 'helvetica',
+        fontSize,
+        cellPadding: { top: 2.3, right: padX, bottom: 2.3, left: padX },
+        textColor: COLOR_BLACK,
+        fillColor: COLOR_WHITE,
+        overflow: 'linebreak',
+        valign: 'middle'
       },
       headStyles: {
-        fillColor: [17, 17, 17],
-        textColor: [255, 255, 255],
+        font: 'helvetica',
         fontStyle: 'bold',
-        fontSize: 7.5
+        fontSize: Math.min(8, fontSize + 0.2),
+        textColor: COLOR_BLACK,
+        fillColor: COLOR_WHITE,
+        cellPadding: { top: 2.2, right: padX, bottom: 2.4, left: padX }
       },
-      columnStyles: {
-        0: { cellWidth: 24 },
-        1: { cellWidth: 28 },
-        2: { cellWidth: 50 },
-        3: { cellWidth: 46 },
-        4: { cellWidth: 34, halign: 'right', fontStyle: 'bold' }
-      },
+      columnStyles: config.columnStyles,
       didParseCell: (hookData) => {
-        if (hookData.section === 'body' && hookData.row.index === incomeRows.length - 1 && filteredIncomes.length > 0) {
+        if (hookData.section === 'head') {
+          const colStyle = config.columnStyles[hookData.column.index];
+          if (colStyle?.halign) {
+            hookData.cell.styles.halign = colStyle.halign;
+          }
+        }
+        if (config.hasTotalRow && hookData.section === 'body' && hookData.row.index === bodyLength - 1) {
           hookData.cell.styles.fontStyle = 'bold';
-          hookData.cell.styles.fillColor = [245, 245, 245];
+          hookData.cell.styles.fillColor = COLOR_WHITE;
+          hookData.cell.styles.textColor = COLOR_BLACK;
+        }
+      },
+      didDrawCell: (hookData) => {
+        const { cell, section, row } = hookData;
+        if (section === 'head') {
+          doc.setDrawColor(...COLOR_RULE_DARK);
+          doc.setLineWidth(0.35);
+          doc.line(cell.x, cell.y + cell.height, cell.x + cell.width, cell.y + cell.height);
+        } else if (section === 'body') {
+          const isTotalRow = Boolean(config.hasTotalRow) && row.index === bodyLength - 1;
+          if (isTotalRow) {
+            doc.setDrawColor(...COLOR_RULE_DARK);
+            doc.setLineWidth(0.3);
+            doc.line(cell.x, cell.y, cell.x + cell.width, cell.y);
+            doc.setLineWidth(0.35);
+            doc.line(cell.x, cell.y + cell.height, cell.x + cell.width, cell.y + cell.height);
+          } else {
+            doc.setDrawColor(...COLOR_RULE_LIGHT);
+            doc.setLineWidth(0.15);
+            doc.line(cell.x, cell.y + cell.height, cell.x + cell.width, cell.y + cell.height);
+          }
         }
       }
     });
 
-    currentY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+    currentY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 9;
+  };
+
+  // ==========================================
+  // PAGE 1: CLEAN DOCUMENT HEADER (PURE WHITE)
+  // ==========================================
+  const profileName = sanitizePdfText(data.settings.profile?.name?.trim() || 'Workspace Master');
+  const todayFormatted = formatDate(getTodayString(), dateFormat);
+  const dateRangeLabel = sanitizePdfText(formatDateRangeLabel(datePreset, startDate, endDate, dateFormat));
+
+  // Document brand & title on left, metadata on right
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(...COLOR_BLACK);
+  doc.text('XOS', marginX, currentY + 1);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5);
+  doc.setTextColor(...COLOR_SECONDARY);
+  doc.text('Personal Life Operating System — Statement Report', marginX + 14.5, currentY + 1);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COLOR_SECONDARY);
+  doc.text(`Generated: ${todayFormatted}`, pageWidth - marginX, currentY + 1, { align: 'right' });
+
+  currentY += 6;
+
+  // Prepared for / Period / Currency clean metadata line
+  const metaLine = `Prepared for: ${profileName}   |   Period: ${dateRangeLabel}   |   Currency: ${currencyCode}`;
+  const wrappedMeta = doc.splitTextToSize(sanitizePdfText(metaLine), contentWidth) as string[];
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...COLOR_SECONDARY);
+  doc.text(wrappedMeta, marginX, currentY + 2);
+  currentY += wrappedMeta.length * 4 + 2.5;
+
+  // Primary header divider rule
+  doc.setDrawColor(...COLOR_RULE_DARK);
+  doc.setLineWidth(0.45);
+  doc.line(marginX, currentY, pageWidth - marginX, currentY);
+
+  currentY += 7;
+
+  // ==========================================
+  // EXECUTIVE SUMMARY (CLEAN TYPOGRAPHIC GRID, NO CARDS/FILLS)
+  // ==========================================
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...COLOR_BLACK);
+  doc.text('Executive Summary', marginX, currentY);
+  currentY += 3;
+
+  const netSign = netCashFlow > 0 ? '+' : '';
+  const summaryRows = [
+    [
+      { label: 'TOTAL INCOME', value: formatPdfCurrency(totalIncome, currencyCode) },
+      { label: 'TOTAL EXPENSES', value: formatPdfCurrency(totalExpenses, currencyCode) },
+      { label: 'NET CASH FLOW', value: `${netSign}${formatPdfCurrency(netCashFlow, currencyCode)}` }
+    ],
+    [
+      { label: 'MONEY LENT (RECEIVABLE)', value: formatPdfCurrency(outstandingReceivable, currencyCode) },
+      { label: 'DEBT RECOVERED', value: formatPdfCurrency(totalRepaid, currencyCode) },
+      { label: 'TOTAL SAVINGS SAVED', value: formatPdfCurrency(totalSavings, currencyCode) }
+    ]
+  ];
+
+  const colWidth = contentWidth / 3;
+  const rowHeight = 13;
+
+  doc.setDrawColor(...COLOR_RULE_LIGHT);
+  doc.setLineWidth(0.2);
+  doc.line(marginX, currentY, pageWidth - marginX, currentY);
+
+  summaryRows.forEach((rowItems, rowIndex) => {
+    const rowTop = currentY + rowIndex * rowHeight;
+    rowItems.forEach((item, colIndex) => {
+      const cellX = marginX + colIndex * colWidth;
+      const textX = colIndex === 0 ? cellX : cellX + 3;
+      const maxTextWidth = colWidth - 5;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(...COLOR_SECONDARY);
+      doc.text(item.label, textX, rowTop + 4.5);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(...COLOR_BLACK);
+      const valLines = doc.splitTextToSize(item.value, maxTextWidth) as string[];
+      doc.text(valLines[0] || item.value, textX, rowTop + 10);
+
+      if (colIndex > 0) {
+        doc.setDrawColor(...COLOR_RULE_LIGHT);
+        doc.setLineWidth(0.15);
+        doc.line(cellX, rowTop + 1.5, cellX, rowTop + rowHeight - 1.5);
+      }
+    });
+
+    doc.setDrawColor(...COLOR_RULE_LIGHT);
+    doc.setLineWidth(0.2);
+    doc.line(marginX, rowTop + rowHeight, pageWidth - marginX, rowTop + rowHeight);
+  });
+
+  currentY += summaryRows.length * rowHeight + 9;
+
+  let renderedAnySection = false;
+
+  // ==========================================
+  // SECTION 1: FINANCIAL RECORDS — INCOME
+  // ==========================================
+  if (includeFinancial) {
+    renderedAnySection = true;
+    drawSectionHeader('Financial Records — Income', `${filteredIncomes.length} records`);
+
+    const incomeRows: any[][] = filteredIncomes.length > 0
+      ? filteredIncomes.map(item => [
+          sanitizePdfText(formatDate(item.date, dateFormat)),
+          sanitizePdfText(item.source || 'General'),
+          sanitizePdfText(item.title),
+          sanitizePdfText(item.notes || '-'),
+          formatPdfCurrency(Number(item.amount) || 0, currencyCode)
+        ])
+      : [[{
+          content: 'No income records found for this period.',
+          colSpan: 5,
+          styles: { textColor: COLOR_SECONDARY, fontStyle: 'italic' }
+        }]];
+
+    if (filteredIncomes.length > 0) {
+      incomeRows.push([
+        { content: 'Total', colSpan: 3 },
+        { content: `${filteredIncomes.length} transactions`, styles: { fontStyle: 'normal', textColor: COLOR_SECONDARY } },
+        { content: formatPdfCurrency(totalIncome, currencyCode), styles: { halign: 'right' } }
+      ]);
+    }
+
+    renderStatementTable({
+      head: ['Date', 'Source', 'Title', 'Notes', 'Amount'],
+      body: incomeRows,
+      hasTotalRow: filteredIncomes.length > 0,
+      columnStyles: {
+        0: { cellWidth: 24, halign: 'left' },
+        1: { cellWidth: 28, halign: 'left' },
+        2: { cellWidth: 48, halign: 'left' },
+        3: { cellWidth: 46, halign: 'left' },
+        4: { cellWidth: 32, halign: 'right' }
+      }
+    });
   }
 
   // ==========================================
   // SECTION 2: FINANCIAL RECORDS — EXPENSES
   // ==========================================
   if (includeFinancial) {
+    renderedAnySection = true;
     drawSectionHeader('Financial Records — Expenses', `${filteredExpenses.length} records`);
 
-    const expenseRows = filteredExpenses.length > 0
+    const expenseRows: any[][] = filteredExpenses.length > 0
       ? filteredExpenses.map(item => [
-          formatDate(item.date, dateFormat),
-          item.category || 'General',
-          item.title,
-          item.paymentMethod || 'Other',
-          formatCurrency(Number(item.amount) || 0, currencyCode)
+          sanitizePdfText(formatDate(item.date, dateFormat)),
+          sanitizePdfText(item.category || 'General'),
+          sanitizePdfText(item.title),
+          sanitizePdfText(item.paymentMethod || 'Other'),
+          formatPdfCurrency(Number(item.amount) || 0, currencyCode)
         ])
-      : [['—', '—', 'No expense records found for this period.', '—', formatCurrency(0, currencyCode)]];
+      : [[{
+          content: 'No expense records found for this period.',
+          colSpan: 5,
+          styles: { textColor: COLOR_SECONDARY, fontStyle: 'italic' }
+        }]];
 
     if (filteredExpenses.length > 0) {
       expenseRows.push([
-        'TOTAL',
-        '',
-        '',
-        `${filteredExpenses.length} Transactions`,
-        formatCurrency(totalExpenses, currencyCode)
+        { content: 'Total', colSpan: 3 },
+        { content: `${filteredExpenses.length} transactions`, styles: { fontStyle: 'normal', textColor: COLOR_SECONDARY } },
+        { content: formatPdfCurrency(totalExpenses, currencyCode), styles: { halign: 'right' } }
       ]);
     }
 
-    const autoTableFn = (autoTable as unknown as { default?: typeof autoTable }).default || autoTable;
-    autoTableFn(doc, {
-      startY: currentY,
-      margin: { left: marginX, right: marginX },
-      head: [['Date', 'Category', 'Description', 'Payment Method', 'Amount']],
+    renderStatementTable({
+      head: ['Date', 'Category', 'Description', 'Payment Method', 'Amount'],
       body: expenseRows,
-      theme: 'grid',
-      styles: {
-        fontSize: 7.5,
-        cellPadding: 2,
-        textColor: [20, 20, 20],
-        lineColor: [230, 230, 230],
-        lineWidth: 0.15
-      },
-      headStyles: {
-        fillColor: [17, 17, 17],
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 7.5
-      },
+      hasTotalRow: filteredExpenses.length > 0,
       columnStyles: {
-        0: { cellWidth: 24 },
-        1: { cellWidth: 32 },
-        2: { cellWidth: 50 },
-        3: { cellWidth: 42 },
-        4: { cellWidth: 34, halign: 'right', fontStyle: 'bold' }
-      },
-      didParseCell: (hookData) => {
-        if (hookData.section === 'body' && hookData.row.index === expenseRows.length - 1 && filteredExpenses.length > 0) {
-          hookData.cell.styles.fontStyle = 'bold';
-          hookData.cell.styles.fillColor = [245, 245, 245];
-        }
+        0: { cellWidth: 24, halign: 'left' },
+        1: { cellWidth: 30, halign: 'left' },
+        2: { cellWidth: 48, halign: 'left' },
+        3: { cellWidth: 44, halign: 'left' },
+        4: { cellWidth: 32, halign: 'right' }
       }
     });
-
-    currentY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
   }
 
   // ==========================================
-  // SECTION 3: DEBT MANAGEMENT & LEDGER
+  // SECTION 3: DEBT MANAGEMENT LEDGER
   // ==========================================
   if (includeDebt) {
-    drawSectionHeader('Debt Management Ledger', `${filteredDebts.length} active records`);
+    renderedAnySection = true;
+    drawSectionHeader('Debt Management Ledger', `${filteredDebts.length} records`);
 
-    const debtRows = filteredDebts.length > 0
+    const debtRows: any[][] = filteredDebts.length > 0
       ? filteredDebts.map(d => {
           const remaining = calculateDebtOutstanding(d, data.debtRepayments);
           const repaid = Math.max(0, (Number(d.original_amount) || 0) - remaining);
@@ -377,302 +493,253 @@ export async function generateXOSReportPDF(
             : 'Outstanding';
 
           return [
-            formatDate(d.lent_date, dateFormat),
-            d.person_name,
-            d.description || d.notes || '—',
-            formatCurrency(d.original_amount, currencyCode),
-            formatCurrency(repaid, currencyCode),
-            formatCurrency(remaining, currencyCode),
-            d.due_date ? formatDate(d.due_date, dateFormat) : 'None',
+            sanitizePdfText(formatDate(d.lent_date, dateFormat)),
+            sanitizePdfText(d.person_name),
+            sanitizePdfText(d.description || d.notes || '-'),
+            formatPdfCurrency(d.original_amount, currencyCode),
+            formatPdfCurrency(repaid, currencyCode),
+            formatPdfCurrency(remaining, currencyCode),
+            d.due_date ? sanitizePdfText(formatDate(d.due_date, dateFormat)) : 'None',
             statusLabel
           ];
         })
-      : [['—', '—', 'No debt records logged.', '—', '—', '—', '—', '—']];
+      : [[{
+          content: 'No debt records logged.',
+          colSpan: 8,
+          styles: { textColor: COLOR_SECONDARY, fontStyle: 'italic' }
+        }]];
 
-    const autoTableFn = (autoTable as unknown as { default?: typeof autoTable }).default || autoTable;
-    autoTableFn(doc, {
-      startY: currentY,
-      margin: { left: marginX, right: marginX },
-      head: [['Lent Date', 'Person', 'Description', 'Original', 'Repaid', 'Balance', 'Due Date', 'Status']],
+    renderStatementTable({
+      head: ['Date', 'Person', 'Description', 'Original', 'Repaid', 'Balance', 'Due Date', 'Status'],
       body: debtRows,
-      theme: 'grid',
-      styles: {
-        fontSize: 7,
-        cellPadding: 1.8,
-        textColor: [20, 20, 20],
-        lineColor: [230, 230, 230],
-        lineWidth: 0.15
-      },
-      headStyles: {
-        fillColor: [17, 17, 17],
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 7
-      },
+      fontSize: 7.4,
+      cellPaddingX: 1.5,
       columnStyles: {
-        0: { cellWidth: 20 },
-        1: { cellWidth: 26 },
-        2: { cellWidth: 30 },
-        3: { cellWidth: 22, halign: 'right' },
-        4: { cellWidth: 20, halign: 'right' },
-        5: { cellWidth: 22, halign: 'right', fontStyle: 'bold' },
-        6: { cellWidth: 22 },
-        7: { cellWidth: 20, halign: 'center' }
+        0: { cellWidth: 20, halign: 'left' },
+        1: { cellWidth: 25, halign: 'left' },
+        2: { cellWidth: 23, halign: 'left' },
+        3: { cellWidth: 24, halign: 'right' },
+        4: { cellWidth: 22, halign: 'right' },
+        5: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
+        6: { cellWidth: 20, halign: 'left' },
+        7: { cellWidth: 20, halign: 'left' }
       }
     });
-
-    currentY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
   }
 
   // ==========================================
   // SECTION 4: WORK ATTENDANCE & HOURS
   // ==========================================
   if (includeAttendance) {
+    renderedAnySection = true;
     drawSectionHeader('Work Attendance & Duty History', `${filteredAttendance.length} days logged`);
 
-    const attRows = filteredAttendance.length > 0
+    const attRows: any[][] = filteredAttendance.length > 0
       ? filteredAttendance.map(a => [
-          formatDate(a.date, dateFormat),
-          a.status,
-          a.checkInTime || '—',
-          a.checkOutTime || '—',
-          a.calculatedHours ? `${a.calculatedHours} hrs` : '—',
-          a.notes || '—'
+          sanitizePdfText(formatDate(a.date, dateFormat)),
+          sanitizePdfText(a.status),
+          sanitizePdfText(a.checkInTime || '-'),
+          sanitizePdfText(a.checkOutTime || '-'),
+          a.calculatedHours ? `${a.calculatedHours} hrs` : '-',
+          sanitizePdfText(a.notes || '-')
         ])
-      : [['—', 'No attendance records recorded for this period.', '—', '—', '—', '—']];
+      : [[{
+          content: 'No attendance records recorded for this period.',
+          colSpan: 6,
+          styles: { textColor: COLOR_SECONDARY, fontStyle: 'italic' }
+        }]];
 
-    const autoTableFn = (autoTable as unknown as { default?: typeof autoTable }).default || autoTable;
-    autoTableFn(doc, {
-      startY: currentY,
-      margin: { left: marginX, right: marginX },
-      head: [['Date', 'Status', 'Check In', 'Check Out', 'Hours', 'Notes']],
+    renderStatementTable({
+      head: ['Date', 'Status', 'Check In', 'Check Out', 'Hours', 'Notes'],
       body: attRows,
-      theme: 'grid',
-      styles: {
-        fontSize: 7.2,
-        cellPadding: 1.8,
-        textColor: [20, 20, 20],
-        lineColor: [230, 230, 230],
-        lineWidth: 0.15
-      },
-      headStyles: {
-        fillColor: [17, 17, 17],
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 7.2
-      },
       columnStyles: {
-        0: { cellWidth: 26 },
-        1: { cellWidth: 26, halign: 'center' },
-        2: { cellWidth: 24 },
-        3: { cellWidth: 24 },
-        4: { cellWidth: 24, halign: 'right' },
-        5: { cellWidth: 58 }
+        0: { cellWidth: 24, halign: 'left' },
+        1: { cellWidth: 22, halign: 'left' },
+        2: { cellWidth: 22, halign: 'left' },
+        3: { cellWidth: 22, halign: 'left' },
+        4: { cellWidth: 22, halign: 'right' },
+        5: { cellWidth: 66, halign: 'left' }
       }
     });
-
-    currentY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
   }
 
   // ==========================================
   // SECTION 5: SALARY INFORMATION & PAYOUTS
   // ==========================================
   if (includeSalary) {
+    renderedAnySection = true;
     const salaryCfg = data.settings.salaryConfig;
     const salarySubtitle = salaryCfg
-      ? `Daily Base: ${formatCurrency(salaryCfg.dailyBaseSalary || 0, currencyCode)} | Standard Hours: ${salaryCfg.standardWorkingHours || 8}h | Extra Rate: ${formatCurrency(salaryCfg.extraHourRate || 0, currencyCode)}/hr`
+      ? `Daily Base: ${formatPdfCurrency(salaryCfg.dailyBaseSalary || 0, currencyCode)}  |  Standard Hours: ${salaryCfg.standardWorkingHours || 8}h  |  Extra Rate: ${formatPdfCurrency(salaryCfg.extraHourRate || 0, currencyCode)}/hr`
       : undefined;
 
-    drawSectionHeader('Salary Information & Payout Records', salarySubtitle);
+    drawSectionHeader(
+      'Salary Information & Payout Records',
+      `${filteredPayouts.length} slips`,
+      salarySubtitle
+    );
 
-    const salaryRows = filteredPayouts.length > 0
+    const salaryRows: any[][] = filteredPayouts.length > 0
       ? filteredPayouts.map(p => [
-          `${formatDate(p.periodStart, dateFormat)} to ${formatDate(p.periodEnd, dateFormat)}`,
-          formatDate(p.paidAt, dateFormat),
-          formatCurrency(p.amountPaid, currencyCode),
-          p.notes || '—'
+          sanitizePdfText(`${formatDate(p.periodStart, dateFormat)} to ${formatDate(p.periodEnd, dateFormat)}`),
+          sanitizePdfText(formatDate(p.paidAt, dateFormat)),
+          formatPdfCurrency(p.amountPaid, currencyCode),
+          sanitizePdfText(p.notes || '-')
         ])
-      : [['—', '—', 'No recorded salary payout slips.', '—']];
+      : [[{
+          content: 'No recorded salary payout slips.',
+          colSpan: 4,
+          styles: { textColor: COLOR_SECONDARY, fontStyle: 'italic' }
+        }]];
 
-    const autoTableFn = (autoTable as unknown as { default?: typeof autoTable }).default || autoTable;
-    autoTableFn(doc, {
-      startY: currentY,
-      margin: { left: marginX, right: marginX },
-      head: [['Pay Period', 'Paid Date', 'Amount Paid', 'Notes']],
+    renderStatementTable({
+      head: ['Pay Period', 'Paid Date', 'Amount Paid', 'Notes'],
       body: salaryRows,
-      theme: 'grid',
-      styles: {
-        fontSize: 7.2,
-        cellPadding: 1.8,
-        textColor: [20, 20, 20],
-        lineColor: [230, 230, 230],
-        lineWidth: 0.15
-      },
-      headStyles: {
-        fillColor: [17, 17, 17],
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 7.2
-      },
       columnStyles: {
-        0: { cellWidth: 46 },
-        1: { cellWidth: 30 },
-        2: { cellWidth: 36, halign: 'right', fontStyle: 'bold' },
-        3: { cellWidth: 70 }
+        0: { cellWidth: 48, halign: 'left' },
+        1: { cellWidth: 28, halign: 'left' },
+        2: { cellWidth: 32, halign: 'right', fontStyle: 'bold' },
+        3: { cellWidth: 70, halign: 'left' }
       }
     });
-
-    currentY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
   }
 
   // ==========================================
-  // SECTION 6: SAVINGS GOALS & TRANSACTIONS
+  // SECTION 6: SAVINGS & WEALTH ACCUMULATION
   // ==========================================
   if (includeSavings) {
-    drawSectionHeader('Savings & Wealth Accumulation', `${data.savingsGoals.length} goals`);
+    renderedAnySection = true;
+    drawSectionHeader('Savings & Reserves', `${data.savingsGoals.length} goals`);
 
-    const savingsRows = data.savingsGoals.length > 0
+    const savingsRows: any[][] = data.savingsGoals.length > 0
       ? data.savingsGoals.map(g => {
           const target = Number(g.targetAmount) || 0;
           const current = Number(g.currentAmount) || 0;
           const percent = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 100;
           return [
-            g.name,
-            formatCurrency(target, currencyCode),
-            formatCurrency(current, currencyCode),
+            sanitizePdfText(g.name),
+            formatPdfCurrency(target, currencyCode),
+            formatPdfCurrency(current, currencyCode),
             `${percent}%`,
-            g.targetDate ? formatDate(g.targetDate, dateFormat) : 'Ongoing',
-            g.description || '—'
+            g.targetDate ? sanitizePdfText(formatDate(g.targetDate, dateFormat)) : 'Ongoing',
+            sanitizePdfText(g.description || '-')
           ];
         })
-      : [['—', 'No savings goals registered.', '—', '—', '—', '—']];
+      : [[{
+          content: 'No savings goals registered.',
+          colSpan: 6,
+          styles: { textColor: COLOR_SECONDARY, fontStyle: 'italic' }
+        }]];
 
-    const autoTableFn = (autoTable as unknown as { default?: typeof autoTable }).default || autoTable;
-    autoTableFn(doc, {
-      startY: currentY,
-      margin: { left: marginX, right: marginX },
-      head: [['Goal Name', 'Target Amount', 'Current Saved', 'Progress', 'Target Date', 'Notes']],
+    renderStatementTable({
+      head: ['Goal Name', 'Target Amount', 'Current Saved', 'Progress', 'Target Date', 'Notes'],
       body: savingsRows,
-      theme: 'grid',
-      styles: {
-        fontSize: 7.2,
-        cellPadding: 1.8,
-        textColor: [20, 20, 20],
-        lineColor: [230, 230, 230],
-        lineWidth: 0.15
-      },
-      headStyles: {
-        fillColor: [17, 17, 17],
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 7.2
-      },
       columnStyles: {
-        0: { cellWidth: 36 },
+        0: { cellWidth: 36, halign: 'left' },
         1: { cellWidth: 28, halign: 'right' },
         2: { cellWidth: 28, halign: 'right', fontStyle: 'bold' },
-        3: { cellWidth: 20, halign: 'center' },
-        4: { cellWidth: 26 },
-        5: { cellWidth: 44 }
+        3: { cellWidth: 18, halign: 'right' },
+        4: { cellWidth: 24, halign: 'left' },
+        5: { cellWidth: 44, halign: 'left' }
       }
     });
-
-    currentY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
   }
 
   // ==========================================
-  // SECTION 7: GOALS & DREAMS
+  // SECTION 7: GOALS & AMBITIONS
   // ==========================================
   if (includeGoals) {
-    drawSectionHeader('Goals & Dreams Roadmap', `${data.goals.length} active roadmap items`);
+    renderedAnySection = true;
+    drawSectionHeader('Goals & Ambitions Roadmap', `${data.goals.length} items`);
 
-    const goalRows = data.goals.length > 0
+    const goalRows: any[][] = data.goals.length > 0
       ? data.goals.map(g => [
-          g.title,
-          g.category || 'General',
-          g.priority,
-          g.status,
+          sanitizePdfText(g.title),
+          sanitizePdfText(g.category || 'General'),
+          sanitizePdfText(g.priority),
+          sanitizePdfText(g.status),
           `${g.progressPercentage ?? 0}%`,
-          g.targetDate ? formatDate(g.targetDate, dateFormat) : 'Open',
-          g.targetAmount ? formatCurrency(g.targetAmount, currencyCode) : '—'
+          g.targetDate ? sanitizePdfText(formatDate(g.targetDate, dateFormat)) : 'Open',
+          g.targetAmount ? formatPdfCurrency(g.targetAmount, currencyCode) : '-'
         ])
-      : [['—', 'No life goals or dreams recorded.', '—', '—', '—', '—', '—']];
+      : [[{
+          content: 'No life goals or ambitions recorded.',
+          colSpan: 7,
+          styles: { textColor: COLOR_SECONDARY, fontStyle: 'italic' }
+        }]];
 
-    const autoTableFn = (autoTable as unknown as { default?: typeof autoTable }).default || autoTable;
-    autoTableFn(doc, {
-      startY: currentY,
-      margin: { left: marginX, right: marginX },
-      head: [['Title', 'Category', 'Priority', 'Status', 'Progress', 'Target Date', 'Target Value']],
+    renderStatementTable({
+      head: ['Title', 'Category', 'Priority', 'Status', 'Progress', 'Target Date', 'Target Value'],
       body: goalRows,
-      theme: 'grid',
-      styles: {
-        fontSize: 7.2,
-        cellPadding: 1.8,
-        textColor: [20, 20, 20],
-        lineColor: [230, 230, 230],
-        lineWidth: 0.15
-      },
-      headStyles: {
-        fillColor: [17, 17, 17],
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 7.2
-      },
+      fontSize: 7.5,
       columnStyles: {
-        0: { cellWidth: 42 },
-        1: { cellWidth: 26 },
-        2: { cellWidth: 20, halign: 'center' },
-        3: { cellWidth: 24, halign: 'center' },
-        4: { cellWidth: 18, halign: 'center' },
-        5: { cellWidth: 24 },
-        6: { cellWidth: 28, halign: 'right' }
+        0: { cellWidth: 44, halign: 'left' },
+        1: { cellWidth: 26, halign: 'left' },
+        2: { cellWidth: 18, halign: 'left' },
+        3: { cellWidth: 24, halign: 'left' },
+        4: { cellWidth: 18, halign: 'right' },
+        5: { cellWidth: 22, halign: 'left' },
+        6: { cellWidth: 26, halign: 'right' }
       }
     });
+  }
 
-    currentY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+  if (!renderedAnySection) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(9);
+    doc.setTextColor(...COLOR_SECONDARY);
+    doc.text('No report sections were selected for export.', marginX, currentY + 4);
   }
 
   // ==========================================
   // RUNNING HEADERS & FOOTERS ON ALL PAGES
   // ==========================================
   const totalPages = doc.getNumberOfPages();
+  const generatedHumanDate = sanitizePdfText(
+    new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    })
+  );
+
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
 
-    // Running Header (pages 2 and up)
+    // Subtle running header on continuation pages (page 2+)
     if (i > 1) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
-      doc.setTextColor(120, 120, 120);
-      doc.text('XOS — PERSONAL LIFE OPERATING SYSTEM', marginX, 10);
-      doc.text('AUDIT & EXECUTIVE REPORT', pageWidth - marginX, 10, { align: 'right' });
+      doc.setTextColor(...COLOR_MUTED);
+      doc.text('XOS — Statement Report', marginX, 11);
+      doc.text(dateRangeLabel, pageWidth - marginX, 11, { align: 'right' });
 
-      // Subtle divider line
-      doc.setDrawColor(228, 228, 231);
+      doc.setDrawColor(...COLOR_RULE_LIGHT);
       doc.setLineWidth(0.2);
-      doc.line(marginX, 12, pageWidth - marginX, 12);
+      doc.line(marginX, 14, pageWidth - marginX, 14);
     }
 
-    // Running Footer (all pages)
-    doc.setDrawColor(228, 228, 231);
+    // Minimal footer divider & metadata
+    doc.setDrawColor(...COLOR_RULE_LIGHT);
     doc.setLineWidth(0.2);
-    doc.line(marginX, pageHeight - 12, pageWidth - marginX, pageHeight - 12);
-
-    // Sky blue accent dot on bottom
-    doc.setFillColor(135, 206, 235);
-    doc.circle(marginX + 1.5, pageHeight - 7.5, 0.8, 'F');
+    doc.line(marginX, pageHeight - 13, pageWidth - marginX, pageHeight - 13);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.setTextColor(130, 130, 130);
+    doc.setFontSize(7.5);
+    doc.setTextColor(...COLOR_MUTED);
     doc.text(
-      `Private & Confidential  |  Generated on ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`,
-      marginX + 4,
-      pageHeight - 6.5
+      `Private & Confidential  |  Generated ${generatedHumanDate}`,
+      marginX,
+      pageHeight - 8
     );
 
-    doc.setFont('helvetica', 'bold');
-    doc.text(`Page ${i} of ${totalPages}`, pageWidth - marginX, pageHeight - 6.5, { align: 'right' });
+    // Add page numbers only when multiple pages are generated
+    if (totalPages > 1) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(...COLOR_SECONDARY);
+      doc.text(`Page ${i} of ${totalPages}`, pageWidth - marginX, pageHeight - 8, { align: 'right' });
+    }
   }
 
   return doc.output('blob');

@@ -10,6 +10,7 @@ import { OfflineIndicator } from './components/common/OfflineIndicator';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { useXOSData } from './hooks/useXOSData';
 import { DateRangeFilter } from './types';
+import { clearAuthUrlParams } from './utils/authValidation';
 
 // Lazy-loaded Workspace Views
 const DashboardView = lazy(() =>
@@ -189,6 +190,30 @@ function XOSApplication() {
   const isAuthenticatedOrDemo = Boolean(user || isDemoUser);
   const showingAuthScreen = !isAuthenticatedOrDemo || authRoute === 'callback' || authRoute === 'reset-password';
 
+  // Clean auth URL parameters/hashes once authenticated in workspace,
+  // and ensure signing out resets stale callback/verify routes back to welcome.
+  useEffect(() => {
+    if (isAuthenticatedOrDemo && !showingAuthScreen) {
+      clearAuthUrlParams();
+      if (authRoute !== 'welcome') {
+        setAuthRoute('welcome');
+      }
+    }
+  }, [isAuthenticatedOrDemo, showingAuthScreen, authRoute]);
+
+  const navigateWelcome = useCallback(() => {
+    clearAuthUrlParams();
+    setAuthRoute('welcome');
+  }, []);
+
+  const navigateLogin = useCallback(() => {
+    setAuthRoute('login');
+  }, []);
+
+  const navigateResetPassword = useCallback(() => {
+    setAuthRoute('reset-password');
+  }, []);
+
   // Route-accurate SEO title & robots indexability (never expose private user info)
   useEffect(() => {
     if (loading) {
@@ -239,16 +264,16 @@ function XOSApplication() {
           {authRoute === 'login' && (
             <LoginView
               key="login"
-              onNavigate={(route) => setAuthRoute(route)}
-              onSuccess={() => setAuthRoute('welcome')}
+              onNavigate={setAuthRoute}
+              onSuccess={navigateWelcome}
             />
           )}
 
           {authRoute === 'signup' && (
             <SignUpView
               key="signup"
-              onNavigate={(route) => setAuthRoute(route)}
-              onSuccess={() => setAuthRoute('welcome')}
+              onNavigate={setAuthRoute}
+              onSuccess={navigateWelcome}
               onSetRegisteredEmail={setRegisteredEmail}
             />
           )}
@@ -256,22 +281,22 @@ function XOSApplication() {
           {authRoute === 'magic-link' && (
             <MagicLinkView
               key="magic-link"
-              onNavigate={(route) => setAuthRoute(route)}
+              onNavigate={setAuthRoute}
             />
           )}
 
           {authRoute === 'forgot-password' && (
             <ForgotPasswordView
               key="forgot-password"
-              onNavigate={(route) => setAuthRoute(route)}
+              onNavigate={setAuthRoute}
             />
           )}
 
           {authRoute === 'reset-password' && (
             <ResetPasswordView
               key="reset-password"
-              onSuccess={() => setAuthRoute('welcome')}
-              onNavigateLogin={() => setAuthRoute('login')}
+              onSuccess={navigateWelcome}
+              onNavigateLogin={navigateLogin}
             />
           )}
 
@@ -279,16 +304,16 @@ function XOSApplication() {
             <VerifyEmailView
               key="verify-email"
               email={registeredEmail}
-              onNavigateLogin={() => setAuthRoute('login')}
+              onNavigateLogin={navigateLogin}
             />
           )}
 
           {authRoute === 'callback' && (
             <AuthCallbackView
               key="callback"
-              onSuccess={() => setAuthRoute('welcome')}
-              onPasswordRecovery={() => setAuthRoute('reset-password')}
-              onNavigateLogin={() => setAuthRoute('login')}
+              onSuccess={navigateWelcome}
+              onPasswordRecovery={navigateResetPassword}
+              onNavigateLogin={navigateLogin}
             />
           )}
         </AnimatePresence>

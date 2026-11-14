@@ -25,7 +25,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
   backLabel = 'Back to Welcome'
 }) => {
   return (
-    <div className="min-h-screen min-h-[100dvh] bg-white text-[#111318] flex flex-col justify-center items-center px-4 sm:px-6 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] relative overflow-x-clip select-none">
+    <div className="min-h-screen min-h-[100dvh] bg-white text-[#111318] flex flex-col justify-center items-center pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] sm:px-6 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] relative overflow-x-clip">
       {/* Main Container */}
       <motion.div
         variants={pageVariants}

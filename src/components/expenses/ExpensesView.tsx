@@ -256,22 +256,22 @@ export const ExpensesView: React.FC = () => {
 
       {/* Controls Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-neutral-50 p-2.5 rounded-2xl border border-neutral-200">
-        <div className="relative flex-1">
-          <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-3" />
+        <div className="relative flex-1 min-w-0">
+          <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             placeholder="Search expense titles or notes..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 text-xs border border-neutral-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+            className="w-full min-h-[40px] pl-9 pr-3 py-2 text-xs border border-neutral-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="px-2.5 py-1.5 text-xs border border-neutral-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+            className="flex-1 sm:flex-initial min-w-0 min-h-[40px] px-2.5 py-2 text-xs border border-neutral-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
           >
             <option value="all">All Categories</option>
             {data.settings.customExpenseCategories.map(c => (
@@ -282,7 +282,7 @@ export const ExpensesView: React.FC = () => {
           <select
             value={selectedPaymentMethod}
             onChange={(e) => setSelectedPaymentMethod(e.target.value)}
-            className="px-2.5 py-1.5 text-xs border border-neutral-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+            className="flex-1 sm:flex-initial min-w-0 min-h-[40px] px-2.5 py-2 text-xs border border-neutral-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
           >
             <option value="all">All Payment Methods</option>
             <option value="Cash">Cash</option>

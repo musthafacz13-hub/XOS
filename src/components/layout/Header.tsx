@@ -100,7 +100,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
               <select
                 value={dateFilter.preset}
                 onChange={(e) => handlePresetChange(e.target.value as DateFilterPreset)}
-                className="h-9 px-2 text-xs font-semibold text-neutral-800 bg-white/90 border border-black/[0.08] rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+                className="min-h-[38px] max-w-[136px] px-2.5 py-1.5 text-xs font-semibold text-neutral-800 bg-white/90 border border-black/[0.08] rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
                 aria-label="Filter timeline"
               >
                 {PRESET_OPTIONS.map(opt => (

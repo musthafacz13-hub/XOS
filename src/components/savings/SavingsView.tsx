@@ -494,7 +494,7 @@ export const SavingsView: React.FC = () => {
           aria-modal="true"
         >
           <div 
-            className="bg-white rounded-2xl max-w-md w-full border border-black/[0.08] shadow-2xl p-5 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-2xl max-w-md w-full border border-black/[0.08] shadow-2xl p-5 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto overflow-x-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
@@ -624,7 +624,7 @@ export const SavingsView: React.FC = () => {
           aria-modal="true"
         >
           <div 
-            className="bg-white rounded-2xl max-w-sm w-full border border-black/[0.08] shadow-2xl p-5 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-2xl max-w-sm w-full border border-black/[0.08] shadow-2xl p-5 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto overflow-x-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-2 border-b border-neutral-100">

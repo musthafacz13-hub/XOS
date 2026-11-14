@@ -3,12 +3,13 @@
  * Supports password authentication, magic link redirection, forgot password routing,
  * and account creation transitions.
  */
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Eye, EyeOff, Loader2, ArrowRight, Mail } from 'lucide-react';
+import { Eye, EyeOff, Loader2, ArrowRight, Mail, CheckCircle2 } from 'lucide-react';
 import { AuthLayout } from './AuthLayout';
 import { useAuth } from '../../context/AuthContext';
 import { tapScale } from '../../utils/motion';
+import { validateLoginInputs, normalizeAuthEmail } from '../../utils/authValidation';
 
 interface LoginViewProps {
   onNavigate: (view: 'welcome' | 'signup' | 'magic-link' | 'forgot-password') => void;
@@ -23,37 +24,50 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const mountedRef = useRef(true);
+  const isSubmittingRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (loading) return;
+    if (isSubmittingRef.current || loading) return;
 
     setErrorMessage(null);
+    setSuccessMessage(null);
 
-    const cleanEmail = email.trim();
-    if (!cleanEmail) {
-      setErrorMessage('Please enter your email address.');
+    const validationError = validateLoginInputs(email, password);
+    if (validationError) {
+      setErrorMessage(validationError);
       return;
     }
 
-    if (!cleanEmail.includes('@') || !cleanEmail.includes('.')) {
-      setErrorMessage('Please enter a valid email address.');
-      return;
-    }
-
-    if (!password) {
-      setErrorMessage('Please enter your password.');
-      return;
-    }
-
+    const cleanEmail = normalizeAuthEmail(email);
+    isSubmittingRef.current = true;
     setLoading(true);
-    const { error } = await loginWithPassword(cleanEmail, password);
-    setLoading(false);
 
-    if (error) {
-      setErrorMessage(error);
-    } else {
-      onSuccess();
+    try {
+      const { error } = await loginWithPassword(cleanEmail, password);
+      if (!mountedRef.current) return;
+
+      if (error) {
+        setErrorMessage(error);
+      } else {
+        setSuccessMessage('Signed in successfully. Opening your workspace...');
+        onSuccess();
+      }
+    } finally {
+      isSubmittingRef.current = false;
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -67,12 +81,23 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
         {/* Error Alert Box */}
         {errorMessage && (
-          <div 
-            role="alert" 
-            className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start gap-2 animate-in fade-in duration-150"
+          <div
+            role="alert"
+            className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start gap-2"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 shrink-0" />
             <span className="leading-relaxed">{errorMessage}</span>
+          </div>
+        )}
+
+        {/* Success Notice */}
+        {successMessage && (
+          <div
+            role="status"
+            className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2"
+          >
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="leading-relaxed">{successMessage}</span>
           </div>
         )}
 
@@ -94,27 +119,34 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
           <input
             id="login-email"
             type="email"
+            inputMode="email"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             required
             autoComplete="email"
-            autoFocus
             disabled={loading}
             placeholder="name@example.com"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full min-h-[44px] px-3.5 py-2.5 text-base sm:text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] transition-all disabled:opacity-60"
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (errorMessage) setErrorMessage(null);
+            }}
+            className="w-full min-h-[44px] px-3.5 py-2.5 text-base md:text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] transition-all disabled:opacity-60"
           />
         </div>
 
         {/* Password Field */}
         <div className="space-y-1.5 text-left">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <label htmlFor="login-password" className="block text-xs font-semibold text-neutral-700">
               Password
             </label>
             <button
               type="button"
+              disabled={loading}
               onClick={() => onNavigate('forgot-password')}
-              className="text-xs text-neutral-500 hover:text-black transition-colors font-medium cursor-pointer"
+              className="text-xs text-neutral-500 hover:text-black transition-colors font-medium cursor-pointer disabled:opacity-50 py-0.5"
             >
               Forgot password?
             </button>
@@ -128,14 +160,19 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
               disabled={loading}
               placeholder="••••••••"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full min-h-[44px] pl-3.5 pr-11 py-2.5 text-base sm:text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] transition-all disabled:opacity-60"
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (errorMessage) setErrorMessage(null);
+              }}
+              className="w-full min-h-[44px] pl-3.5 pr-12 py-2.5 text-base md:text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] transition-all disabled:opacity-60"
             />
             <button
               type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+              disabled={loading}
+              onClick={() => setShowPassword(prev => !prev)}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100/80 transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
               aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-pressed={showPassword}
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
@@ -175,8 +212,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
         {/* Magic Link Alternative Button */}
         <button
           type="button"
+          disabled={loading}
           onClick={() => onNavigate('magic-link')}
-          className="w-full min-h-[44px] flex items-center justify-center gap-2 py-2.5 bg-neutral-50 hover:bg-neutral-100 text-neutral-700 text-xs font-semibold rounded-xl border border-neutral-200 transition-colors cursor-pointer"
+          className="w-full min-h-[44px] flex items-center justify-center gap-2 py-2.5 bg-neutral-50 hover:bg-neutral-100 text-neutral-700 text-xs font-semibold rounded-xl border border-neutral-200 transition-colors cursor-pointer disabled:opacity-50"
         >
           <Mail className="w-3.5 h-3.5 text-[#8ECFFF]" />
           <span>Passwordless Magic Link</span>
@@ -187,8 +225,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
           <span>Don't have an account yet? </span>
           <button
             type="button"
+            disabled={loading}
             onClick={() => onNavigate('signup')}
-            className="font-semibold text-[#111111] hover:underline cursor-pointer"
+            className="font-semibold text-[#111111] hover:underline cursor-pointer disabled:opacity-50"
           >
             Create an Account
           </button>

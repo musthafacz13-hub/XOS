@@ -2344,8 +2344,228 @@ async function runPersistenceTests() {
     }
     console.log('✓ Test 26 passed.');
 
+    // ==========================================
+    // TEST 27: Override Reload, Non-Present Normalization, Multi-Date, Duplicate Prevention, Failure/Retry & User Isolation
+    // ==========================================
+    console.log('Test 27: Override reload, Non-Present normalization, multi-date, duplicate coalescing, failure/retry & user isolation...');
+    {
+      const dbConfigsByUser: Record<string, any> = {
+        [USER_A]: {
+          id: 'cfg_a',
+          user_id: USER_A,
+          daily_base_salary: 700,
+          addon_salary: 150,
+          addon_enabled: true,
+          standard_hours: 8,
+          extra_hour_rate: 120,
+          overtime_enabled: true,
+          currency_code: 'INR',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+        // Note: USER_B intentionally starts with NO salary_configs row
+      };
+      const dbAttendanceByUser: Record<string, any[]> = {
+        [USER_A]: [],
+        [USER_B]: []
+      };
+
+      let currentAuthUser = USER_A;
+      let salaryUpsertCount = 0;
+      let attendanceUpsertCount = 0;
+      let failNextSalaryWrite = false;
+      let failNextAttendanceWrite = false;
+
+      const createScopedClient = (uid: string) =>
+        createMockSupabase(uid, {
+          salary_configs: (ctx) => {
+            if (ctx.op === 'upsert') {
+              salaryUpsertCount += 1;
+              if (failNextSalaryWrite) {
+                return { data: null, error: { message: 'Simulated salary_configs write failure' } };
+              }
+              dbConfigsByUser[uid] = {
+                ...(dbConfigsByUser[uid] || { id: `cfg_${uid}`, created_at: new Date().toISOString() }),
+                ...ctx.payload,
+                updated_at: new Date().toISOString()
+              };
+              return { data: dbConfigsByUser[uid], error: null };
+            }
+            return { data: dbConfigsByUser[uid] || null, error: null };
+          },
+          attendance_records: (ctx) => {
+            if (ctx.op === 'upsert') {
+              attendanceUpsertCount += 1;
+              if (failNextAttendanceWrite) {
+                return { data: null, error: { message: 'Simulated attendance_records write failure' } };
+              }
+              const list = dbAttendanceByUser[uid] || (dbAttendanceByUser[uid] = []);
+              const idx = list.findIndex(r => r.attendance_date === ctx.payload.attendance_date);
+              const row = {
+                id: idx >= 0 ? list[idx].id : `att_${uid}_${list.length + 1}`,
+                ...ctx.payload,
+                created_at: idx >= 0 ? list[idx].created_at : new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              };
+              if (idx >= 0) list[idx] = row;
+              else list.unshift(row);
+              return { data: row, error: null };
+            }
+            return { data: dbAttendanceByUser[uid] || [], error: null };
+          }
+        });
+
+      let activeMockClient = createScopedClient(USER_A);
+      const switchUser = (uid: string) => {
+        currentAuthUser = uid;
+        activeMockClient = createScopedClient(uid);
+        repository.clearUserData();
+        repository.setActiveUserId(uid);
+        configureRepositoryBackendForTests(activeMockClient, true);
+      };
+
+      switchUser(USER_A);
+      await repository.fetchAllUserData(USER_A);
+
+      // 1. Multiple attendance records across different dates + manual override reload persistence
+      await repository.upsertAttendanceRecord({
+        date: '2026-09-01',
+        status: 'Present',
+        calculatedHours: 9,
+        salaryOverrideEnabled: true,
+        salaryOverrideAmount: 1350,
+        notes: 'Override day'
+      });
+      await repository.upsertAttendanceRecord({
+        date: '2026-09-02',
+        status: 'Present',
+        calculatedHours: 10
+      });
+
+      // Reload from DB and verify manual override + formula day both persisted accurately
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      await repository.fetchAllUserData(USER_A);
+      const reloadedSept1 = repository.getAttendance().find(a => a.date === '2026-09-01')!;
+      const reloadedSept2 = repository.getAttendance().find(a => a.date === '2026-09-02')!;
+      assert(reloadedSept1.salaryOverrideEnabled === true && reloadedSept1.salaryOverrideAmount === 1350 && reloadedSept1.dailyEarnedSalary === 1350, 'Manual override persists after reload');
+      assert(reloadedSept2.dailyEarnedSalary === 700 + 150 + 2 * 120, `Multi-date Sept 2 formula computed 1090, got ${reloadedSept2.dailyEarnedSalary}`);
+
+      // 2. Non-Present normalization across Leave, Absent, and Holiday while preserving historical rate snapshots
+      for (const nonPresentStatus of ['Leave', 'Absent', 'Holiday'] as const) {
+        const res = await repository.upsertAttendanceRecord({
+          date: '2026-09-01',
+          status: nonPresentStatus,
+          calculatedHours: 9,
+          notes: `Changed to ${nonPresentStatus}`
+        });
+        const dbRow = dbAttendanceByUser[USER_A].find(r => r.attendance_date === '2026-09-01')!;
+        assert(dbRow.salary_override_enabled === false && dbRow.salary_override_amount === null, `${nonPresentStatus} clears override fields in DB`);
+        assert(dbRow.calculated_salary === 0 && dbRow.hours_worked === 0 && dbRow.extra_hours === 0, `${nonPresentStatus} zeroes salary and hours in DB`);
+        assert(dbRow.daily_base_salary === 700 && dbRow.addon_salary === 150 && dbRow.addon_enabled === true && dbRow.extra_hour_rate === 120 && dbRow.overtime_enabled === true, `${nonPresentStatus} preserves historical rate snapshots`);
+        assert(res.dailyEarnedSalary === 0 && res.salaryOverrideEnabled === false && res.salaryOverrideAmount === undefined, `${nonPresentStatus} maps cleanly in returned record`);
+      }
+
+      // 3. Duplicate submission prevention (concurrent identical saves coalesce to 1 DB write)
+      const salBefore = salaryUpsertCount;
+      await Promise.all([
+        repository.persistSalaryConfig({
+          dailyBaseSalary: 750,
+          addonSalary: 150,
+          addonEnabled: false,
+          standardWorkingHours: 8,
+          extraHourRate: 140,
+          overtimeEnabled: true,
+          currency: 'INR'
+        }),
+        repository.persistSalaryConfig({
+          dailyBaseSalary: 750,
+          addonSalary: 150,
+          addonEnabled: false,
+          standardWorkingHours: 8,
+          extraHourRate: 140,
+          overtimeEnabled: true,
+          currency: 'INR'
+        })
+      ]);
+      assert(salaryUpsertCount === salBefore + 1, `Concurrent identical persistSalaryConfig calls coalesced to 1 upsert (got ${salaryUpsertCount - salBefore})`);
+
+      const attBefore = attendanceUpsertCount;
+      await Promise.all([
+        repository.upsertAttendanceRecord({ date: '2026-09-03', status: 'Present', calculatedHours: 8 }),
+        repository.upsertAttendanceRecord({ date: '2026-09-03', status: 'Present', calculatedHours: 8 })
+      ]);
+      assert(attendanceUpsertCount === attBefore + 1, `Concurrent identical upsertAttendanceRecord calls coalesced to 1 upsert (got ${attendanceUpsertCount - attBefore})`);
+
+      // 4. Write failure and retry behavior (error does NOT corrupt state; retry succeeds)
+      failNextSalaryWrite = true;
+      let salaryErrCaught = false;
+      try {
+        await repository.persistSalaryConfig({
+          dailyBaseSalary: 9999,
+          addonSalary: 500,
+          addonEnabled: true,
+          standardWorkingHours: 8,
+          extraHourRate: 300,
+          overtimeEnabled: true,
+          currency: 'INR'
+        });
+      } catch {
+        salaryErrCaught = true;
+      }
+      assert(salaryErrCaught, 'Failed salary_configs write throws explicit error');
+      assert(repository.getSettings().salaryConfig.dailyBaseSalary === 750, 'Failed salary_configs write preserves previous state (750)');
+
+      failNextSalaryWrite = false;
+      await repository.persistSalaryConfig({
+        dailyBaseSalary: 9999,
+        addonSalary: 500,
+        addonEnabled: true,
+        standardWorkingHours: 8,
+        extraHourRate: 300,
+        overtimeEnabled: true,
+        currency: 'INR'
+      });
+      assert(repository.getSettings().salaryConfig.dailyBaseSalary === 9999, 'Retry after salary_configs failure succeeds cleanly');
+
+      failNextAttendanceWrite = true;
+      let attErrCaught = false;
+      try {
+        await repository.upsertAttendanceRecord({
+          date: '2026-09-04',
+          status: 'Present',
+          calculatedHours: 8
+        });
+      } catch {
+        attErrCaught = true;
+      }
+      assert(attErrCaught, 'Failed attendance_records write throws explicit error');
+      assert(!repository.getAttendance().some(a => a.date === '2026-09-04'), 'Failed attendance write does NOT insert phantom record into memoryState');
+
+      failNextAttendanceWrite = false;
+      const retriedAtt = await repository.upsertAttendanceRecord({
+        date: '2026-09-04',
+        status: 'Present',
+        calculatedHours: 8
+      });
+      assert(retriedAtt.date === '2026-09-04' && repository.getAttendance().some(a => a.date === '2026-09-04'), 'Retry after attendance failure succeeds cleanly');
+
+      // 5. User-specific data isolation & user with NO salary_configs row safely hydrates defaults
+      switchUser(USER_B);
+      await repository.fetchAllUserData(USER_B);
+      assert(repository.getAttendance().length === 0, 'USER_B has zero attendance records (no USER_A leakage)');
+      assert(repository.getSettings().salaryConfig.dailyBaseSalary === 500, 'USER_B with no salary_configs row safely uses default dailyBaseSalary=500');
+      assert(repository.getSettings().salaryConfig.addonEnabled === false && repository.getSettings().salaryConfig.overtimeEnabled === true, 'USER_B safe default toggles');
+
+      // USER_B saves their own attendance and config without affecting USER_A
+      await repository.upsertAttendanceRecord({ date: '2026-09-01', status: 'Present', calculatedHours: 8 });
+      assert(dbAttendanceByUser[USER_B].length === 1 && dbAttendanceByUser[USER_A].length === 4, 'USER_B attendance isolated from USER_A');
+      assert(currentAuthUser === USER_B, 'Active user check');
+    }
+    console.log('✓ Test 27 passed.');
+
     console.log('\n======================================================');
-    console.log('--- ALL 26 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
+    console.log('--- ALL 27 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
     console.log('======================================================');
   } finally {
     configureRepositoryBackendForTests(null, null);

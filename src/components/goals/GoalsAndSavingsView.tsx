@@ -431,11 +431,11 @@ export const GoalsAndSavingsView: React.FC = () => {
           </button>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="px-3 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+            className="w-full sm:w-auto min-h-[40px] px-3 py-2 text-xs bg-white border border-neutral-200 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
           >
             <option value="all">All Categories</option>
             {categories.map(c => (
@@ -443,14 +443,14 @@ export const GoalsAndSavingsView: React.FC = () => {
             ))}
           </select>
 
-          <div className="relative flex-1 sm:w-64">
-            <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-3" />
+          <div className="relative flex-1 min-w-[180px] sm:w-64">
+            <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               placeholder="Search goals..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-xs border border-neutral-200 rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+              className="w-full min-h-[40px] pl-9 pr-3 py-2 text-xs border border-neutral-200 rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
             />
           </div>
         </div>

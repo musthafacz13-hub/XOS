@@ -63,27 +63,27 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({ onNavigate }) => {
       </div>
 
       {/* Desktop Responsive Website (>= 768px) */}
-      <div className="hidden md:flex min-h-screen min-h-[100dvh] bg-white text-[#111111] flex-col overflow-x-clip select-none">
+      <div className="hidden md:flex min-h-screen min-h-[100dvh] bg-white text-[#111111] flex-col overflow-x-clip">
         {/* 1. Top Navigation Bar */}
-        <header className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-3">
+        <header className="w-full max-w-6xl mx-auto px-6 lg:px-8 pt-[env(safe-area-inset-top,0px)] h-[calc(4.5rem+env(safe-area-inset-top,0px))] flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5 shrink-0">
             <XOSLogo size="md" />
             <span className="text-base font-bold text-[#111111] tracking-tight">XOS</span>
           </div>
 
-          <nav aria-label="Welcome actions" className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-            <PWAInstallButton variant="compact" className="hidden lg:inline-flex min-h-[36px] py-1.5 px-3" />
+          <nav aria-label="Welcome actions" className="flex items-center gap-2.5 shrink-0">
+            <PWAInstallButton variant="compact" className="hidden lg:inline-flex min-h-[40px] py-2 px-3.5" />
             <button
               onClick={() => onNavigate('login')}
               type="button"
-              className="px-3 py-1.5 sm:px-4 sm:py-2 text-xs font-semibold text-neutral-700 hover:text-[#111111] hover:bg-neutral-100 rounded-xl transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+              className="min-h-[40px] px-4 py-2 text-xs font-semibold text-neutral-700 hover:text-[#111111] hover:bg-neutral-100 rounded-xl transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
             >
               Log In
             </button>
             <button
               onClick={() => onNavigate('signup')}
               type="button"
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 sm:px-4 sm:py-2 bg-[#111111] text-white text-xs font-semibold rounded-xl hover:bg-black active:scale-[0.98] transition-all shadow-xs cursor-pointer whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+              className="min-h-[40px] inline-flex items-center gap-1.5 px-4 py-2 bg-[#111111] text-white text-xs font-semibold rounded-xl hover:bg-black active:scale-[0.98] transition-all shadow-xs cursor-pointer whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
             >
               <span>Get Started</span>
               <ArrowRight className="w-3.5 h-3.5 text-[#87CEEB]" />
@@ -92,29 +92,29 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({ onNavigate }) => {
         </header>
 
         {/* 2. Hero & Feature Pillars */}
-        <main className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-16 sm:pt-20 sm:pb-24 flex flex-col items-center">
+        <main className="flex-1 w-full max-w-5xl mx-auto px-6 lg:px-8 pt-14 pb-16 lg:pt-20 lg:pb-24 flex flex-col justify-center items-center">
           {/* Hero Block (independent mount entrance, never interrupted by scroll) */}
           <section aria-labelledby="welcome-hero-heading" className="w-full max-w-2xl text-center flex flex-col items-center">
             <h1
               id="welcome-hero-heading"
-              className="welcome-hero-enter text-[2.125rem] sm:text-5xl md:text-6xl font-extrabold tracking-tight text-[#111111] leading-[1.08]"
+              className="welcome-hero-enter text-5xl lg:text-[3.75rem] font-extrabold tracking-tight text-[#111111] leading-[1.08]"
               style={{ textWrap: 'balance' }}
             >
               Order your life. Master your time.
             </h1>
 
             <p
-              className="welcome-hero-enter-delay-1 text-sm sm:text-base md:text-lg text-neutral-600 font-normal max-w-xl mt-5 sm:mt-6 leading-relaxed"
+              className="welcome-hero-enter-delay-1 text-base lg:text-lg text-neutral-600 font-normal max-w-xl mt-6 leading-relaxed"
               style={{ textWrap: 'balance' }}
             >
               Track your spending, log your daily work and earnings, build your savings, and stay on top of your goals—all in one simple, private workspace.
             </p>
 
-            <div className="welcome-hero-enter-delay-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 sm:gap-3.5 mt-8 sm:mt-10 w-full sm:w-auto">
+            <div className="welcome-hero-enter-delay-2 flex flex-row items-center justify-center gap-3.5 mt-9 w-auto">
               <button
                 onClick={() => onNavigate('signup')}
                 type="button"
-                className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3.5 bg-[#111111] text-white text-sm font-semibold rounded-2xl hover:bg-black active:scale-[0.98] transition-all shadow-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+                className="min-h-[48px] flex items-center justify-center gap-2 px-7 py-3 bg-[#111111] text-white text-sm font-semibold rounded-2xl hover:bg-black active:scale-[0.98] transition-all shadow-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
               >
                 <span>Get Started</span>
                 <ArrowRight className="w-4 h-4 text-[#87CEEB]" />
@@ -123,7 +123,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({ onNavigate }) => {
               <button
                 onClick={() => onNavigate('login')}
                 type="button"
-                className="w-full sm:w-auto px-6 py-3.5 bg-white hover:bg-neutral-50 active:scale-[0.98] text-neutral-800 text-sm font-semibold rounded-2xl border border-neutral-200 hover:border-neutral-300 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+                className="min-h-[48px] px-7 py-3 bg-white hover:bg-neutral-50 active:scale-[0.98] text-neutral-800 text-sm font-semibold rounded-2xl border border-neutral-200 hover:border-neutral-300 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
               >
                 Sign In with Password
               </button>
@@ -133,7 +133,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({ onNavigate }) => {
           {/* Feature Pillars (bidirectional scroll-triggered CSS reveal) */}
           <section
             aria-label="Core capabilities"
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4 mt-14 sm:mt-20 w-full text-left"
+            className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5 mt-16 lg:mt-20 w-full text-left"
           >
             {FEATURE_PILLARS.map((pillar, index) => {
               const Icon = pillar.icon;
@@ -142,9 +142,9 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({ onNavigate }) => {
                   key={pillar.title}
                   ref={registerReveal}
                   style={{ '--welcome-stagger': `${index * 60}ms` } as React.CSSProperties}
-                  className="p-5 rounded-2xl bg-white border border-neutral-200/80 hover:border-neutral-300 transition-colors space-y-2.5 shadow-xs"
+                  className="p-5 lg:p-6 rounded-2xl bg-white border border-neutral-200/80 hover:border-neutral-300 transition-colors space-y-3 shadow-xs flex flex-col"
                 >
-                  <div className="w-8 h-8 rounded-xl bg-neutral-100 flex items-center justify-center">
+                  <div className="w-9 h-9 rounded-xl bg-neutral-100 flex items-center justify-center shrink-0">
                     <Icon className={`w-4 h-4 ${pillar.iconColor}`} />
                   </div>
                   <h2 className="font-bold text-sm text-[#111111] tracking-tight">
@@ -162,7 +162,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({ onNavigate }) => {
         {/* 3. Clean Minimal Footer */}
         <footer
           ref={registerReveal}
-          className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 border-t border-neutral-200/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-neutral-500"
+          className="w-full max-w-6xl mx-auto px-6 lg:px-8 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] border-t border-neutral-200/80 flex flex-row items-center justify-between gap-3 text-xs text-neutral-500"
         >
           <div className="flex items-center gap-2.5">
             <XOSLogo size="xs" />
@@ -176,7 +176,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({ onNavigate }) => {
             target="_blank"
             rel="noopener noreferrer"
             aria-label="View XOS on GitHub (opens in new tab)"
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-neutral-300 text-xs font-medium text-neutral-700 hover:text-[#111111] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+            className="min-h-[38px] inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-neutral-300 text-xs font-medium text-neutral-700 hover:text-[#111111] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
           >
             <svg
               aria-hidden="true"

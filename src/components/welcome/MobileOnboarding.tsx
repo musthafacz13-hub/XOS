@@ -120,14 +120,9 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
   const SlideIcon = currentSlide?.icon;
 
   return (
-    <div
-      className="min-h-screen min-h-[100dvh] bg-white text-[#111318] flex flex-col justify-between px-5 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] overflow-x-clip select-none"
-      style={{ touchAction: 'pan-y' }}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-    >
+    <div className="min-h-screen min-h-[100dvh] bg-white text-[#111318] flex flex-col justify-between pl-[max(1.25rem,env(safe-area-inset-left,0px))] pr-[max(1.25rem,env(safe-area-inset-right,0px))] pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] overflow-x-clip">
       {/* Top Bar */}
-      <header className="w-full h-12 flex items-center justify-between gap-3 shrink-0">
+      <header className="w-full min-h-12 flex items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-2.5">
           <XOSLogo size="sm" />
           <span className="text-base font-bold tracking-tight text-[#111318]">XOS</span>
@@ -147,13 +142,18 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
             onClick={() => onNavigate('login')}
             className="min-h-[44px] px-3 -mr-2 inline-flex items-center justify-center text-xs font-semibold text-[#111318] hover:bg-neutral-100 transition-colors cursor-pointer rounded-xl"
           >
-            Sign In
+            Log In
           </button>
         )}
       </header>
 
       {/* Center Single-Panel Stage */}
-      <main className="flex-1 flex flex-col justify-center py-6 max-w-sm w-full mx-auto">
+      <main
+        className="flex-1 flex flex-col justify-center py-4 sm:py-6 max-w-sm w-full mx-auto"
+        style={!isFinalWelcome ? { touchAction: 'pan-y' } : undefined}
+        onTouchStart={!isFinalWelcome ? handleTouchStart : undefined}
+        onTouchEnd={!isFinalWelcome ? handleTouchEnd : undefined}
+      >
         <AnimatePresence mode="wait" initial={false}>
           {!isFinalWelcome && currentSlide && SlideIcon ? (
             <motion.section
@@ -163,19 +163,19 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
               exit={{ opacity: 0, x: direction > 0 ? -22 : 22 }}
               transition={{ duration: 0.22, ease: SLIDE_EASE }}
               aria-labelledby={`onboarding-title-${currentSlide.id}`}
-              className="w-full min-h-[276px] bg-white border border-neutral-200/90 rounded-3xl px-6 py-7 sm:p-7 shadow-sm flex flex-col items-center justify-center text-center space-y-5"
+              className="w-full min-h-[248px] sm:min-h-[276px] bg-white border border-neutral-200/90 rounded-3xl px-5 py-6 sm:p-7 shadow-sm flex flex-col items-center justify-center text-center space-y-5"
             >
-              <div className="w-16 h-16 rounded-2xl bg-[#EAF6FF] border border-[#8ECFFF]/60 flex items-center justify-center">
+              <div className="w-15 h-15 sm:w-16 sm:h-16 rounded-2xl bg-[#EAF6FF] border border-[#8ECFFF]/60 flex items-center justify-center">
                 <SlideIcon className="w-7 h-7 text-[#111318]" strokeWidth={1.9} />
               </div>
 
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 <span className="text-[11px] font-semibold text-[#687482] tracking-wide block">
                   {step + 1} of {totalSlides}
                 </span>
                 <h1
                   id={`onboarding-title-${currentSlide.id}`}
-                  className="text-2xl font-bold tracking-tight text-[#111318] leading-tight"
+                  className="text-xl sm:text-2xl font-bold tracking-tight text-[#111318] leading-tight"
                 >
                   {currentSlide.title}
                 </h1>
@@ -192,14 +192,14 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
               exit={{ opacity: 0, x: direction > 0 ? -22 : 22 }}
               transition={{ duration: 0.22, ease: SLIDE_EASE }}
               aria-labelledby="mobile-welcome-heading"
-              className="w-full flex flex-col items-center text-center space-y-6"
+              className="w-full flex flex-col items-center text-center space-y-5 sm:space-y-6"
             >
               <XOSLogo size="lg" className="border-neutral-200/80 shadow-xs" />
 
               <div className="space-y-2.5">
                 <h1
                   id="mobile-welcome-heading"
-                  className="text-[1.875rem] font-extrabold tracking-tight text-[#111318] leading-[1.12]"
+                  className="text-[1.75rem] sm:text-[1.875rem] font-extrabold tracking-tight text-[#111318] leading-[1.12]"
                   style={{ textWrap: 'balance' }}
                 >
                   Order your life. Master your time.
@@ -224,7 +224,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
                   onClick={() => onNavigate('login')}
                   className="w-full min-h-[48px] px-5 py-3 bg-white hover:bg-neutral-50 border border-neutral-200 text-[#111318] text-sm font-semibold rounded-2xl transition-colors flex items-center justify-center cursor-pointer"
                 >
-                  Sign In
+                  Sign In with Password
                 </button>
 
                 <button
@@ -237,7 +237,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
                 </button>
               </div>
 
-              <div className="pt-1 flex justify-center">
+              <div className="pt-0.5 flex justify-center">
                 <PWAInstallButton variant="compact" />
               </div>
             </motion.section>
@@ -247,7 +247,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
 
       {/* Bottom Controls / Minimal Footer */}
       {!isFinalWelcome ? (
-        <footer className="max-w-sm w-full mx-auto space-y-4 shrink-0">
+        <footer className="max-w-sm w-full mx-auto space-y-3.5 shrink-0">
           {/* Progress Indicator Bars */}
           <div className="flex items-center justify-center gap-2" role="group" aria-label="Onboarding steps">
             {ONBOARDING_SLIDES.map((slide, idx) => {
@@ -300,7 +300,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
           </div>
         </footer>
       ) : (
-        <footer className="max-w-sm w-full mx-auto pt-4 border-t border-neutral-200/80 flex items-center justify-between gap-3 text-xs text-[#687482] shrink-0">
+        <footer className="max-w-sm w-full mx-auto pt-3.5 border-t border-neutral-200/80 flex flex-wrap items-center justify-between gap-2 text-xs text-[#687482] shrink-0">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -313,7 +313,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
           </div>
 
           <span className="text-[11px] text-[#687482]">
-            © {new Date().getFullYear()} <span className="font-semibold text-[#111318]">XOS</span>
+            © {new Date().getFullYear()} <span className="font-semibold text-[#111111]">XOS</span>
           </span>
 
           <a
@@ -321,7 +321,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
             target="_blank"
             rel="noopener noreferrer"
             aria-label="View XOS on GitHub"
-            className="min-h-[44px] inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-neutral-50 border border-neutral-200 text-xs font-medium text-[#111318] transition-colors"
+            className="min-h-[40px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-neutral-50 border border-neutral-200 text-xs font-medium text-[#111318] transition-colors"
           >
             <svg
               aria-hidden="true"

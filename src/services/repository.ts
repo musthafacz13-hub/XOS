@@ -556,22 +556,31 @@ function mapAttendanceRow(a: any): AttendanceRecord {
     checkInTime: a.check_in ? String(a.check_in).slice(0, 5) : undefined,
     checkOutTime: a.check_out ? String(a.check_out).slice(0, 5) : undefined,
     breakDurationMinutes:
-      a.break_minutes !== null && a.break_minutes !== undefined ? Number(a.break_minutes) : 0,
+      a.break_minutes !== null && a.break_minutes !== undefined && a.break_minutes !== ''
+        ? Number(a.break_minutes)
+        : 0,
     calculatedHours:
-      a.hours_worked !== null && a.hours_worked !== undefined ? Number(a.hours_worked) : 0,
+      a.hours_worked !== null && a.hours_worked !== undefined && a.hours_worked !== ''
+        ? Number(a.hours_worked)
+        : 0,
     extraHours:
-      a.extra_hours !== null && a.extra_hours !== undefined ? Number(a.extra_hours) : 0,
+      a.extra_hours !== null && a.extra_hours !== undefined && a.extra_hours !== ''
+        ? Number(a.extra_hours)
+        : 0,
     dailyBaseSalary:
-      a.daily_base_salary !== null && a.daily_base_salary !== undefined
+      a.daily_base_salary !== null && a.daily_base_salary !== undefined && a.daily_base_salary !== ''
         ? Number(a.daily_base_salary)
         : undefined,
     addonSalary:
-      a.addon_salary !== null && a.addon_salary !== undefined && Number.isFinite(addonSalaryParsed)
+      a.addon_salary !== null &&
+      a.addon_salary !== undefined &&
+      a.addon_salary !== '' &&
+      Number.isFinite(addonSalaryParsed)
         ? addonSalaryParsed
         : 0,
     addonEnabled: typeof a.addon_enabled === 'boolean' ? a.addon_enabled : false,
     extraHourRate:
-      a.extra_hour_rate !== null && a.extra_hour_rate !== undefined
+      a.extra_hour_rate !== null && a.extra_hour_rate !== undefined && a.extra_hour_rate !== ''
         ? Number(a.extra_hour_rate)
         : undefined,
     overtimeEnabled: typeof a.overtime_enabled === 'boolean' ? a.overtime_enabled : true,
@@ -580,11 +589,12 @@ function mapAttendanceRow(a: any): AttendanceRecord {
     salaryOverrideAmount:
       a.salary_override_amount !== null &&
       a.salary_override_amount !== undefined &&
+      a.salary_override_amount !== '' &&
       Number.isFinite(overrideAmountParsed)
         ? overrideAmountParsed
         : undefined,
     dailyEarnedSalary:
-      a.calculated_salary !== null && a.calculated_salary !== undefined
+      a.calculated_salary !== null && a.calculated_salary !== undefined && a.calculated_salary !== ''
         ? Number(a.calculated_salary)
         : 0,
     notes: a.notes || ''
@@ -703,20 +713,32 @@ function mapSalaryConfigRow(row: any, fallback: SalaryConfig): SalaryConfig {
   return {
     currency: (row.currency_code as CurrencyCode) || fallback.currency,
     dailyBaseSalary:
-      row.daily_base_salary !== undefined && row.daily_base_salary !== null && Number.isFinite(dailyBase)
+      row.daily_base_salary !== undefined &&
+      row.daily_base_salary !== null &&
+      row.daily_base_salary !== '' &&
+      Number.isFinite(dailyBase)
         ? dailyBase
         : fallback.dailyBaseSalary,
     addonSalary:
-      row.addon_salary !== undefined && row.addon_salary !== null && Number.isFinite(addonSalary)
+      row.addon_salary !== undefined &&
+      row.addon_salary !== null &&
+      row.addon_salary !== '' &&
+      Number.isFinite(addonSalary)
         ? addonSalary
         : 0,
     addonEnabled: typeof row.addon_enabled === 'boolean' ? row.addon_enabled : false,
     standardWorkingHours:
-      row.standard_hours !== undefined && row.standard_hours !== null && Number.isFinite(stdHours)
+      row.standard_hours !== undefined &&
+      row.standard_hours !== null &&
+      row.standard_hours !== '' &&
+      Number.isFinite(stdHours)
         ? stdHours
         : fallback.standardWorkingHours,
     extraHourRate:
-      row.extra_hour_rate !== undefined && row.extra_hour_rate !== null && Number.isFinite(extraRate)
+      row.extra_hour_rate !== undefined &&
+      row.extra_hour_rate !== null &&
+      row.extra_hour_rate !== '' &&
+      Number.isFinite(extraRate)
         ? extraRate
         : fallback.extraHourRate,
     overtimeEnabled: typeof row.overtime_enabled === 'boolean' ? row.overtime_enabled : true
@@ -1296,41 +1318,45 @@ export const repository = {
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
-      const payload = {
-        user_id: ctx.user.id,
-        currency_code: resolvedCurrency,
-        daily_base_salary: normalizedSalaryConfig.dailyBaseSalary,
-        addon_salary: normalizedSalaryConfig.addonSalary,
-        addon_enabled: normalizedSalaryConfig.addonEnabled,
-        standard_hours: normalizedSalaryConfig.standardWorkingHours,
-        extra_hour_rate: normalizedSalaryConfig.extraHourRate,
-        overtime_enabled: normalizedSalaryConfig.overtimeEnabled,
-        updated_at: new Date().toISOString()
-      };
+      const dedupKey = `salary_config:upsert:${ctx.user.id}:${JSON.stringify(normalizedSalaryConfig)}`;
+      return apiOptimization.coalesce(dedupKey, async () => {
+        const payload = {
+          user_id: ctx.user.id,
+          currency_code: resolvedCurrency,
+          daily_base_salary: normalizedSalaryConfig.dailyBaseSalary,
+          addon_salary: normalizedSalaryConfig.addonSalary,
+          addon_enabled: normalizedSalaryConfig.addonEnabled,
+          standard_hours: normalizedSalaryConfig.standardWorkingHours,
+          extra_hour_rate: normalizedSalaryConfig.extraHourRate,
+          overtime_enabled: normalizedSalaryConfig.overtimeEnabled,
+          updated_at: new Date().toISOString()
+        };
 
-      const { data, error } = await ctx.client
-        .from('salary_configs')
-        .upsert(payload, { onConflict: 'user_id' })
-        .select('id, user_id, daily_base_salary, addon_salary, addon_enabled, standard_hours, extra_hour_rate, overtime_enabled, currency_code, created_at, updated_at')
-        .single();
+        const { data, error } = await ctx.client
+          .from('salary_configs')
+          .upsert(payload, { onConflict: 'user_id' })
+          .select('id, user_id, daily_base_salary, addon_salary, addon_enabled, standard_hours, extra_hour_rate, overtime_enabled, currency_code, created_at, updated_at')
+          .single();
 
-      if (error || !data) {
-        throw new Error(error?.message || 'Database error: Could not save salary configuration.');
-      }
-
-      memoryState.settings = {
-        ...memoryState.settings,
-        salaryConfig: mapSalaryConfigRow(data, normalizedSalaryConfig)
-      };
-    } else {
-      memoryState.settings = {
-        ...memoryState.settings,
-        salaryConfig: {
-          ...memoryState.settings.salaryConfig,
-          ...normalizedSalaryConfig
+        if (error || !data) {
+          throw new Error(error?.message || 'Database error: Could not save salary configuration.');
         }
-      };
+
+        memoryState.settings = {
+          ...memoryState.settings,
+          salaryConfig: mapSalaryConfigRow(data, normalizedSalaryConfig)
+        };
+        notifyListeners();
+      });
     }
+
+    memoryState.settings = {
+      ...memoryState.settings,
+      salaryConfig: {
+        ...memoryState.settings.salaryConfig,
+        ...normalizedSalaryConfig
+      }
+    };
 
     notifyListeners();
   },
@@ -1960,9 +1986,9 @@ export const repository = {
     const normalizedStatus = fromDbAttendanceStatus(record.status);
     const dbStatus = toDbAttendanceStatus(record.status);
     const salaryConfig = memoryState.settings.salaryConfig;
-    const existingRecord = memoryState.attendance.find(
-      r => (record.id && r.id === record.id) || r.date === record.date
-    );
+    const existingRecord =
+      memoryState.attendance.find(r => r.date === record.date) ||
+      (record.id ? memoryState.attendance.find(r => r.id === record.id) : undefined);
 
     const effectiveDailyBase =
       record.dailyBaseSalary !== undefined
@@ -2014,11 +2040,13 @@ export const repository = {
     }
 
     let hours =
-      record.calculatedHours ??
-      (normalizedStatus === 'Present' ? existingRecord?.calculatedHours ?? 0 : 0);
-    const sanitizedBreak =
       normalizedStatus === 'Present'
-        ? Math.max(0, Math.round(record.breakDurationMinutes ?? existingRecord?.breakDurationMinutes ?? 0))
+        ? (record.calculatedHours ?? existingRecord?.calculatedHours ?? 0)
+        : 0;
+    const rawBreakCandidate = record.breakDurationMinutes ?? existingRecord?.breakDurationMinutes ?? 0;
+    const sanitizedBreak =
+      normalizedStatus === 'Present' && Number.isFinite(rawBreakCandidate)
+        ? Math.max(0, Math.round(rawBreakCandidate))
         : 0;
     if (normalizedStatus === 'Present' && record.checkInTime && record.checkOutTime) {
       hours = calculateWorkingHours(record.checkInTime, record.checkOutTime, sanitizedBreak);
@@ -2047,6 +2075,8 @@ export const repository = {
     const processedRecordPayload = {
       ...record,
       status: normalizedStatus,
+      checkInTime: normalizedStatus === 'Present' ? record.checkInTime : undefined,
+      checkOutTime: normalizedStatus === 'Present' ? record.checkOutTime : undefined,
       breakDurationMinutes: sanitizedBreak,
       calculatedHours: effectiveHours,
       extraHours: effectiveExtraHours,
@@ -2063,50 +2093,52 @@ export const repository = {
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
-      const { data, error } = await ctx.client
-        .from('attendance_records')
-        .upsert(
-          {
-            user_id: ctx.user.id,
-            attendance_date: record.date,
-            status: dbStatus,
-            check_in: normalizedStatus === 'Present' ? normalizeDbTime(record.checkInTime) : null,
-            check_out: normalizedStatus === 'Present' ? normalizeDbTime(record.checkOutTime) : null,
-            break_minutes: sanitizedBreak,
-            hours_worked: processedRecordPayload.calculatedHours,
-            extra_hours: processedRecordPayload.extraHours,
-            daily_base_salary: effectiveDailyBase,
-            addon_salary: effectiveAddonSalary,
-            addon_enabled: effectiveAddonEnabled,
-            extra_hour_rate: effectiveExtraRate,
-            overtime_enabled: effectiveOvertimeEnabled,
-            salary_override_enabled: effectiveOverrideEnabled,
-            salary_override_amount: effectiveOverrideEnabled ? effectiveOverrideAmount! : null,
-            calculated_salary: processedRecordPayload.dailyEarnedSalary,
-            notes: record.notes?.trim() ? record.notes.trim() : null
-          },
-          { onConflict: 'user_id,attendance_date' }
-        )
-        .select()
-        .single();
+      const dbUpsertPayload = {
+        user_id: ctx.user.id,
+        attendance_date: record.date,
+        status: dbStatus,
+        check_in: normalizedStatus === 'Present' ? normalizeDbTime(record.checkInTime) : null,
+        check_out: normalizedStatus === 'Present' ? normalizeDbTime(record.checkOutTime) : null,
+        break_minutes: sanitizedBreak,
+        hours_worked: processedRecordPayload.calculatedHours,
+        extra_hours: processedRecordPayload.extraHours,
+        daily_base_salary: effectiveDailyBase,
+        addon_salary: effectiveAddonSalary,
+        addon_enabled: effectiveAddonEnabled,
+        extra_hour_rate: effectiveExtraRate,
+        overtime_enabled: effectiveOvertimeEnabled,
+        salary_override_enabled: effectiveOverrideEnabled,
+        salary_override_amount: effectiveOverrideEnabled ? effectiveOverrideAmount! : null,
+        calculated_salary: processedRecordPayload.dailyEarnedSalary,
+        notes: record.notes?.trim() ? record.notes.trim() : null
+      };
+      const dedupKey = `attendance:upsert:${ctx.user.id}:${record.date}:${JSON.stringify(dbUpsertPayload)}`;
 
-      if (error || !data) {
-        throw new Error(error?.message || 'Database error: Could not save attendance record.');
-      }
+      return apiOptimization.coalesce(dedupKey, async () => {
+        const { data, error } = await ctx.client
+          .from('attendance_records')
+          .upsert(dbUpsertPayload, { onConflict: 'user_id,attendance_date' })
+          .select()
+          .single();
 
-      const confirmed = mapAttendanceRow(data);
-      const existingIndex = memoryState.attendance.findIndex(
-        r => r.id === confirmed.id || r.date === confirmed.date
-      );
-      if (existingIndex >= 0) {
-        memoryState.attendance = memoryState.attendance.map((r, idx) =>
-          idx === existingIndex ? confirmed : r
+        if (error || !data) {
+          throw new Error(error?.message || 'Database error: Could not save attendance record.');
+        }
+
+        const confirmed = mapAttendanceRow(data);
+        const existingIndex = memoryState.attendance.findIndex(
+          r => r.id === confirmed.id || r.date === confirmed.date
         );
-      } else {
-        memoryState.attendance = [confirmed, ...memoryState.attendance];
-      }
-      notifyListeners();
-      return confirmed;
+        if (existingIndex >= 0) {
+          memoryState.attendance = memoryState.attendance.map((r, idx) =>
+            idx === existingIndex ? confirmed : r
+          );
+        } else {
+          memoryState.attendance = [confirmed, ...memoryState.attendance];
+        }
+        notifyListeners();
+        return confirmed;
+      });
     }
 
     const existingIndex = memoryState.attendance.findIndex(r => r.date === record.date);
