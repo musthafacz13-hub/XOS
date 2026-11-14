@@ -13,8 +13,11 @@ import { getMonthString, getTodayString } from '../utils/formatters';
 
 export const DEFAULT_SALARY_CONFIG: SalaryConfig = {
   dailyBaseSalary: 500,
+  addonSalary: 0,
+  addonEnabled: false,
   standardWorkingHours: 8,
   extraHourRate: 100,
+  overtimeEnabled: true,
   currency: 'INR'
 };
 
@@ -197,7 +200,11 @@ export function generateDemoDataset() {
         calculatedHours: 8,
         extraHours: 0,
         dailyBaseSalary: 500,
+        addonSalary: 0,
+        addonEnabled: false,
         extraHourRate: 100,
+        overtimeEnabled: true,
+        salaryOverrideEnabled: false,
         dailyEarnedSalary: 500,
         notes: 'Regular working day'
       });

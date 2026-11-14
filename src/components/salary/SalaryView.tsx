@@ -45,19 +45,22 @@ export const SalaryView: React.FC = () => {
   const [dailyBaseSalaryInput, setDailyBaseSalaryInput] = useState(
     String(data.settings.salaryConfig.dailyBaseSalary ?? 500)
   );
+  const [addonSalaryInput, setAddonSalaryInput] = useState(
+    String(data.settings.salaryConfig.addonSalary ?? 0)
+  );
+  const [addonEnabled, setAddonEnabled] = useState(
+    Boolean(data.settings.salaryConfig.addonEnabled)
+  );
   const [standardWorkingHoursInput, setStandardWorkingHoursInput] = useState(
     String(data.settings.salaryConfig.standardWorkingHours ?? 8)
   );
   const [extraHourRateInput, setExtraHourRateInput] = useState(
     String(data.settings.salaryConfig.extraHourRate ?? 100)
   );
-  const [lastPositiveExtraRate, setLastPositiveExtraRate] = useState(
-    (data.settings.salaryConfig.extraHourRate ?? 100) > 0
-      ? String(data.settings.salaryConfig.extraHourRate)
-      : '100'
-  );
   const [overtimeEnabled, setOvertimeEnabled] = useState(
-    (data.settings.salaryConfig.extraHourRate ?? 100) > 0
+    data.settings.salaryConfig.overtimeEnabled !== undefined
+      ? Boolean(data.settings.salaryConfig.overtimeEnabled)
+      : true
   );
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [savedSettingsNotif, setSavedSettingsNotif] = useState<string | null>(null);
@@ -76,8 +79,16 @@ export const SalaryView: React.FC = () => {
   const [dailyCustomBaseInput, setDailyCustomBaseInput] = useState(
     String(data.settings.salaryConfig.dailyBaseSalary ?? 500)
   );
+  const [dailyCustomAddonEnabled, setDailyCustomAddonEnabled] = useState(
+    Boolean(data.settings.salaryConfig.addonEnabled)
+  );
+  const [dailyCustomAddonInput, setDailyCustomAddonInput] = useState(
+    String(data.settings.salaryConfig.addonSalary ?? 0)
+  );
   const [dailyCustomOvertimeEnabled, setDailyCustomOvertimeEnabled] = useState(
-    (data.settings.salaryConfig.extraHourRate ?? 100) > 0
+    data.settings.salaryConfig.overtimeEnabled !== undefined
+      ? Boolean(data.settings.salaryConfig.overtimeEnabled)
+      : true
   );
   const [dailyCustomExtraRateInput, setDailyCustomExtraRateInput] = useState(
     String(data.settings.salaryConfig.extraHourRate ?? 100)
@@ -100,12 +111,16 @@ export const SalaryView: React.FC = () => {
   const [paymentError, setPaymentError] = useState<string | null>(null);
 
   useEffect(() => {
-    const rate = data.settings.salaryConfig.extraHourRate ?? 100;
     setDailyBaseSalaryInput(String(data.settings.salaryConfig.dailyBaseSalary ?? 500));
+    setAddonSalaryInput(String(data.settings.salaryConfig.addonSalary ?? 0));
+    setAddonEnabled(Boolean(data.settings.salaryConfig.addonEnabled));
     setStandardWorkingHoursInput(String(data.settings.salaryConfig.standardWorkingHours ?? 8));
-    setExtraHourRateInput(String(rate));
-    setOvertimeEnabled(rate > 0);
-    if (rate > 0) setLastPositiveExtraRate(String(rate));
+    setExtraHourRateInput(String(data.settings.salaryConfig.extraHourRate ?? 100));
+    setOvertimeEnabled(
+      data.settings.salaryConfig.overtimeEnabled !== undefined
+        ? Boolean(data.settings.salaryConfig.overtimeEnabled)
+        : true
+    );
   }, [data.settings.salaryConfig]);
 
   useEffect(() => {
@@ -157,47 +172,58 @@ export const SalaryView: React.FC = () => {
   }, [data.incomes]);
 
   const parsedSettingsBase = Number(dailyBaseSalaryInput.trim());
+  const parsedSettingsAddon =
+    addonSalaryInput.trim() === ''
+      ? (data.settings.salaryConfig.addonSalary ?? 0)
+      : Number(addonSalaryInput.trim());
   const parsedSettingsHours = Number(standardWorkingHoursInput.trim());
-  const parsedSettingsExtraRate = overtimeEnabled ? Number(extraHourRateInput.trim()) : 0;
+  const parsedSettingsExtraRate =
+    extraHourRateInput.trim() === ''
+      ? (data.settings.salaryConfig.extraHourRate ?? 100)
+      : Number(extraHourRateInput.trim());
 
   const hasRateSettingsChanges = useMemo(() => {
+    const savedOvertimeEnabled =
+      data.settings.salaryConfig.overtimeEnabled !== undefined
+        ? Boolean(data.settings.salaryConfig.overtimeEnabled)
+        : true;
     return (
       dailyBaseSalaryInput.trim() === '' ||
+      (addonEnabled && addonSalaryInput.trim() === '') ||
       standardWorkingHoursInput.trim() === '' ||
       (overtimeEnabled && extraHourRateInput.trim() === '') ||
       parsedSettingsBase !== data.settings.salaryConfig.dailyBaseSalary ||
+      parsedSettingsAddon !== (data.settings.salaryConfig.addonSalary ?? 0) ||
+      addonEnabled !== Boolean(data.settings.salaryConfig.addonEnabled) ||
       parsedSettingsHours !== data.settings.salaryConfig.standardWorkingHours ||
-      parsedSettingsExtraRate !== data.settings.salaryConfig.extraHourRate
+      parsedSettingsExtraRate !== data.settings.salaryConfig.extraHourRate ||
+      overtimeEnabled !== savedOvertimeEnabled
     );
   }, [
     dailyBaseSalaryInput,
+    addonSalaryInput,
+    addonEnabled,
     standardWorkingHoursInput,
     extraHourRateInput,
     overtimeEnabled,
     parsedSettingsBase,
+    parsedSettingsAddon,
     parsedSettingsHours,
     parsedSettingsExtraRate,
     data.settings.salaryConfig
   ]);
 
-  const handleToggleRateOvertime = (enabled: boolean) => {
-    setOvertimeEnabled(enabled);
-    if (enabled) {
-      setExtraHourRateInput(Number(lastPositiveExtraRate) > 0 ? lastPositiveExtraRate : '100');
-    } else {
-      if (Number(extraHourRateInput) > 0) {
-        setLastPositiveExtraRate(extraHourRateInput);
-      }
-      setExtraHourRateInput('0');
-    }
-  };
-
   const handleCancelRateChanges = () => {
-    const rate = data.settings.salaryConfig.extraHourRate ?? 100;
     setDailyBaseSalaryInput(String(data.settings.salaryConfig.dailyBaseSalary ?? 500));
+    setAddonSalaryInput(String(data.settings.salaryConfig.addonSalary ?? 0));
+    setAddonEnabled(Boolean(data.settings.salaryConfig.addonEnabled));
     setStandardWorkingHoursInput(String(data.settings.salaryConfig.standardWorkingHours ?? 8));
-    setExtraHourRateInput(String(rate));
-    setOvertimeEnabled(rate > 0);
+    setExtraHourRateInput(String(data.settings.salaryConfig.extraHourRate ?? 100));
+    setOvertimeEnabled(
+      data.settings.salaryConfig.overtimeEnabled !== undefined
+        ? Boolean(data.settings.salaryConfig.overtimeEnabled)
+        : true
+    );
     setSettingsError(null);
   };
 
@@ -211,6 +237,10 @@ export const SalaryView: React.FC = () => {
       setSettingsError('Daily base salary must be zero or a positive number.');
       return;
     }
+    if ((addonEnabled && addonSalaryInput.trim() === '') || !Number.isFinite(parsedSettingsAddon) || parsedSettingsAddon < 0) {
+      setSettingsError('Add-on salary must be zero or a positive number.');
+      return;
+    }
     if (
       standardWorkingHoursInput.trim() === '' ||
       !Number.isFinite(parsedSettingsHours) ||
@@ -221,8 +251,9 @@ export const SalaryView: React.FC = () => {
       return;
     }
     if (
-      overtimeEnabled &&
-      (extraHourRateInput.trim() === '' || !Number.isFinite(parsedSettingsExtraRate) || parsedSettingsExtraRate < 0)
+      (overtimeEnabled && extraHourRateInput.trim() === '') ||
+      !Number.isFinite(parsedSettingsExtraRate) ||
+      parsedSettingsExtraRate < 0
     ) {
       setSettingsError('Extra-hour rate must be zero or a positive number.');
       return;
@@ -232,8 +263,11 @@ export const SalaryView: React.FC = () => {
     const updatedSalaryConfig = {
       currency: data.settings.currency || data.settings.salaryConfig.currency || 'INR',
       dailyBaseSalary: parsedSettingsBase,
+      addonSalary: parsedSettingsAddon,
+      addonEnabled,
       standardWorkingHours: parsedSettingsHours,
-      extraHourRate: overtimeEnabled ? parsedSettingsExtraRate : 0
+      extraHourRate: parsedSettingsExtraRate,
+      overtimeEnabled
     };
 
     try {
@@ -255,14 +289,18 @@ export const SalaryView: React.FC = () => {
       const defaults = {
         currency: data.settings.currency || data.settings.salaryConfig.currency || 'INR',
         dailyBaseSalary: 500,
+        addonSalary: 0,
+        addonEnabled: false,
         standardWorkingHours: 8,
-        extraHourRate: 100
+        extraHourRate: 100,
+        overtimeEnabled: true
       };
       await data.persistSalaryConfig(defaults);
       setDailyBaseSalaryInput('500');
+      setAddonSalaryInput('0');
+      setAddonEnabled(false);
       setStandardWorkingHoursInput('8');
       setExtraHourRateInput('100');
-      setLastPositiveExtraRate('100');
       setOvertimeEnabled(true);
       setIsResetDefaultsModalOpen(false);
       setSavedSettingsNotif('Defaults restored');
@@ -281,38 +319,56 @@ export const SalaryView: React.FC = () => {
 
     if (existing) {
       const recBase = typeof existing.dailyBaseSalary === 'number' ? existing.dailyBaseSalary : cfg.dailyBaseSalary;
+      const recAddon = typeof existing.addonSalary === 'number' ? existing.addonSalary : (cfg.addonSalary ?? 0);
+      const recAddonEnabled =
+        typeof existing.addonEnabled === 'boolean' ? existing.addonEnabled : Boolean(cfg.addonEnabled);
       const recRate = typeof existing.extraHourRate === 'number' ? existing.extraHourRate : cfg.extraHourRate;
+      const recOvertimeEnabled =
+        typeof existing.overtimeEnabled === 'boolean'
+          ? existing.overtimeEnabled
+          : cfg.overtimeEnabled !== undefined
+            ? Boolean(cfg.overtimeEnabled)
+            : true;
       const recHours = typeof existing.calculatedHours === 'number' ? existing.calculatedHours : cfg.standardWorkingHours;
       const formulaRes = calculateDailyEarnedSalary(existing.status, recHours, {
         ...cfg,
         dailyBaseSalary: recBase,
-        extraHourRate: recRate
+        addonSalary: recAddon,
+        addonEnabled: recAddonEnabled,
+        extraHourRate: recRate,
+        overtimeEnabled: recOvertimeEnabled
       });
-      const hasEarnedOverride =
-        existing.status === 'Present' &&
-        typeof existing.dailyEarnedSalary === 'number' &&
-        Math.abs(existing.dailyEarnedSalary - formulaRes.dailyEarnedSalary) > 0.01;
+      const hasOverrideFlag = existing.status === 'Present' && Boolean(existing.salaryOverrideEnabled);
 
       setDailyStatus(existing.status);
       setDailyHoursInput(String(recHours));
       setDailyCustomBaseInput(String(recBase));
-      setDailyCustomOvertimeEnabled(recRate > 0);
+      setDailyCustomAddonEnabled(recAddonEnabled);
+      setDailyCustomAddonInput(String(recAddon));
+      setDailyCustomOvertimeEnabled(recOvertimeEnabled);
       setDailyCustomExtraRateInput(String(recRate));
-      setUseDirectEarnedOverride(hasEarnedOverride);
+      setUseDirectEarnedOverride(hasOverrideFlag);
       setDirectEarnedSalaryInput(
-        hasEarnedOverride
-          ? String(existing.dailyEarnedSalary)
+        hasOverrideFlag
+          ? String(existing.salaryOverrideAmount ?? existing.dailyEarnedSalary ?? formulaRes.dailyEarnedSalary)
           : String(formulaRes.dailyEarnedSalary)
       );
       setDailyNotes(existing.notes || '');
     } else {
+      const defaultAddonEnabled = Boolean(cfg.addonEnabled);
+      const defaultOvertimeEnabled =
+        cfg.overtimeEnabled !== undefined ? Boolean(cfg.overtimeEnabled) : true;
+      const defaultFormula = calculateDailyEarnedSalary('Present', cfg.standardWorkingHours ?? 8, cfg);
+
       setDailyStatus('Present');
       setDailyHoursInput(String(cfg.standardWorkingHours ?? 8));
       setDailyCustomBaseInput(String(cfg.dailyBaseSalary ?? 500));
-      setDailyCustomOvertimeEnabled((cfg.extraHourRate ?? 100) > 0);
+      setDailyCustomAddonEnabled(defaultAddonEnabled);
+      setDailyCustomAddonInput(String(cfg.addonSalary ?? 0));
+      setDailyCustomOvertimeEnabled(defaultOvertimeEnabled);
       setDailyCustomExtraRateInput(String(cfg.extraHourRate ?? 100));
       setUseDirectEarnedOverride(false);
-      setDirectEarnedSalaryInput(String(cfg.dailyBaseSalary ?? 500));
+      setDirectEarnedSalaryInput(String(defaultFormula.dailyEarnedSalary));
       setDailyNotes('');
     }
   };
@@ -336,20 +392,26 @@ export const SalaryView: React.FC = () => {
   const dailyFormulaPreview = useMemo(() => {
     const hours = Number(dailyHoursInput.trim());
     const base = Number(dailyCustomBaseInput.trim());
-    const extraRate = dailyCustomOvertimeEnabled ? Number(dailyCustomExtraRateInput.trim()) : 0;
+    const addon = Number(dailyCustomAddonInput.trim());
+    const extraRate = Number(dailyCustomExtraRateInput.trim());
     return calculateDailyEarnedSalary(
       dailyStatus,
       Number.isFinite(hours) && hours >= 0 ? hours : 0,
       {
         standardWorkingHours: data.settings.salaryConfig.standardWorkingHours || 8,
         dailyBaseSalary: Number.isFinite(base) && base >= 0 ? base : 0,
-        extraHourRate: Number.isFinite(extraRate) && extraRate >= 0 ? extraRate : 0
+        addonSalary: Number.isFinite(addon) && addon >= 0 ? addon : 0,
+        addonEnabled: dailyCustomAddonEnabled,
+        extraHourRate: Number.isFinite(extraRate) && extraRate >= 0 ? extraRate : 0,
+        overtimeEnabled: dailyCustomOvertimeEnabled
       }
     );
   }, [
     dailyStatus,
     dailyHoursInput,
     dailyCustomBaseInput,
+    dailyCustomAddonEnabled,
+    dailyCustomAddonInput,
     dailyCustomOvertimeEnabled,
     dailyCustomExtraRateInput,
     data.settings.salaryConfig.standardWorkingHours
@@ -368,9 +430,18 @@ export const SalaryView: React.FC = () => {
       return;
     }
 
+    const existing = attendanceByDate.get(dailyDate);
+    const cfg = data.settings.salaryConfig;
     const parsedHours = dailyStatus === 'Present' ? Number(dailyHoursInput.trim()) : 0;
     const parsedBase = Number(dailyCustomBaseInput.trim());
-    const parsedExtraRate = dailyCustomOvertimeEnabled ? Number(dailyCustomExtraRateInput.trim()) : 0;
+    const parsedAddon =
+      dailyCustomAddonInput.trim() === ''
+        ? (existing?.addonSalary ?? cfg.addonSalary ?? 0)
+        : Number(dailyCustomAddonInput.trim());
+    const parsedExtraRate =
+      dailyCustomExtraRateInput.trim() === ''
+        ? (existing?.extraHourRate ?? cfg.extraHourRate ?? 100)
+        : Number(dailyCustomExtraRateInput.trim());
     const parsedDirectEarned = Number(directEarnedSalaryInput.trim());
 
     if (dailyStatus === 'Present') {
@@ -383,8 +454,17 @@ export const SalaryView: React.FC = () => {
         return;
       }
       if (
-        dailyCustomOvertimeEnabled &&
-        (dailyCustomExtraRateInput.trim() === '' || !Number.isFinite(parsedExtraRate) || parsedExtraRate < 0)
+        (dailyCustomAddonEnabled && dailyCustomAddonInput.trim() === '') ||
+        !Number.isFinite(parsedAddon) ||
+        parsedAddon < 0
+      ) {
+        setDailyFormError('Add-on salary must be zero or positive.');
+        return;
+      }
+      if (
+        (dailyCustomOvertimeEnabled && dailyCustomExtraRateInput.trim() === '') ||
+        !Number.isFinite(parsedExtraRate) ||
+        parsedExtraRate < 0
       ) {
         setDailyFormError('Overtime rate must be zero or positive.');
         return;
@@ -401,7 +481,6 @@ export const SalaryView: React.FC = () => {
     setDailyFormError(null);
     setIsSavingDaily(true);
     try {
-      const existing = attendanceByDate.get(dailyDate);
       const preservedCheckTimes =
         existing &&
         dailyStatus === 'Present' &&
@@ -416,14 +495,14 @@ export const SalaryView: React.FC = () => {
         checkOutTime: preservedCheckTimes ? existing?.checkOutTime : undefined,
         breakDurationMinutes: preservedCheckTimes ? existing?.breakDurationMinutes : 0,
         calculatedHours: parsedHours,
-        dailyBaseSalary: dailyStatus === 'Present' ? parsedBase : 0,
-        extraHourRate: dailyStatus === 'Present' ? parsedExtraRate : 0,
-        dailyEarnedSalary:
-          dailyStatus === 'Present'
-            ? useDirectEarnedOverride
-              ? parsedDirectEarned
-              : dailyFormulaPreview.dailyEarnedSalary
-            : 0,
+        dailyBaseSalary: dailyStatus === 'Present' ? parsedBase : (existing?.dailyBaseSalary ?? cfg.dailyBaseSalary),
+        addonSalary: dailyStatus === 'Present' ? parsedAddon : (existing?.addonSalary ?? cfg.addonSalary),
+        addonEnabled: dailyStatus === 'Present' ? dailyCustomAddonEnabled : (existing?.addonEnabled ?? cfg.addonEnabled),
+        extraHourRate: dailyStatus === 'Present' ? parsedExtraRate : (existing?.extraHourRate ?? cfg.extraHourRate),
+        overtimeEnabled: dailyStatus === 'Present' ? dailyCustomOvertimeEnabled : (existing?.overtimeEnabled ?? cfg.overtimeEnabled),
+        salaryOverrideEnabled: dailyStatus === 'Present' ? useDirectEarnedOverride : false,
+        salaryOverrideAmount:
+          dailyStatus === 'Present' && useDirectEarnedOverride ? parsedDirectEarned : undefined,
         notes: dailyNotes.trim()
       });
 
@@ -485,12 +564,22 @@ export const SalaryView: React.FC = () => {
     const cfg = data.settings.salaryConfig;
     const baseDiffers =
       typeof rec.dailyBaseSalary === 'number' && Math.abs(rec.dailyBaseSalary - cfg.dailyBaseSalary) > 0.01;
+    const addonFlagDiffers =
+      typeof rec.addonEnabled === 'boolean' && rec.addonEnabled !== Boolean(cfg.addonEnabled);
+    const addonDiffers =
+      typeof rec.addonSalary === 'number' && Math.abs(rec.addonSalary - (cfg.addonSalary ?? 0)) > 0.01;
+    const overtimeFlagDiffers =
+      typeof rec.overtimeEnabled === 'boolean' && rec.overtimeEnabled !== Boolean(cfg.overtimeEnabled);
     const rateDiffers =
       typeof rec.extraHourRate === 'number' && Math.abs(rec.extraHourRate - cfg.extraHourRate) > 0.01;
-    const formulaWithDefaults = calculateDailyEarnedSalary('Present', rec.calculatedHours || 0, cfg).dailyEarnedSalary;
-    const earnedDiffers =
-      typeof rec.dailyEarnedSalary === 'number' && Math.abs(rec.dailyEarnedSalary - formulaWithDefaults) > 0.01;
-    return baseDiffers || rateDiffers || earnedDiffers;
+    return (
+      Boolean(rec.salaryOverrideEnabled) ||
+      baseDiffers ||
+      addonFlagDiffers ||
+      addonDiffers ||
+      overtimeFlagDiffers ||
+      rateDiffers
+    );
   };
 
   return (
@@ -682,13 +771,19 @@ export const SalaryView: React.FC = () => {
                 • Present Day Base: {formatCurrency(data.settings.salaryConfig.dailyBaseSalary ?? 500, data.settings.currency)} for up to {data.settings.salaryConfig.standardWorkingHours || 8} hours.
               </p>
               <p className="text-neutral-700">
-                • Extra Hours:{' '}
-                {(data.settings.salaryConfig.extraHourRate ?? 100) > 0
-                  ? `+${formatCurrency(data.settings.salaryConfig.extraHourRate, data.settings.currency)}/hour for hours over ${data.settings.salaryConfig.standardWorkingHours || 8}h.`
-                  : 'Overtime calculation disabled (0/hr).'}
+                • Daily Add-on:{' '}
+                {data.settings.salaryConfig.addonEnabled
+                  ? `+${formatCurrency(data.settings.salaryConfig.addonSalary ?? 0, data.settings.currency)}/day.`
+                  : `Disabled (${formatCurrency(data.settings.salaryConfig.addonSalary ?? 0, data.settings.currency)} configured).`}
               </p>
               <p className="text-neutral-700">
-                • Leave / Absent / Holiday: {formatCurrency(0, data.settings.currency)} (past daily overrides always remain preserved).
+                • Extra Hours:{' '}
+                {data.settings.salaryConfig.overtimeEnabled !== false
+                  ? `+${formatCurrency(data.settings.salaryConfig.extraHourRate ?? 100, data.settings.currency)}/hour for hours over ${data.settings.salaryConfig.standardWorkingHours || 8}h.`
+                  : `Overtime calculation disabled (${formatCurrency(data.settings.salaryConfig.extraHourRate ?? 100, data.settings.currency)}/hr configured).`}
+              </p>
+              <p className="text-neutral-700">
+                • Leave / Absent / Holiday: {formatCurrency(0, data.settings.currency)} (past daily snapshots &amp; overrides always remain preserved).
               </p>
             </div>
           </div>
@@ -785,9 +880,17 @@ export const SalaryView: React.FC = () => {
                       </div>
 
                       {rec.status === 'Present' && (
-                        <div className="text-[11px] text-neutral-500 font-mono flex items-center justify-between pt-1 border-t border-neutral-100">
+                        <div className="text-[11px] text-neutral-500 font-mono flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-neutral-100">
                           <span>Base: {formatCurrency(rec.dailyBaseSalary ?? data.settings.salaryConfig.dailyBaseSalary, data.settings.currency)}</span>
-                          <span>OT Rate: {formatCurrency(rec.extraHourRate ?? data.settings.salaryConfig.extraHourRate, data.settings.currency)}/hr</span>
+                          {rec.addonEnabled && (
+                            <span>Add-on: +{formatCurrency(rec.addonSalary ?? 0, data.settings.currency)}</span>
+                          )}
+                          <span>
+                            OT:{' '}
+                            {rec.overtimeEnabled === false
+                              ? 'Off'
+                              : `${formatCurrency(rec.extraHourRate ?? data.settings.salaryConfig.extraHourRate, data.settings.currency)}/hr`}
+                          </span>
                         </div>
                       )}
 
@@ -864,7 +967,7 @@ export const SalaryView: React.FC = () => {
                           </td>
                           <td className="py-3 px-4 text-right font-mono text-neutral-500 tabular-nums whitespace-nowrap">
                             {rec.status === 'Present'
-                              ? `${formatCurrency(rec.dailyBaseSalary ?? data.settings.salaryConfig.dailyBaseSalary, data.settings.currency)} · ${formatCurrency(rec.extraHourRate ?? data.settings.salaryConfig.extraHourRate, data.settings.currency)}/h`
+                              ? `${formatCurrency(rec.dailyBaseSalary ?? data.settings.salaryConfig.dailyBaseSalary, data.settings.currency)}${rec.addonEnabled ? ` + ${formatCurrency(rec.addonSalary ?? 0, data.settings.currency)}` : ''} · ${rec.overtimeEnabled === false ? 'OT Off' : `${formatCurrency(rec.extraHourRate ?? data.settings.salaryConfig.extraHourRate, data.settings.currency)}/h`}`
                               : '—'}
                           </td>
                           <td className="py-3 px-4 text-right font-mono font-bold text-[#111111] tabular-nums whitespace-nowrap">
@@ -1116,7 +1219,40 @@ export const SalaryView: React.FC = () => {
               </p>
             </div>
 
-            <div className="sm:col-span-2">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="salary-rate-addon" className="block text-xs font-semibold text-neutral-700">
+                  Daily Add-on Salary ({data.settings.currency})
+                </label>
+                <label className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={addonEnabled}
+                    onChange={(e) => setAddonEnabled(e.target.checked)}
+                    className="rounded border-neutral-300 text-[#111111] focus:ring-[#8ECFFF]"
+                  />
+                  <span>Enable Add-on</span>
+                </label>
+              </div>
+              <input
+                id="salary-rate-addon"
+                type="number"
+                min="0"
+                step="any"
+                inputMode="decimal"
+                disabled={!addonEnabled}
+                value={addonSalaryInput}
+                onChange={(e) => setAddonSalaryInput(e.target.value)}
+                className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] disabled:bg-neutral-50 disabled:text-neutral-400"
+              />
+              <p className="text-[11px] text-neutral-500 mt-1">
+                {addonEnabled
+                  ? 'Added to daily base salary on Present workdays.'
+                  : 'Add-on salary disabled for new entries.'}
+              </p>
+            </div>
+
+            <div>
               <div className="flex items-center justify-between mb-1">
                 <label htmlFor="salary-rate-extra" className="block text-xs font-semibold text-neutral-700">
                   Extra-Hour Rate ({data.settings.currency}/hour)
@@ -1125,7 +1261,7 @@ export const SalaryView: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={overtimeEnabled}
-                    onChange={(e) => handleToggleRateOvertime(e.target.checked)}
+                    onChange={(e) => setOvertimeEnabled(e.target.checked)}
                     className="rounded border-neutral-300 text-[#111111] focus:ring-[#8ECFFF]"
                   />
                   <span>Enable Overtime Pay</span>
@@ -1138,17 +1274,14 @@ export const SalaryView: React.FC = () => {
                 step="any"
                 inputMode="decimal"
                 disabled={!overtimeEnabled}
-                value={overtimeEnabled ? extraHourRateInput : '0'}
-                onChange={(e) => {
-                  setExtraHourRateInput(e.target.value);
-                  if (Number(e.target.value) > 0) setLastPositiveExtraRate(e.target.value);
-                }}
+                value={extraHourRateInput}
+                onChange={(e) => setExtraHourRateInput(e.target.value)}
                 className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] disabled:bg-neutral-50 disabled:text-neutral-400"
               />
               <p className="text-[11px] text-neutral-500 mt-1">
                 {overtimeEnabled
                   ? 'Additional rate paid per hour beyond standard daily duty hours.'
-                  : 'Overtime disabled — extra-hour rate saves as 0.'}
+                  : 'Overtime calculation disabled for new entries.'}
               </p>
             </div>
           </div>
@@ -1294,6 +1427,33 @@ export const SalaryView: React.FC = () => {
 
                   <div>
                     <div className="flex items-center justify-between mb-1">
+                      <label htmlFor="daily-custom-addon" className="block text-xs font-semibold text-neutral-700">
+                        Day Add-on Salary ({data.settings.currency})
+                      </label>
+                      <label className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={dailyCustomAddonEnabled}
+                          onChange={(e) => setDailyCustomAddonEnabled(e.target.checked)}
+                          className="rounded border-neutral-300 text-[#111111]"
+                        />
+                        <span>Add-on</span>
+                      </label>
+                    </div>
+                    <input
+                      id="daily-custom-addon"
+                      type="number"
+                      step="any"
+                      min="0"
+                      disabled={!dailyCustomAddonEnabled}
+                      value={dailyCustomAddonInput}
+                      onChange={(e) => setDailyCustomAddonInput(e.target.value)}
+                      className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] disabled:bg-neutral-50 disabled:text-neutral-400"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
                       <label htmlFor="daily-custom-ot-rate" className="block text-xs font-semibold text-neutral-700">
                         Day Overtime Rate ({data.settings.currency}/hr)
                       </label>
@@ -1313,7 +1473,7 @@ export const SalaryView: React.FC = () => {
                       step="any"
                       min="0"
                       disabled={!dailyCustomOvertimeEnabled}
-                      value={dailyCustomOvertimeEnabled ? dailyCustomExtraRateInput : '0'}
+                      value={dailyCustomExtraRateInput}
                       onChange={(e) => setDailyCustomExtraRateInput(e.target.value)}
                       className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] disabled:bg-neutral-50 disabled:text-neutral-400"
                     />

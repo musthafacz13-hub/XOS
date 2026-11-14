@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
 import { Debt, DebtDirection } from '../../types';
-import { calculateDebtOutstanding } from '../../utils/calculations';
+import { calculateDebtOutstanding, calculateSeparateDebtTotals } from '../../utils/calculations';
 import { formatCurrency, formatHumanDate, getTodayString } from '../../utils/formatters';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 
@@ -70,6 +70,11 @@ export const DebtView: React.FC = () => {
   const payDebts = useMemo(() => {
     return allDebts.filter(d => d.direction === 'pay');
   }, [allDebts]);
+
+  const { totalToReceive, totalToPay } = useMemo(
+    () => calculateSeparateDebtTotals(allDebts, data.debtRepayments),
+    [allDebts, data.debtRepayments]
+  );
 
   // Autocomplete names
   const existingPeople = useMemo(() => {
@@ -404,6 +409,39 @@ export const DebtView: React.FC = () => {
           </div>
         </div>
 
+      </div>
+
+      {/* Bottom Summary Sections */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white rounded-2xl border border-black/[0.08] p-5 shadow-xs flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-lg bg-[#87CEEB]/20 text-[#111111] flex items-center justify-center shrink-0">
+              <ArrowUpRight className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-[#111111] truncate">Total Money to Receive</h3>
+              <p className="text-[11px] text-neutral-500">Outstanding amount others owe me</p>
+            </div>
+          </div>
+          <div className="text-xl sm:text-2xl font-bold font-mono text-[#111111] shrink-0">
+            {formatCurrency(totalToReceive, data.settings.currency)}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-black/[0.08] p-5 shadow-xs flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+              <ArrowDownLeft className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-[#111111] truncate">Total Money to Pay</h3>
+              <p className="text-[11px] text-neutral-500">Outstanding amount I owe others</p>
+            </div>
+          </div>
+          <div className="text-xl sm:text-2xl font-bold font-mono text-[#111111] shrink-0">
+            {formatCurrency(totalToPay, data.settings.currency)}
+          </div>
+        </div>
       </div>
 
       {/* ADD / EDIT DEBT MODAL */}

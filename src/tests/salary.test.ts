@@ -16,8 +16,10 @@ import {
   calculateMonthlySalarySummary,
   calculateEstimatedSalary,
   calculateDebtSummary,
-  calculateDebtOutstanding
+  calculateDebtOutstanding,
+  calculateSeparateDebtTotals
 } from '../utils/calculations';
+import { formatCurrency } from '../utils/formatters';
 import { repository } from '../services/repository';
 import { AttendanceRecord, SalaryConfig } from '../types';
 
@@ -188,18 +190,24 @@ async function runTests() {
 
   const noOvertimeConfig: SalaryConfig = {
     dailyBaseSalary: 600,
+    addonSalary: 0,
+    addonEnabled: false,
     standardWorkingHours: 8,
     extraHourRate: 0,
+    overtimeEnabled: false,
     currency: 'INR'
   };
   const noOtRes = calculateDailyEarnedSalary('Present', 11, noOvertimeConfig);
-  assert(noOtRes.extraHours === 3, 'Extra hours still tracked when overtime rate is 0');
-  assert(noOtRes.dailyEarnedSalary === 600, 'Daily salary ignores overtime pay when extraHourRate is 0');
+  assert(noOtRes.extraHours === 3, 'Extra hours still tracked when overtime is disabled');
+  assert(noOtRes.dailyEarnedSalary === 600, 'Daily salary ignores overtime pay when overtime is disabled');
 
   await repository.persistSalaryConfig({
     dailyBaseSalary: 500,
+    addonSalary: 0,
+    addonEnabled: false,
     standardWorkingHours: 8,
     extraHourRate: 100,
+    overtimeEnabled: true,
     currency: 'INR'
   });
 
@@ -227,16 +235,22 @@ async function runTests() {
     calculatedHours: 8,
     dailyBaseSalary: 500,
     extraHourRate: 100,
-    dailyEarnedSalary: 650,
+    salaryOverrideEnabled: true,
+    salaryOverrideAmount: 650,
     notes: 'Bonus +150'
   });
+  assert(day3.salaryOverrideEnabled === true, 'Day 3 stores salaryOverrideEnabled=true');
+  assertClose(day3.salaryOverrideAmount || 0, 650, 'Day 3 stores salaryOverrideAmount=650');
   assertClose(day3.dailyEarnedSalary || 0, 650, 'Day 3 stores explicit earned override 650');
 
   // Changing global salary defaults must NEVER mutate past days
   await repository.persistSalaryConfig({
     dailyBaseSalary: 1200,
+    addonSalary: 200,
+    addonEnabled: true,
     standardWorkingHours: 8,
     extraHourRate: 250,
+    overtimeEnabled: true,
     currency: 'INR'
   });
 
@@ -250,6 +264,187 @@ async function runTests() {
   assert(juneSummary.customizedDaysCount === 3, `Monthly summary counts snapshot/custom differences vs new defaults (got ${juneSummary.customizedDaysCount})`);
 
   console.log('✓ Test 7 passed: Custom daily overrides & historical protection verified.');
+
+  // ==========================================
+  // TEST 8: Add-on Salary, Non-Destructive Overtime Toggle, Explicit Override Flag & Snapshot Preservation on Edit
+  // ==========================================
+  console.log('Test 8: Add-on salary, overtimeEnabled=false with rate>0, explicit override flag, & edit snapshot preservation...');
+
+  const addonOnRes = calculateDailyEarnedSalary('Present', 9, {
+    dailyBaseSalary: 500,
+    addonSalary: 100,
+    addonEnabled: true,
+    standardWorkingHours: 8,
+    extraHourRate: 150,
+    overtimeEnabled: true
+  });
+  assertClose(addonOnRes.dailyEarnedSalary, 750, 'Present with addonEnabled=true adds addonSalary: 500 + 100 + 1*150 = 750');
+
+  const addonOffRes = calculateDailyEarnedSalary('Present', 9, {
+    dailyBaseSalary: 500,
+    addonSalary: 100,
+    addonEnabled: false,
+    standardWorkingHours: 8,
+    extraHourRate: 150,
+    overtimeEnabled: true
+  });
+  assertClose(addonOffRes.dailyEarnedSalary, 650, 'Present with addonEnabled=false excludes addonSalary: 500 + 1*150 = 650');
+
+  const otDisabledKeepRate = calculateDailyEarnedSalary('Present', 10, {
+    dailyBaseSalary: 500,
+    addonSalary: 100,
+    addonEnabled: true,
+    standardWorkingHours: 8,
+    extraHourRate: 150,
+    overtimeEnabled: false
+  });
+  assert(otDisabledKeepRate.extraHours === 2, 'Extra hours still tracked when overtimeEnabled=false with positive extraHourRate');
+  assertClose(otDisabledKeepRate.dailyEarnedSalary, 600, 'Overtime disabled ignores positive extraHourRate: 500 + 100 = 600');
+
+  // Passing dailyEarnedSalary without salaryOverrideEnabled=true MUST NOT override formula
+  await repository.persistSalaryConfig({
+    dailyBaseSalary: 500,
+    addonSalary: 100,
+    addonEnabled: true,
+    standardWorkingHours: 8,
+    extraHourRate: 150,
+    overtimeEnabled: false,
+    currency: 'INR'
+  });
+
+  const nonOverrideRecord = await repository.upsertAttendanceRecord({
+    date: '2026-06-04',
+    status: 'Present',
+    calculatedHours: 10,
+    dailyEarnedSalary: 999
+  });
+  assert(nonOverrideRecord.salaryOverrideEnabled === false, 'dailyEarnedSalary alone does NOT enable salaryOverrideEnabled');
+  assert(nonOverrideRecord.salaryOverrideAmount === undefined, 'salaryOverrideAmount remains undefined without override flag');
+  assertClose(nonOverrideRecord.addonSalary || 0, 100, 'Snapshot preserves addonSalary=100');
+  assert(nonOverrideRecord.addonEnabled === true, 'Snapshot preserves addonEnabled=true');
+  assertClose(nonOverrideRecord.extraHourRate || 0, 150, 'Snapshot preserves extraHourRate=150 even when overtimeEnabled=false');
+  assert(nonOverrideRecord.overtimeEnabled === false, 'Snapshot preserves overtimeEnabled=false');
+  assertClose(nonOverrideRecord.dailyEarnedSalary || 0, 600, 'Formula result (600) wins over stale dailyEarnedSalary (999) when salaryOverrideEnabled is false');
+
+  // Change global settings drastically, then partially edit 2026-06-04 and 2026-06-03
+  await repository.persistSalaryConfig({
+    dailyBaseSalary: 2000,
+    addonSalary: 500,
+    addonEnabled: false,
+    standardWorkingHours: 8,
+    extraHourRate: 400,
+    overtimeEnabled: true,
+    currency: 'INR'
+  });
+
+  const editedNonOverride = await repository.upsertAttendanceRecord({
+    date: '2026-06-04',
+    status: 'Present',
+    calculatedHours: 11,
+    notes: 'Updated shift hours only'
+  });
+  assertClose(editedNonOverride.dailyBaseSalary || 0, 500, 'Partial edit preserves existing dailyBaseSalary=500 snapshot');
+  assertClose(editedNonOverride.addonSalary || 0, 100, 'Partial edit preserves existing addonSalary=100 snapshot');
+  assert(editedNonOverride.addonEnabled === true, 'Partial edit preserves existing addonEnabled=true snapshot');
+  assertClose(editedNonOverride.extraHourRate || 0, 150, 'Partial edit preserves existing extraHourRate=150 snapshot');
+  assert(editedNonOverride.overtimeEnabled === false, 'Partial edit preserves existing overtimeEnabled=false snapshot');
+  assertClose(editedNonOverride.dailyEarnedSalary || 0, 600, 'Recalculated from preserved snapshot (500 + 100, ot disabled)');
+
+  const editedOverrideDay = await repository.upsertAttendanceRecord({
+    date: '2026-06-03',
+    status: 'Present',
+    calculatedHours: 9,
+    notes: 'Updated note on overridden day'
+  });
+  assert(editedOverrideDay.salaryOverrideEnabled === true, 'Partial edit preserves salaryOverrideEnabled=true');
+  assertClose(editedOverrideDay.salaryOverrideAmount || 0, 650, 'Partial edit preserves salaryOverrideAmount=650');
+  assertClose(editedOverrideDay.dailyEarnedSalary || 0, 650, 'Partial edit preserves overridden earned salary 650');
+
+  // Switching an overridden day to Absent clears the override cleanly
+  const markedAbsent = await repository.upsertAttendanceRecord({
+    date: '2026-06-03',
+    status: 'Absent'
+  });
+  assert(markedAbsent.salaryOverrideEnabled === false, 'Marking day Absent clears salaryOverrideEnabled');
+  assert(markedAbsent.salaryOverrideAmount === undefined, 'Marking day Absent clears salaryOverrideAmount');
+  assertClose(markedAbsent.dailyEarnedSalary || 0, 0, 'Marking day Absent sets earned salary to 0');
+
+  console.log('✓ Test 8 passed: Add-on, overtime toggle, explicit override flag, & snapshot preservation verified.');
+
+  // ==========================================
+  // TEST 9: Separate Receive & Pay Debt Totals
+  // ==========================================
+  console.log('Test 9: Separate Receive & Pay debt totals (outstanding, partial, paid, edit, delete)...');
+  repository.clearAllData();
+
+  // Empty -> ₹0 for both
+  const emptyTotals = calculateSeparateDebtTotals(repository.getDebts(), repository.getDebtRepayments());
+  assertClose(emptyTotals.totalToReceive, 0, 'Empty receive total is 0');
+  assertClose(emptyTotals.totalToPay, 0, 'Empty pay total is 0');
+  assert(formatCurrency(emptyTotals.totalToReceive, 'INR') === '₹0', 'Formats empty INR receive total as ₹0');
+  assert(formatCurrency(emptyTotals.totalToPay, 'INR') === '₹0', 'Formats empty INR pay total as ₹0');
+
+  // Add separate Receive and Pay debts
+  const recDebt1 = await repository.addDebt({
+    person_name: 'Sam',
+    original_amount: 1200,
+    lent_date: '2026-06-01',
+    direction: 'receive'
+  });
+  const recDebt2 = await repository.addDebt({
+    person_name: 'Riya',
+    original_amount: 800,
+    lent_date: '2026-06-02',
+    direction: 'receive'
+  });
+  const payDebt1 = await repository.addDebt({
+    person_name: 'Vikram',
+    original_amount: 1500,
+    lent_date: '2026-06-03',
+    direction: 'pay'
+  });
+
+  let totals = calculateSeparateDebtTotals(repository.getDebts(), repository.getDebtRepayments());
+  assertClose(totals.totalToReceive, 2000, 'Total Money to Receive sums receive debts (1200 + 800)');
+  assertClose(totals.totalToPay, 1500, 'Total Money to Pay sums pay debts separately (1500)');
+
+  // Partial repayment uses remaining balance, not original amount
+  await repository.addDebtRepayment({
+    debt_id: recDebt1.id,
+    amount: 450,
+    repayment_date: '2026-06-04'
+  });
+  await repository.addDebtRepayment({
+    debt_id: payDebt1.id,
+    amount: 500,
+    repayment_date: '2026-06-04'
+  });
+  totals = calculateSeparateDebtTotals(repository.getDebts(), repository.getDebtRepayments());
+  assertClose(totals.totalToReceive, 750 + 800, 'Receive total uses remaining balance (750 + 800 = 1550)');
+  assertClose(totals.totalToPay, 1000, 'Pay total uses remaining balance (1000)');
+
+  // Fully paid debt is excluded
+  await repository.addDebtRepayment({
+    debt_id: recDebt2.id,
+    amount: 800,
+    repayment_date: '2026-06-05'
+  });
+  totals = calculateSeparateDebtTotals(repository.getDebts(), repository.getDebtRepayments());
+  assertClose(totals.totalToReceive, 750, 'Fully paid receive debt excluded (750 remaining)');
+
+  // Editing debt updates totals immediately
+  await repository.updateDebt(payDebt1.id, { original_amount: 2000 });
+  totals = calculateSeparateDebtTotals(repository.getDebts(), repository.getDebtRepayments());
+  assertClose(totals.totalToPay, 1500, 'Edited pay debt updates remaining balance (2000 - 500 = 1500)');
+
+  // Deleting debt updates totals immediately back to 0
+  await repository.deleteDebt(recDebt1.id);
+  await repository.deleteDebt(payDebt1.id);
+  totals = calculateSeparateDebtTotals(repository.getDebts(), repository.getDebtRepayments());
+  assertClose(totals.totalToReceive, 0, 'Deleted receive debt reduces total to 0');
+  assertClose(totals.totalToPay, 0, 'Deleted pay debt reduces total to 0');
+
+  console.log('✓ Test 9 passed: Separate Receive & Pay debt totals verified.');
 
   console.log('\n======================================================');
   console.log('--- ALL XOS TEST SUITE CASES PASSED SUCCESSFULLY! ---');

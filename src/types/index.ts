@@ -32,8 +32,11 @@ export type FixedMonthlyAbsencePolicy = 'no_deduction' | 'deduct_unpaid_absent';
 
 export interface SalaryConfig {
   dailyBaseSalary: number; // default: 500 -> DB daily_base_salary
+  addonSalary: number; // default: 0 -> DB addon_salary
+  addonEnabled: boolean; // default: false -> DB addon_enabled
   standardWorkingHours: number; // default: 8 -> DB standard_hours
   extraHourRate: number; // default: 100 -> DB extra_hour_rate
+  overtimeEnabled: boolean; // default: true -> DB overtime_enabled
   currency: CurrencyCode; // DB currency_code
 }
 
@@ -153,7 +156,12 @@ export interface AttendanceRecord {
   calculatedHours?: number; // DB hours_worked
   extraHours?: number; // DB extra_hours
   dailyBaseSalary?: number; // DB daily_base_salary
+  addonSalary?: number; // DB addon_salary
+  addonEnabled?: boolean; // DB addon_enabled
   extraHourRate?: number; // DB extra_hour_rate
+  overtimeEnabled?: boolean; // DB overtime_enabled
+  salaryOverrideEnabled?: boolean; // DB salary_override_enabled
+  salaryOverrideAmount?: number; // DB salary_override_amount
   dailyEarnedSalary?: number; // DB calculated_salary
   notes?: string;
 }

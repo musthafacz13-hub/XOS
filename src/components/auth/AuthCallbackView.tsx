@@ -143,10 +143,10 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
             <button
               onClick={onNavigateLogin}
               type="button"
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#111111] text-white text-xs font-semibold rounded-xl hover:bg-black transition-colors cursor-pointer"
+              className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-5 py-2.5 bg-[#111318] text-white text-xs font-semibold rounded-xl hover:bg-black transition-colors cursor-pointer"
             >
               <span>Return to Login</span>
-              <ArrowRight className="w-3.5 h-3.5 text-[#87CEEB]" />
+              <ArrowRight className="w-3.5 h-3.5 text-[#8ECFFF]" />
             </button>
           </div>
         ) : (

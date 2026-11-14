@@ -11,8 +11,7 @@ interface SplashScreenProps {
 const LOADING_MESSAGES = [
   'Initializing your workspace…',
   'Preparing your personal dashboard…',
-  'Securing your experience…',
-  'Everything is ready.'
+  'Loading your account session…'
 ] as const;
 
 export const SplashScreen: React.FC<SplashScreenProps> = ({
@@ -48,8 +47,12 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
       return () => clearTimeout(timer);
     }
 
+    if (messageIndex >= LOADING_MESSAGES.length - 1) {
+      return;
+    }
+
     const pauseTimer = setTimeout(() => {
-      setMessageIndex(prev => (prev + 1) % LOADING_MESSAGES.length);
+      setMessageIndex(prev => Math.min(prev + 1, LOADING_MESSAGES.length - 1));
       setCharCount(0);
     }, 950);
     return () => clearTimeout(pauseTimer);

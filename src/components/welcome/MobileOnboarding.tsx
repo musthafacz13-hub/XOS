@@ -122,6 +122,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
   return (
     <div
       className="min-h-screen min-h-[100dvh] bg-white text-[#111318] flex flex-col justify-between px-5 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] overflow-x-clip select-none"
+      style={{ touchAction: 'pan-y' }}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
@@ -162,7 +163,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
               exit={{ opacity: 0, x: direction > 0 ? -22 : 22 }}
               transition={{ duration: 0.22, ease: SLIDE_EASE }}
               aria-labelledby={`onboarding-title-${currentSlide.id}`}
-              className="w-full bg-white border border-neutral-200/90 rounded-3xl p-7 shadow-sm flex flex-col items-center text-center space-y-5"
+              className="w-full min-h-[276px] bg-white border border-neutral-200/90 rounded-3xl px-6 py-7 sm:p-7 shadow-sm flex flex-col items-center justify-center text-center space-y-5"
             >
               <div className="w-16 h-16 rounded-2xl bg-[#EAF6FF] border border-[#8ECFFF]/60 flex items-center justify-center">
                 <SlideIcon className="w-7 h-7 text-[#111318]" strokeWidth={1.9} />
@@ -304,7 +305,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
             <button
               type="button"
               onClick={handleBack}
-              className="min-h-[36px] px-2.5 -ml-2 rounded-lg hover:bg-neutral-100 text-xs font-medium text-[#687482] hover:text-[#111318] transition-colors inline-flex items-center gap-1 cursor-pointer"
+              className="min-h-[44px] px-2.5 -ml-2 rounded-xl hover:bg-neutral-100 text-xs font-medium text-[#687482] hover:text-[#111318] transition-colors inline-flex items-center gap-1 cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Overview</span>
@@ -320,7 +321,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
             target="_blank"
             rel="noopener noreferrer"
             aria-label="View XOS on GitHub"
-            className="min-h-[36px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white hover:bg-neutral-50 border border-neutral-200 text-xs font-medium text-[#111318] transition-colors"
+            className="min-h-[44px] inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-neutral-50 border border-neutral-200 text-xs font-medium text-[#111318] transition-colors"
           >
             <svg
               aria-hidden="true"

@@ -546,6 +546,9 @@ function mapDebtRepaymentRow(r: any): DebtRepayment {
 
 function mapAttendanceRow(a: any): AttendanceRecord {
   const status = fromDbAttendanceStatus(a.status);
+  const addonSalaryParsed = Number(a.addon_salary);
+  const overrideAmountParsed = Number(a.salary_override_amount);
+
   return {
     id: a.id,
     date: a.attendance_date,
@@ -562,9 +565,23 @@ function mapAttendanceRow(a: any): AttendanceRecord {
       a.daily_base_salary !== null && a.daily_base_salary !== undefined
         ? Number(a.daily_base_salary)
         : undefined,
+    addonSalary:
+      a.addon_salary !== null && a.addon_salary !== undefined && Number.isFinite(addonSalaryParsed)
+        ? addonSalaryParsed
+        : 0,
+    addonEnabled: typeof a.addon_enabled === 'boolean' ? a.addon_enabled : false,
     extraHourRate:
       a.extra_hour_rate !== null && a.extra_hour_rate !== undefined
         ? Number(a.extra_hour_rate)
+        : undefined,
+    overtimeEnabled: typeof a.overtime_enabled === 'boolean' ? a.overtime_enabled : true,
+    salaryOverrideEnabled:
+      typeof a.salary_override_enabled === 'boolean' ? a.salary_override_enabled : false,
+    salaryOverrideAmount:
+      a.salary_override_amount !== null &&
+      a.salary_override_amount !== undefined &&
+      Number.isFinite(overrideAmountParsed)
+        ? overrideAmountParsed
         : undefined,
     dailyEarnedSalary:
       a.calculated_salary !== null && a.calculated_salary !== undefined
@@ -679,6 +696,7 @@ function mapGoalRow(g: any): Goal {
 
 function mapSalaryConfigRow(row: any, fallback: SalaryConfig): SalaryConfig {
   const dailyBase = Number(row.daily_base_salary);
+  const addonSalary = Number(row.addon_salary);
   const stdHours = Number(row.standard_hours);
   const extraRate = Number(row.extra_hour_rate);
 
@@ -688,6 +706,11 @@ function mapSalaryConfigRow(row: any, fallback: SalaryConfig): SalaryConfig {
       row.daily_base_salary !== undefined && row.daily_base_salary !== null && Number.isFinite(dailyBase)
         ? dailyBase
         : fallback.dailyBaseSalary,
+    addonSalary:
+      row.addon_salary !== undefined && row.addon_salary !== null && Number.isFinite(addonSalary)
+        ? addonSalary
+        : 0,
+    addonEnabled: typeof row.addon_enabled === 'boolean' ? row.addon_enabled : false,
     standardWorkingHours:
       row.standard_hours !== undefined && row.standard_hours !== null && Number.isFinite(stdHours)
         ? stdHours
@@ -695,7 +718,8 @@ function mapSalaryConfigRow(row: any, fallback: SalaryConfig): SalaryConfig {
     extraHourRate:
       row.extra_hour_rate !== undefined && row.extra_hour_rate !== null && Number.isFinite(extraRate)
         ? extraRate
-        : fallback.extraHourRate
+        : fallback.extraHourRate,
+    overtimeEnabled: typeof row.overtime_enabled === 'boolean' ? row.overtime_enabled : true
   };
 }
 
@@ -808,7 +832,7 @@ export const repository = {
       },
       {
         table: 'salary_configs',
-        promise: client.from('salary_configs').select('id, user_id, daily_base_salary, standard_hours, extra_hour_rate, currency_code, created_at, updated_at').eq('user_id', userId).maybeSingle()
+        promise: client.from('salary_configs').select('id, user_id, daily_base_salary, addon_salary, addon_enabled, standard_hours, extra_hour_rate, overtime_enabled, currency_code, created_at, updated_at').eq('user_id', userId).maybeSingle()
       }
     ] as const;
 
@@ -1022,6 +1046,11 @@ export const repository = {
     if (!Number.isFinite(bundle.salaryConfig.dailyBaseSalary) || bundle.salaryConfig.dailyBaseSalary < 0) {
       throw new Error('Daily base salary cannot be negative.');
     }
+    const resolvedAddonSalary =
+      bundle.salaryConfig.addonSalary !== undefined ? bundle.salaryConfig.addonSalary : 0;
+    if (!Number.isFinite(resolvedAddonSalary) || resolvedAddonSalary < 0) {
+      throw new Error('Add-on salary cannot be negative.');
+    }
     if (!Number.isFinite(bundle.salaryConfig.standardWorkingHours) || bundle.salaryConfig.standardWorkingHours <= 0) {
       throw new Error('Standard working hours must be greater than zero.');
     }
@@ -1101,21 +1130,36 @@ export const repository = {
       }
 
       // 2. Update public.salary_configs (only verified live columns)
+      const normalizedSalaryConfig: SalaryConfig = {
+        dailyBaseSalary: bundle.salaryConfig.dailyBaseSalary,
+        addonSalary: resolvedAddonSalary,
+        addonEnabled: Boolean(bundle.salaryConfig.addonEnabled),
+        standardWorkingHours: bundle.salaryConfig.standardWorkingHours,
+        extraHourRate: bundle.salaryConfig.extraHourRate,
+        overtimeEnabled:
+          bundle.salaryConfig.overtimeEnabled !== undefined
+            ? Boolean(bundle.salaryConfig.overtimeEnabled)
+            : true,
+        currency: resolvedCurrency
+      };
       try {
         const { data: salaryData, error: salaryError } = await ctx.client
           .from('salary_configs')
           .upsert(
             {
               user_id: ctx.user.id,
-              daily_base_salary: bundle.salaryConfig.dailyBaseSalary,
-              standard_hours: bundle.salaryConfig.standardWorkingHours,
-              extra_hour_rate: bundle.salaryConfig.extraHourRate,
+              daily_base_salary: normalizedSalaryConfig.dailyBaseSalary,
+              addon_salary: normalizedSalaryConfig.addonSalary,
+              addon_enabled: normalizedSalaryConfig.addonEnabled,
+              standard_hours: normalizedSalaryConfig.standardWorkingHours,
+              extra_hour_rate: normalizedSalaryConfig.extraHourRate,
+              overtime_enabled: normalizedSalaryConfig.overtimeEnabled,
               currency_code: resolvedCurrency,
               updated_at: now
             },
             { onConflict: 'user_id' }
           )
-          .select('id, user_id, daily_base_salary, standard_hours, extra_hour_rate, currency_code, created_at, updated_at')
+          .select('id, user_id, daily_base_salary, addon_salary, addon_enabled, standard_hours, extra_hour_rate, overtime_enabled, currency_code, created_at, updated_at')
           .single();
 
         if (salaryError || !salaryData) {
@@ -1128,10 +1172,7 @@ export const repository = {
           succeededSections.push('salary_configs');
           nextSettings = {
             ...nextSettings,
-            salaryConfig: mapSalaryConfigRow(salaryData, {
-              ...bundle.salaryConfig,
-              currency: resolvedCurrency
-            })
+            salaryConfig: mapSalaryConfigRow(salaryData, normalizedSalaryConfig)
           };
         }
       } catch (err) {
@@ -1209,7 +1250,15 @@ export const repository = {
       customIncomeSources: normalizedSources,
       widgets: bundle.widgets.map(w => ({ ...w })),
       salaryConfig: {
-        ...bundle.salaryConfig,
+        dailyBaseSalary: bundle.salaryConfig.dailyBaseSalary,
+        addonSalary: resolvedAddonSalary,
+        addonEnabled: Boolean(bundle.salaryConfig.addonEnabled),
+        standardWorkingHours: bundle.salaryConfig.standardWorkingHours,
+        extraHourRate: bundle.salaryConfig.extraHourRate,
+        overtimeEnabled:
+          bundle.salaryConfig.overtimeEnabled !== undefined
+            ? Boolean(bundle.salaryConfig.overtimeEnabled)
+            : true,
         currency: resolvedCurrency
       }
     };
@@ -1220,6 +1269,11 @@ export const repository = {
     if (!Number.isFinite(salaryConfig.dailyBaseSalary) || salaryConfig.dailyBaseSalary < 0) {
       throw new Error('Daily base salary cannot be negative.');
     }
+    const resolvedAddonSalary =
+      salaryConfig.addonSalary !== undefined ? salaryConfig.addonSalary : 0;
+    if (!Number.isFinite(resolvedAddonSalary) || resolvedAddonSalary < 0) {
+      throw new Error('Add-on salary cannot be negative.');
+    }
     if (!Number.isFinite(salaryConfig.standardWorkingHours) || salaryConfig.standardWorkingHours <= 0) {
       throw new Error('Standard working hours must be greater than zero.');
     }
@@ -1227,23 +1281,37 @@ export const repository = {
       throw new Error('Extra hour rate cannot be negative.');
     }
 
+    const resolvedCurrency = salaryConfig.currency || memoryState.settings.currency || 'INR';
+    const normalizedSalaryConfig: SalaryConfig = {
+      dailyBaseSalary: salaryConfig.dailyBaseSalary,
+      addonSalary: resolvedAddonSalary,
+      addonEnabled: Boolean(salaryConfig.addonEnabled),
+      standardWorkingHours: salaryConfig.standardWorkingHours,
+      extraHourRate: salaryConfig.extraHourRate,
+      overtimeEnabled:
+        salaryConfig.overtimeEnabled !== undefined ? Boolean(salaryConfig.overtimeEnabled) : true,
+      currency: resolvedCurrency
+    };
+
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
-      const resolvedCurrency = salaryConfig.currency || memoryState.settings.currency || 'INR';
       const payload = {
         user_id: ctx.user.id,
         currency_code: resolvedCurrency,
-        daily_base_salary: salaryConfig.dailyBaseSalary,
-        standard_hours: salaryConfig.standardWorkingHours,
-        extra_hour_rate: salaryConfig.extraHourRate,
+        daily_base_salary: normalizedSalaryConfig.dailyBaseSalary,
+        addon_salary: normalizedSalaryConfig.addonSalary,
+        addon_enabled: normalizedSalaryConfig.addonEnabled,
+        standard_hours: normalizedSalaryConfig.standardWorkingHours,
+        extra_hour_rate: normalizedSalaryConfig.extraHourRate,
+        overtime_enabled: normalizedSalaryConfig.overtimeEnabled,
         updated_at: new Date().toISOString()
       };
 
       const { data, error } = await ctx.client
         .from('salary_configs')
         .upsert(payload, { onConflict: 'user_id' })
-        .select('id, user_id, daily_base_salary, standard_hours, extra_hour_rate, currency_code, created_at, updated_at')
+        .select('id, user_id, daily_base_salary, addon_salary, addon_enabled, standard_hours, extra_hour_rate, overtime_enabled, currency_code, created_at, updated_at')
         .single();
 
       if (error || !data) {
@@ -1252,14 +1320,14 @@ export const repository = {
 
       memoryState.settings = {
         ...memoryState.settings,
-        salaryConfig: mapSalaryConfigRow(data, { ...salaryConfig, currency: resolvedCurrency })
+        salaryConfig: mapSalaryConfigRow(data, normalizedSalaryConfig)
       };
     } else {
       memoryState.settings = {
         ...memoryState.settings,
         salaryConfig: {
           ...memoryState.settings.salaryConfig,
-          ...salaryConfig
+          ...normalizedSalaryConfig
         }
       };
     }
@@ -1876,8 +1944,14 @@ export const repository = {
     if (record.dailyBaseSalary !== undefined && (!Number.isFinite(record.dailyBaseSalary) || record.dailyBaseSalary < 0)) {
       throw new Error('Daily base salary cannot be negative.');
     }
+    if (record.addonSalary !== undefined && (!Number.isFinite(record.addonSalary) || record.addonSalary < 0)) {
+      throw new Error('Add-on salary cannot be negative.');
+    }
     if (record.extraHourRate !== undefined && (!Number.isFinite(record.extraHourRate) || record.extraHourRate < 0)) {
       throw new Error('Extra hour rate cannot be negative.');
+    }
+    if (record.salaryOverrideAmount !== undefined && (!Number.isFinite(record.salaryOverrideAmount) || record.salaryOverrideAmount < 0)) {
+      throw new Error('Salary override amount cannot be negative.');
     }
     if (record.dailyEarnedSalary !== undefined && (!Number.isFinite(record.dailyEarnedSalary) || record.dailyEarnedSalary < 0)) {
       throw new Error('Daily earned salary cannot be negative.');
@@ -1886,23 +1960,79 @@ export const repository = {
     const normalizedStatus = fromDbAttendanceStatus(record.status);
     const dbStatus = toDbAttendanceStatus(record.status);
     const salaryConfig = memoryState.settings.salaryConfig;
-    const effectiveDailyBase =
-      record.dailyBaseSalary !== undefined ? Number(record.dailyBaseSalary) : salaryConfig.dailyBaseSalary;
-    const effectiveExtraRate =
-      record.extraHourRate !== undefined ? Number(record.extraHourRate) : salaryConfig.extraHourRate;
+    const existingRecord = memoryState.attendance.find(
+      r => (record.id && r.id === record.id) || r.date === record.date
+    );
 
-    let hours = record.calculatedHours ?? 0;
-    const sanitizedBreak = normalizedStatus === 'Present'
-      ? Math.max(0, Math.round(record.breakDurationMinutes ?? 0))
-      : 0;
+    const effectiveDailyBase =
+      record.dailyBaseSalary !== undefined
+        ? Number(record.dailyBaseSalary)
+        : existingRecord?.dailyBaseSalary !== undefined
+          ? existingRecord.dailyBaseSalary
+          : salaryConfig.dailyBaseSalary;
+    const effectiveAddonSalary =
+      record.addonSalary !== undefined
+        ? Number(record.addonSalary)
+        : existingRecord?.addonSalary !== undefined
+          ? existingRecord.addonSalary
+          : salaryConfig.addonSalary;
+    const effectiveAddonEnabled =
+      record.addonEnabled !== undefined
+        ? Boolean(record.addonEnabled)
+        : existingRecord?.addonEnabled !== undefined
+          ? existingRecord.addonEnabled
+          : salaryConfig.addonEnabled;
+    const effectiveExtraRate =
+      record.extraHourRate !== undefined
+        ? Number(record.extraHourRate)
+        : existingRecord?.extraHourRate !== undefined
+          ? existingRecord.extraHourRate
+          : salaryConfig.extraHourRate;
+    const effectiveOvertimeEnabled =
+      record.overtimeEnabled !== undefined
+        ? Boolean(record.overtimeEnabled)
+        : existingRecord?.overtimeEnabled !== undefined
+          ? existingRecord.overtimeEnabled
+          : salaryConfig.overtimeEnabled;
+
+    const requestedOverrideEnabled =
+      record.salaryOverrideEnabled !== undefined
+        ? Boolean(record.salaryOverrideEnabled)
+        : Boolean(existingRecord?.salaryOverrideEnabled);
+    const effectiveOverrideEnabled = normalizedStatus === 'Present' && requestedOverrideEnabled;
+
+    let effectiveOverrideAmount: number | undefined;
+    if (effectiveOverrideEnabled) {
+      const candidateOverride =
+        record.salaryOverrideAmount !== undefined
+          ? Number(record.salaryOverrideAmount)
+          : existingRecord?.salaryOverrideAmount;
+      if (candidateOverride === undefined || !Number.isFinite(candidateOverride) || candidateOverride < 0) {
+        throw new Error('Manual salary override amount is required and cannot be negative.');
+      }
+      effectiveOverrideAmount = Number(candidateOverride.toFixed(2));
+    }
+
+    let hours =
+      record.calculatedHours ??
+      (normalizedStatus === 'Present' ? existingRecord?.calculatedHours ?? 0 : 0);
+    const sanitizedBreak =
+      normalizedStatus === 'Present'
+        ? Math.max(0, Math.round(record.breakDurationMinutes ?? existingRecord?.breakDurationMinutes ?? 0))
+        : 0;
     if (normalizedStatus === 'Present' && record.checkInTime && record.checkOutTime) {
       hours = calculateWorkingHours(record.checkInTime, record.checkOutTime, sanitizedBreak);
     }
 
     const dailyRes = calculateDailyEarnedSalary(normalizedStatus, hours, {
-      ...salaryConfig,
+      standardWorkingHours: salaryConfig.standardWorkingHours,
       dailyBaseSalary: effectiveDailyBase,
-      extraHourRate: effectiveExtraRate
+      addonSalary: effectiveAddonSalary,
+      addonEnabled: effectiveAddonEnabled,
+      extraHourRate: effectiveExtraRate,
+      overtimeEnabled: effectiveOvertimeEnabled,
+      salaryOverrideEnabled: effectiveOverrideEnabled,
+      salaryOverrideAmount: effectiveOverrideAmount
     });
 
     const effectiveHours = normalizedStatus === 'Present' ? dailyRes.workingHours : 0;
@@ -1912,12 +2042,7 @@ export const repository = {
           ? Math.max(0, Number(record.extraHours.toFixed(2)))
           : dailyRes.extraHours
         : 0;
-    const effectiveEarnedSalary =
-      normalizedStatus === 'Present'
-        ? record.dailyEarnedSalary !== undefined
-          ? Number(record.dailyEarnedSalary.toFixed(2))
-          : dailyRes.dailyEarnedSalary
-        : 0;
+    const effectiveEarnedSalary = normalizedStatus === 'Present' ? dailyRes.dailyEarnedSalary : 0;
 
     const processedRecordPayload = {
       ...record,
@@ -1926,7 +2051,12 @@ export const repository = {
       calculatedHours: effectiveHours,
       extraHours: effectiveExtraHours,
       dailyBaseSalary: effectiveDailyBase,
+      addonSalary: effectiveAddonSalary,
+      addonEnabled: effectiveAddonEnabled,
       extraHourRate: effectiveExtraRate,
+      overtimeEnabled: effectiveOvertimeEnabled,
+      salaryOverrideEnabled: effectiveOverrideEnabled,
+      salaryOverrideAmount: effectiveOverrideAmount,
       dailyEarnedSalary: effectiveEarnedSalary
     };
 
@@ -1946,7 +2076,12 @@ export const repository = {
             hours_worked: processedRecordPayload.calculatedHours,
             extra_hours: processedRecordPayload.extraHours,
             daily_base_salary: effectiveDailyBase,
+            addon_salary: effectiveAddonSalary,
+            addon_enabled: effectiveAddonEnabled,
             extra_hour_rate: effectiveExtraRate,
+            overtime_enabled: effectiveOvertimeEnabled,
+            salary_override_enabled: effectiveOverrideEnabled,
+            salary_override_amount: effectiveOverrideEnabled ? effectiveOverrideAmount! : null,
             calculated_salary: processedRecordPayload.dailyEarnedSalary,
             notes: record.notes?.trim() ? record.notes.trim() : null
           },

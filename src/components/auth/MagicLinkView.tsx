@@ -92,7 +92,7 @@ export const MagicLinkView: React.FC<MagicLinkViewProps> = ({ onNavigate }) => {
               type="button"
               disabled={loading || cooldownSeconds > 0}
               onClick={handleSendLink}
-              className="w-full flex items-center justify-center gap-2 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-semibold rounded-xl border border-neutral-200 transition-colors cursor-pointer disabled:opacity-50"
+              className="w-full min-h-[44px] flex items-center justify-center gap-2 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-semibold rounded-xl border border-neutral-200 transition-colors cursor-pointer disabled:opacity-50"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>
@@ -103,7 +103,7 @@ export const MagicLinkView: React.FC<MagicLinkViewProps> = ({ onNavigate }) => {
             <button
               type="button"
               onClick={() => onNavigate('login')}
-              className="text-xs text-neutral-500 hover:text-black transition-colors font-medium cursor-pointer block w-full py-1"
+              className="min-h-[44px] text-xs text-neutral-500 hover:text-black transition-colors font-medium cursor-pointer flex items-center justify-center w-full py-2 rounded-xl"
             >
               Back to Password Sign In
             </button>

@@ -943,6 +943,8 @@ async function runPersistenceTests() {
               assert('break_minutes' in ctx.payload && !('break_duration_minutes' in ctx.payload), 'attendance_records MUST write break_minutes');
               assert('hours_worked' in ctx.payload && !('calculated_hours' in ctx.payload), 'attendance_records MUST write hours_worked');
               assert('daily_base_salary' in ctx.payload && 'extra_hour_rate' in ctx.payload && 'calculated_salary' in ctx.payload, 'attendance_records writes snapshot salary columns');
+              assert('addon_salary' in ctx.payload && 'addon_enabled' in ctx.payload && 'overtime_enabled' in ctx.payload, 'attendance_records writes add-on and overtime snapshot columns');
+              assert('salary_override_enabled' in ctx.payload && 'salary_override_amount' in ctx.payload, 'attendance_records writes manual salary override columns');
               capturedAttendancePayload = ctx.payload;
               return { data: { id: UUID_2, ...ctx.payload, created_at: '2026-05-01' }, error: null };
             }
@@ -983,14 +985,20 @@ async function runPersistenceTests() {
       await repository.persistSalaryConfig({
         currency: 'USD',
         dailyBaseSalary: 1200,
+        addonSalary: 150,
+        addonEnabled: true,
         standardWorkingHours: 9,
-        extraHourRate: 200
+        extraHourRate: 200,
+        overtimeEnabled: true
       });
 
       assert(capturedSalaryPayload?.currency_code === 'USD', 'salary_configs upsert sends currency_code');
       assert(capturedSalaryPayload?.daily_base_salary === 1200, 'salary_configs upsert sends daily_base_salary');
+      assert(capturedSalaryPayload?.addon_salary === 150, 'salary_configs upsert sends addon_salary');
+      assert(capturedSalaryPayload?.addon_enabled === true, 'salary_configs upsert sends addon_enabled');
       assert(capturedSalaryPayload?.standard_hours === 9, 'salary_configs upsert sends standard_hours');
       assert(capturedSalaryPayload?.extra_hour_rate === 200, 'salary_configs upsert sends extra_hour_rate');
+      assert(capturedSalaryPayload?.overtime_enabled === true, 'salary_configs upsert sends overtime_enabled');
 
       await repository.addGoal({ title: 'My Goal', description: '', category: 'Personal', targetAmount: 10000, priority: 'Medium' });
       await repository.updateGoal(UUID_1, { title: 'My Dream', targetAmount: 15000, priority: 'High' });
@@ -1010,8 +1018,13 @@ async function runPersistenceTests() {
       assert(capturedAttendancePayload.attendance_date === '2026-05-01', 'attendance_records writes attendance_date');
       assert(capturedAttendancePayload.check_in === '09:00:00', 'attendance_records normalizes check_in');
       assert(capturedAttendancePayload.extra_hours === 1, '10h with 9h standard -> 1 extra hour');
-      assert(capturedAttendancePayload.calculated_salary === 1400, '1200 + 1*200 = 1400 snapshot calculated_salary');
-      assert(att.dailyEarnedSalary === 1400, 'Mapped dailyEarnedSalary from calculated_salary');
+      assert(capturedAttendancePayload.addon_salary === 150, 'attendance_records snapshots addon_salary=150');
+      assert(capturedAttendancePayload.addon_enabled === true, 'attendance_records snapshots addon_enabled=true');
+      assert(capturedAttendancePayload.overtime_enabled === true, 'attendance_records snapshots overtime_enabled=true');
+      assert(capturedAttendancePayload.salary_override_enabled === false, 'attendance_records defaults salary_override_enabled=false');
+      assert(capturedAttendancePayload.salary_override_amount === null, 'attendance_records defaults salary_override_amount=null');
+      assert(capturedAttendancePayload.calculated_salary === 1550, '1200 + 150 + 1*200 = 1550 snapshot calculated_salary');
+      assert(att.dailyEarnedSalary === 1550, 'Mapped dailyEarnedSalary from calculated_salary');
     }
     console.log('✓ Test 14 passed.');
 
@@ -1054,8 +1067,11 @@ async function runPersistenceTests() {
         widgets: [{ id: 'w1', name: 'Income', visible: true, order: 1 }],
         salaryConfig: {
           dailyBaseSalary: 600,
+          addonSalary: 50,
+          addonEnabled: true,
           standardWorkingHours: 8,
           extraHourRate: 120,
+          overtimeEnabled: true,
           currency: 'EUR'
         }
       });
@@ -1106,7 +1122,7 @@ async function runPersistenceTests() {
         customExpenseCategories: ['Food'],
         customIncomeSources: ['Salary'],
         widgets: [{ id: 'w1', name: 'Balance', visible: true, order: 1 }],
-        salaryConfig: { dailyBaseSalary: 500, standardWorkingHours: 8, extraHourRate: 100, currency: 'INR' }
+        salaryConfig: { dailyBaseSalary: 500, addonSalary: 0, addonEnabled: false, standardWorkingHours: 8, extraHourRate: 100, overtimeEnabled: true, currency: 'INR' }
       });
 
       assert(writtenWeekStarts[0] === 0, 'Persisting Sunday writes integer 0');
@@ -1122,7 +1138,7 @@ async function runPersistenceTests() {
         customExpenseCategories: ['Food'],
         customIncomeSources: ['Salary'],
         widgets: [{ id: 'w1', name: 'Balance', visible: true, order: 1 }],
-        salaryConfig: { dailyBaseSalary: 500, standardWorkingHours: 8, extraHourRate: 100, currency: 'INR' }
+        salaryConfig: { dailyBaseSalary: 500, addonSalary: 0, addonEnabled: false, standardWorkingHours: 8, extraHourRate: 100, overtimeEnabled: true, currency: 'INR' }
       });
       assert(writtenWeekStarts[1] === 1, 'Persisting Monday writes integer 1');
       assert(repository.getSettings().weekStartDay === 'Monday', 'memoryState hydrates Monday for 1');
@@ -1629,7 +1645,7 @@ async function runPersistenceTests() {
           customExpenseCategories: ['Food'],
           customIncomeSources: ['Salary'],
           widgets: [{ id: 'w1', name: 'Balance', visible: true, order: 1 }],
-          salaryConfig: { dailyBaseSalary: 999, standardWorkingHours: 9, extraHourRate: 250, currency: 'EUR' }
+          salaryConfig: { dailyBaseSalary: 999, addonSalary: 0, addonEnabled: false, standardWorkingHours: 9, extraHourRate: 250, overtimeEnabled: true, currency: 'EUR' }
         });
       } catch (err) {
         partialErr = err;
@@ -1659,7 +1675,7 @@ async function runPersistenceTests() {
           customExpenseCategories: ['Other'],
           customIncomeSources: ['Other'],
           widgets: [{ id: 'w1', name: 'Balance', visible: true, order: 1 }],
-          salaryConfig: { dailyBaseSalary: 1200, standardWorkingHours: 8, extraHourRate: 150, currency: 'USD' }
+          salaryConfig: { dailyBaseSalary: 1200, addonSalary: 100, addonEnabled: true, standardWorkingHours: 8, extraHourRate: 150, overtimeEnabled: true, currency: 'USD' }
         });
       } catch (err) {
         secondErr = err;
@@ -2077,8 +2093,11 @@ async function runPersistenceTests() {
         id: 'sal_cfg_1',
         user_id: USER_A,
         daily_base_salary: 500,
+        addon_salary: 0,
+        addon_enabled: false,
         standard_hours: 8,
         extra_hour_rate: 100,
+        overtime_enabled: true,
         currency_code: 'INR',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -2120,8 +2139,11 @@ async function runPersistenceTests() {
       configureRepositoryBackendForTests(salaryMockClient, true);
       await repository.persistSalaryConfig({
         dailyBaseSalary: 500,
+        addonSalary: 0,
+        addonEnabled: false,
         standardWorkingHours: 8,
         extraHourRate: 100,
+        overtimeEnabled: true,
         currency: 'INR'
       });
 
@@ -2131,31 +2153,199 @@ async function runPersistenceTests() {
         calculatedHours: 10,
         dailyBaseSalary: 800,
         extraHourRate: 150,
-        dailyEarnedSalary: 1250,
+        salaryOverrideEnabled: true,
+        salaryOverrideAmount: 1250,
         notes: 'Holiday shift bonus'
       });
 
       assert(savedAttendanceRows.length === 1, 'One attendance_records row upserted');
       assert(savedAttendanceRows[0].daily_base_salary === 800, 'DB daily_base_salary reflects custom day rate 800');
       assert(savedAttendanceRows[0].extra_hour_rate === 150, 'DB extra_hour_rate reflects custom overtime rate 150');
+      assert(savedAttendanceRows[0].salary_override_enabled === true, 'DB salary_override_enabled persists true');
+      assert(savedAttendanceRows[0].salary_override_amount === 1250, 'DB salary_override_amount persists 1250');
       assert(savedAttendanceRows[0].calculated_salary === 1250, 'DB calculated_salary persists explicit override 1250');
+      assert(customDay.salaryOverrideEnabled === true && customDay.salaryOverrideAmount === 1250, 'Returned AttendanceRecord exposes explicit override flag and amount');
       assert(customDay.dailyEarnedSalary === 1250, 'Returned AttendanceRecord preserves custom earned salary');
 
       await repository.persistSalaryConfig({
         dailyBaseSalary: 950,
+        addonSalary: 150,
+        addonEnabled: true,
         standardWorkingHours: 8,
-        extraHourRate: 0,
+        extraHourRate: 175,
+        overtimeEnabled: false,
         currency: 'INR'
       });
 
-      assert(savedSalaryConfigRow.extra_hour_rate === 0, 'Overtime disabled persists extra_hour_rate=0 in salary_configs');
+      assert(savedSalaryConfigRow.addon_salary === 150 && savedSalaryConfigRow.addon_enabled === true, 'Add-on config persisted to salary_configs');
+      assert(savedSalaryConfigRow.extra_hour_rate === 175 && savedSalaryConfigRow.overtime_enabled === false, 'Disabling overtime preserves extra_hour_rate=175 and writes overtime_enabled=false');
       assert(savedAttendanceRows[0].calculated_salary === 1250, 'Historical attendance calculated_salary untouched after config update');
       assert(repository.getAttendance()[0].dailyEarnedSalary === 1250, 'In-memory historical attendance untouched after config update');
     }
     console.log('✓ Test 25 passed.');
 
+    // ==========================================
+    // TEST 26: New Supabase Salary Schema Columns, Legacy Defaults, Snapshot Preservation on Edit & Non-Substitution
+    // ==========================================
+    console.log('Test 26: New salary schema columns, legacy defaults, edit snapshot preservation & calculated_salary non-substitution...');
+    {
+      let dbSalaryConfig: any = {
+        id: 'sal_cfg_26',
+        user_id: USER_A,
+        daily_base_salary: 600,
+        addon_salary: 120,
+        addon_enabled: true,
+        standard_hours: 8,
+        extra_hour_rate: 200,
+        overtime_enabled: false,
+        currency_code: 'INR',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const dbAttendance: any[] = [
+        // Legacy row with NULL/missing new schema columns & a drifted calculated_salary (must NOT imply salary_override_enabled)
+        {
+          id: 'att_legacy_1',
+          user_id: USER_A,
+          attendance_date: '2026-08-01',
+          status: 'present',
+          hours_worked: 9,
+          extra_hours: 1,
+          daily_base_salary: 500,
+          extra_hour_rate: 100,
+          calculated_salary: 777, // differs from 600, but salary_override_enabled is missing/null
+          addon_salary: null,
+          addon_enabled: null,
+          overtime_enabled: null,
+          salary_override_enabled: null,
+          salary_override_amount: null,
+          notes: 'Legacy row',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+      ];
+
+      const schemaClient = createMockSupabase(USER_A, {
+        user_settings: (ctx) => ({ data: ctx.payload, error: null }),
+        salary_configs: (ctx) => {
+          if (ctx.op === 'upsert') {
+            dbSalaryConfig = { ...dbSalaryConfig, ...ctx.payload };
+            return { data: dbSalaryConfig, error: null };
+          }
+          return { data: dbSalaryConfig, error: null };
+        },
+        attendance_records: (ctx) => {
+          if (ctx.op === 'upsert') {
+            const idx = dbAttendance.findIndex(r => r.attendance_date === ctx.payload.attendance_date);
+            const row = {
+              id: idx >= 0 ? dbAttendance[idx].id : `att_${dbAttendance.length + 1}`,
+              ...ctx.payload,
+              created_at: idx >= 0 ? dbAttendance[idx].created_at : new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            };
+            if (idx >= 0) dbAttendance[idx] = row;
+            else dbAttendance.unshift(row);
+            return { data: row, error: null };
+          }
+          return { data: dbAttendance, error: null };
+        }
+      });
+
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      configureRepositoryBackendForTests(schemaClient, true);
+
+      // 1. Hydrate from DB and verify global salary_configs + safe legacy defaults
+      await repository.fetchAllUserData(USER_A);
+      const hydratedCfg = repository.getSettings().salaryConfig;
+      assert(hydratedCfg.dailyBaseSalary === 600, 'Hydrated dailyBaseSalary=600');
+      assert(hydratedCfg.addonSalary === 120, 'Hydrated addonSalary=120');
+      assert(hydratedCfg.addonEnabled === true, 'Hydrated addonEnabled=true');
+      assert(hydratedCfg.extraHourRate === 200, 'Hydrated extraHourRate=200');
+      assert(hydratedCfg.overtimeEnabled === false, 'Hydrated overtimeEnabled=false');
+
+      const legacyHydrated = repository.getAttendance().find(a => a.date === '2026-08-01')!;
+      assert(legacyHydrated.addonSalary === 0, 'Legacy null addon_salary defaults to 0');
+      assert(legacyHydrated.addonEnabled === false, 'Legacy null addon_enabled defaults to false');
+      assert(legacyHydrated.overtimeEnabled === true, 'Legacy null overtime_enabled defaults to true');
+      assert(legacyHydrated.salaryOverrideEnabled === false, 'Legacy null salary_override_enabled defaults to false even when calculated_salary differs from formula');
+      assert(legacyHydrated.salaryOverrideAmount === undefined, 'Legacy null salary_override_amount defaults to undefined');
+      assert(legacyHydrated.dailyEarnedSalary === 777, 'Legacy calculated_salary preserved as read-only value without promoting to override flag');
+
+      // 2. Save new attendance under global config (base=600, addon=120 enabled, extraRate=200 overtime_enabled=false)
+      const newDay = await repository.upsertAttendanceRecord({
+        date: '2026-08-02',
+        status: 'Present',
+        calculatedHours: 10
+      });
+      const newDbRow = dbAttendance.find(r => r.attendance_date === '2026-08-02')!;
+      assert(newDbRow.addon_salary === 120 && newDbRow.addon_enabled === true, 'New record saves per-date add-on snapshot');
+      assert(newDbRow.extra_hour_rate === 200 && newDbRow.overtime_enabled === false, 'New record preserves extra_hour_rate=200 and overtime_enabled=false');
+      assert(newDbRow.salary_override_enabled === false && newDbRow.salary_override_amount === null, 'New formula record sets override disabled');
+      assert(newDbRow.calculated_salary === 720, 'Formula computes 600 + 120 + 0 (OT disabled) = 720');
+      assert(newDay.dailyEarnedSalary === 720, 'Mapped dailyEarnedSalary matches 720');
+
+      // 3. Change global settings via persistSettingsBundle, then partially edit 2026-08-02 -> MUST preserve 2026-08-02 snapshot!
+      await repository.persistSettingsBundle({
+        currency: 'INR',
+        dateFormat: 'YYYY-MM-DD',
+        weekStartDay: 'Monday',
+        customExpenseCategories: ['Food'],
+        customIncomeSources: ['Salary'],
+        widgets: [{ id: 'w1', name: 'Balance', visible: true, order: 1 }],
+        salaryConfig: {
+          dailyBaseSalary: 1500,
+          addonSalary: 300,
+          addonEnabled: false,
+          standardWorkingHours: 8,
+          extraHourRate: 350,
+          overtimeEnabled: true,
+          currency: 'INR'
+        }
+      });
+
+      assert(dbSalaryConfig.addon_salary === 300 && dbSalaryConfig.addon_enabled === false && dbSalaryConfig.overtime_enabled === true, 'persistSettingsBundle saves new salary_configs fields');
+
+      await repository.upsertAttendanceRecord({
+        date: '2026-08-02',
+        status: 'Present',
+        calculatedHours: 11,
+        notes: 'Partial edit after global change'
+      });
+      const afterPartialEditRow = dbAttendance.find(r => r.attendance_date === '2026-08-02')!;
+      assert(afterPartialEditRow.daily_base_salary === 600, 'Partial edit does NOT overwrite daily_base_salary with new global 1500');
+      assert(afterPartialEditRow.addon_salary === 120 && afterPartialEditRow.addon_enabled === true, 'Partial edit preserves per-date addon snapshot');
+      assert(afterPartialEditRow.extra_hour_rate === 200 && afterPartialEditRow.overtime_enabled === false, 'Partial edit preserves per-date overtime snapshot');
+      assert(afterPartialEditRow.calculated_salary === 720, 'Calculated salary stays 720 using preserved snapshot');
+
+      // 4. Enable manual override explicitly, then disable it later -> recalculates from formula and clears override amount
+      await repository.upsertAttendanceRecord({
+        date: '2026-08-02',
+        status: 'Present',
+        calculatedHours: 11,
+        salaryOverrideEnabled: true,
+        salaryOverrideAmount: 1400
+      });
+      assert(dbAttendance.find(r => r.attendance_date === '2026-08-02')!.salary_override_enabled === true, 'Manual override flag saved as true');
+      assert(dbAttendance.find(r => r.attendance_date === '2026-08-02')!.salary_override_amount === 1400, 'Manual override amount saved as 1400');
+      assert(dbAttendance.find(r => r.attendance_date === '2026-08-02')!.calculated_salary === 1400, 'Calculated salary matches override amount 1400');
+
+      await repository.upsertAttendanceRecord({
+        date: '2026-08-02',
+        status: 'Present',
+        calculatedHours: 11,
+        salaryOverrideEnabled: false,
+        salaryOverrideAmount: undefined
+      });
+      const clearedRow = dbAttendance.find(r => r.attendance_date === '2026-08-02')!;
+      assert(clearedRow.salary_override_enabled === false && clearedRow.salary_override_amount === null, 'Disabling manual override clears DB override fields');
+      assert(clearedRow.calculated_salary === 720, 'Disabling manual override restores formula calculation from snapshot (720)');
+    }
+    console.log('✓ Test 26 passed.');
+
     console.log('\n======================================================');
-    console.log('--- ALL 25 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
+    console.log('--- ALL 26 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
     console.log('======================================================');
   } finally {
     configureRepositoryBackendForTests(null, null);

@@ -4,12 +4,14 @@
   html {
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    overflow-x: clip;
   }
 
   body {
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     background-color: #ffffff;
     color: #111318;
+    overflow-x: clip;
   }
 
   button,

@@ -79,10 +79,10 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
             whileTap={tapScale.button}
             onClick={onSuccess}
             type="button"
-            className="w-full flex items-center justify-center gap-2 py-3 bg-[#111111] text-white text-xs sm:text-sm font-semibold rounded-xl hover:bg-black transition-colors shadow-sm cursor-pointer"
+            className="w-full min-h-[48px] flex items-center justify-center gap-2 py-3 bg-[#111318] text-white text-xs sm:text-sm font-semibold rounded-xl hover:bg-black transition-colors shadow-sm cursor-pointer"
           >
             <span>Enter Workspace</span>
-            <ArrowRight className="w-4 h-4 text-[#87CEEB]" />
+            <ArrowRight className="w-4 h-4 text-[#8ECFFF]" />
           </motion.button>
         </div>
       ) : (
@@ -174,7 +174,7 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
             <button
               type="button"
               onClick={onNavigateLogin}
-              className="text-neutral-500 hover:text-black font-medium transition-colors cursor-pointer"
+              className="min-h-[44px] px-4 inline-flex items-center justify-center text-neutral-500 hover:text-black font-medium transition-colors cursor-pointer rounded-xl"
             >
               Return to Login
             </button>

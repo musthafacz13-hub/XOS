@@ -103,7 +103,7 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
             type="button"
             disabled={cooldownSeconds > 0 || resending}
             onClick={handleResend}
-            className="w-full flex items-center justify-center gap-2 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-semibold rounded-xl border border-neutral-200 transition-colors cursor-pointer disabled:opacity-50"
+            className="w-full min-h-[44px] flex items-center justify-center gap-2 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-semibold rounded-xl border border-neutral-200 transition-colors cursor-pointer disabled:opacity-50"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>
@@ -118,10 +118,10 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
           <button
             type="button"
             onClick={onNavigateLogin}
-            className="w-full flex items-center justify-center gap-1.5 py-2.5 bg-[#111111] hover:bg-black text-white text-xs font-semibold rounded-xl transition-colors shadow-xs cursor-pointer"
+            className="w-full min-h-[48px] flex items-center justify-center gap-1.5 py-2.5 bg-[#111318] hover:bg-black text-white text-xs font-semibold rounded-xl transition-colors shadow-xs cursor-pointer"
           >
             <span>Back to Log In</span>
-            <ArrowRight className="w-3.5 h-3.5 text-[#87CEEB]" />
+            <ArrowRight className="w-3.5 h-3.5 text-[#8ECFFF]" />
           </button>
         </div>
       </div>
