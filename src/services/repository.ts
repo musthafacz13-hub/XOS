@@ -1873,9 +1873,24 @@ export const repository = {
       throw new Error('Attendance cannot be logged for future dates.');
     }
 
+    if (record.dailyBaseSalary !== undefined && (!Number.isFinite(record.dailyBaseSalary) || record.dailyBaseSalary < 0)) {
+      throw new Error('Daily base salary cannot be negative.');
+    }
+    if (record.extraHourRate !== undefined && (!Number.isFinite(record.extraHourRate) || record.extraHourRate < 0)) {
+      throw new Error('Extra hour rate cannot be negative.');
+    }
+    if (record.dailyEarnedSalary !== undefined && (!Number.isFinite(record.dailyEarnedSalary) || record.dailyEarnedSalary < 0)) {
+      throw new Error('Daily earned salary cannot be negative.');
+    }
+
     const normalizedStatus = fromDbAttendanceStatus(record.status);
     const dbStatus = toDbAttendanceStatus(record.status);
     const salaryConfig = memoryState.settings.salaryConfig;
+    const effectiveDailyBase =
+      record.dailyBaseSalary !== undefined ? Number(record.dailyBaseSalary) : salaryConfig.dailyBaseSalary;
+    const effectiveExtraRate =
+      record.extraHourRate !== undefined ? Number(record.extraHourRate) : salaryConfig.extraHourRate;
+
     let hours = record.calculatedHours ?? 0;
     const sanitizedBreak = normalizedStatus === 'Present'
       ? Math.max(0, Math.round(record.breakDurationMinutes ?? 0))
@@ -1883,17 +1898,36 @@ export const repository = {
     if (normalizedStatus === 'Present' && record.checkInTime && record.checkOutTime) {
       hours = calculateWorkingHours(record.checkInTime, record.checkOutTime, sanitizedBreak);
     }
-    const dailyRes = calculateDailyEarnedSalary(normalizedStatus, hours, salaryConfig);
+
+    const dailyRes = calculateDailyEarnedSalary(normalizedStatus, hours, {
+      ...salaryConfig,
+      dailyBaseSalary: effectiveDailyBase,
+      extraHourRate: effectiveExtraRate
+    });
+
+    const effectiveHours = normalizedStatus === 'Present' ? dailyRes.workingHours : 0;
+    const effectiveExtraHours =
+      normalizedStatus === 'Present'
+        ? record.extraHours !== undefined && Number.isFinite(record.extraHours)
+          ? Math.max(0, Number(record.extraHours.toFixed(2)))
+          : dailyRes.extraHours
+        : 0;
+    const effectiveEarnedSalary =
+      normalizedStatus === 'Present'
+        ? record.dailyEarnedSalary !== undefined
+          ? Number(record.dailyEarnedSalary.toFixed(2))
+          : dailyRes.dailyEarnedSalary
+        : 0;
 
     const processedRecordPayload = {
       ...record,
       status: normalizedStatus,
       breakDurationMinutes: sanitizedBreak,
-      calculatedHours: normalizedStatus === 'Present' ? dailyRes.workingHours : 0,
-      extraHours: normalizedStatus === 'Present' ? dailyRes.extraHours : 0,
-      dailyBaseSalary: salaryConfig.dailyBaseSalary,
-      extraHourRate: salaryConfig.extraHourRate,
-      dailyEarnedSalary: dailyRes.dailyEarnedSalary
+      calculatedHours: effectiveHours,
+      extraHours: effectiveExtraHours,
+      dailyBaseSalary: effectiveDailyBase,
+      extraHourRate: effectiveExtraRate,
+      dailyEarnedSalary: effectiveEarnedSalary
     };
 
     const ctx = await requirePersistenceContext();
@@ -1911,8 +1945,8 @@ export const repository = {
             break_minutes: sanitizedBreak,
             hours_worked: processedRecordPayload.calculatedHours,
             extra_hours: processedRecordPayload.extraHours,
-            daily_base_salary: salaryConfig.dailyBaseSalary,
-            extra_hour_rate: salaryConfig.extraHourRate,
+            daily_base_salary: effectiveDailyBase,
+            extra_hour_rate: effectiveExtraRate,
             calculated_salary: processedRecordPayload.dailyEarnedSalary,
             notes: record.notes?.trim() ? record.notes.trim() : null
           },

@@ -49,7 +49,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
   const showDateFilter = ['dashboard', 'reports', 'expenses', 'income'].includes(activeTab);
 
   return (
-    <header className="h-16 border-b border-black/[0.06] liquid-glass px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 sticky top-0 z-20">
+    <header className="pt-[env(safe-area-inset-top,0px)] min-h-[calc(4rem+env(safe-area-inset-top,0px))] border-b border-black/[0.06] liquid-glass px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 sticky top-0 z-20">
       {/* Title & Date Breadcrumb */}
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <XOSLogo size="xs" className="md:hidden" />

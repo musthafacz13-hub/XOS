@@ -33,13 +33,11 @@ export const MOTION_SPRINGS: Record<string, Transition> = {
 export const pageVariants: Variants = {
   initial: { 
     opacity: 0, 
-    y: 8,
-    scale: 0.995
+    y: 6
   },
   animate: { 
     opacity: 1, 
     y: 0,
-    scale: 1,
     transition: {
       duration: MOTION_TIMINGS.base,
       ease: MOTION_EASINGS.fluid
@@ -48,7 +46,6 @@ export const pageVariants: Variants = {
   exit: { 
     opacity: 0, 
     y: -4,
-    scale: 0.998,
     transition: {
       duration: MOTION_TIMINGS.instant,
       ease: MOTION_EASINGS.standard

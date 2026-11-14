@@ -2067,8 +2067,95 @@ async function runPersistenceTests() {
     }
     console.log('✓ Test 24 passed.');
 
+    // ==========================================
+    // TEST 25: Per-Date Salary Override & Historical Snapshot Persistence (Supabase Mock)
+    // ==========================================
+    console.log('Test 25: Per-date salary override & historical snapshot persistence...');
+    {
+      const savedAttendanceRows: any[] = [];
+      let savedSalaryConfigRow: any = {
+        id: 'sal_cfg_1',
+        user_id: USER_A,
+        daily_base_salary: 500,
+        standard_hours: 8,
+        extra_hour_rate: 100,
+        currency_code: 'INR',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const salaryMockClient = createMockSupabase(USER_A, {
+        attendance_records: (ctx) => {
+          if (ctx.op === 'upsert') {
+            const row = {
+              id: `att_${savedAttendanceRows.length + 1}`,
+              ...ctx.payload,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            };
+            const existingIdx = savedAttendanceRows.findIndex(r => r.attendance_date === row.attendance_date);
+            if (existingIdx >= 0) {
+              savedAttendanceRows[existingIdx] = row;
+            } else {
+              savedAttendanceRows.unshift(row);
+            }
+            return { data: row, error: null };
+          }
+          return { data: savedAttendanceRows, error: null };
+        },
+        salary_configs: (ctx) => {
+          if (ctx.op === 'upsert') {
+            savedSalaryConfigRow = {
+              ...savedSalaryConfigRow,
+              ...ctx.payload
+            };
+            return { data: savedSalaryConfigRow, error: null };
+          }
+          return { data: savedSalaryConfigRow, error: null };
+        }
+      });
+
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      configureRepositoryBackendForTests(salaryMockClient, true);
+      await repository.persistSalaryConfig({
+        dailyBaseSalary: 500,
+        standardWorkingHours: 8,
+        extraHourRate: 100,
+        currency: 'INR'
+      });
+
+      const customDay = await repository.upsertAttendanceRecord({
+        date: '2026-07-04',
+        status: 'Present',
+        calculatedHours: 10,
+        dailyBaseSalary: 800,
+        extraHourRate: 150,
+        dailyEarnedSalary: 1250,
+        notes: 'Holiday shift bonus'
+      });
+
+      assert(savedAttendanceRows.length === 1, 'One attendance_records row upserted');
+      assert(savedAttendanceRows[0].daily_base_salary === 800, 'DB daily_base_salary reflects custom day rate 800');
+      assert(savedAttendanceRows[0].extra_hour_rate === 150, 'DB extra_hour_rate reflects custom overtime rate 150');
+      assert(savedAttendanceRows[0].calculated_salary === 1250, 'DB calculated_salary persists explicit override 1250');
+      assert(customDay.dailyEarnedSalary === 1250, 'Returned AttendanceRecord preserves custom earned salary');
+
+      await repository.persistSalaryConfig({
+        dailyBaseSalary: 950,
+        standardWorkingHours: 8,
+        extraHourRate: 0,
+        currency: 'INR'
+      });
+
+      assert(savedSalaryConfigRow.extra_hour_rate === 0, 'Overtime disabled persists extra_hour_rate=0 in salary_configs');
+      assert(savedAttendanceRows[0].calculated_salary === 1250, 'Historical attendance calculated_salary untouched after config update');
+      assert(repository.getAttendance()[0].dailyEarnedSalary === 1250, 'In-memory historical attendance untouched after config update');
+    }
+    console.log('✓ Test 25 passed.');
+
     console.log('\n======================================================');
-    console.log('--- ALL 24 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
+    console.log('--- ALL 25 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
     console.log('======================================================');
   } finally {
     configureRepositoryBackendForTests(null, null);

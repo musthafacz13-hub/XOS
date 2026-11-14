@@ -4,7 +4,8 @@ import { ActiveTab, NAV_ITEMS, Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { MobileBottomNav } from './components/layout/MobileBottomNav';
 import { WelcomeView } from './components/welcome/WelcomeView';
-import { XOSLogo } from './components/common/XOSLogo';
+import { SplashScreen } from './components/common/SplashScreen';
+import { OfflineIndicator } from './components/common/OfflineIndicator';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { useXOSData } from './hooks/useXOSData';
@@ -77,8 +78,8 @@ export type AuthRoute =
   | 'callback';
 
 const AuthRouteFallback: React.FC = () => (
-  <div className="min-h-screen bg-white flex items-center justify-center p-4" aria-busy="true">
-    <div className="w-8 h-8 rounded-full border-2 border-neutral-200 border-t-[#111111] animate-spin" />
+  <div className="min-h-screen min-h-[100dvh] bg-white flex items-center justify-center p-4" aria-busy="true">
+    <div className="w-8 h-8 rounded-full border-2 border-neutral-200 border-t-[#111318] animate-spin" />
   </div>
 );
 
@@ -134,7 +135,7 @@ function getAuthRouteTitle(route: AuthRoute): string {
 
 function XOSApplication() {
   const data = useXOSData();
-  const { user, loading, isDemoUser, isPasswordRecovery } = useAuth();
+  const { user, loading, initError, retryInitialization, dismissInitError, isDemoUser, isPasswordRecovery } = useAuth();
 
   // Authentication Navigation State
   const [authRoute, setAuthRoute] = useState<AuthRoute>(() => {
@@ -207,31 +208,26 @@ function XOSApplication() {
     setRobotsMeta('noindex, nofollow');
   }, [loading, showingAuthScreen, authRoute, activeTab]);
 
-  // 1. Initial Session Loading Screen (Apple-minimalist splash)
-  if (loading) {
+  // 1. Initial Session Loading & Error Recovery Splash Screen
+  if (loading || initError) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4">
-        <div className="flex flex-col items-center space-y-4">
-          <motion.div
-            initial={{ scale: 0.92, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.25 }}
-          >
-            <XOSLogo size="lg" className="shadow-sm" />
-          </motion.div>
-          <div className="text-center space-y-1">
-            <span className="font-bold text-sm text-[#111111] tracking-tight block">XOS</span>
-            <span className="text-xs text-neutral-400 font-normal block">Initializing secure workspace...</span>
-          </div>
-        </div>
-      </div>
+      <>
+        <OfflineIndicator />
+        <SplashScreen
+          error={initError}
+          onRetry={retryInitialization}
+          onContinue={dismissInitError}
+        />
+      </>
     );
   }
 
   // 2. Unauthenticated Routes (Unless exploring as Demo Guest)
   if (showingAuthScreen) {
     return (
-      <Suspense fallback={<AuthRouteFallback />}>
+      <>
+        <OfflineIndicator />
+        <Suspense fallback={<AuthRouteFallback />}>
         <AnimatePresence mode="wait">
           {authRoute === 'welcome' && (
             <WelcomeView 
@@ -297,12 +293,14 @@ function XOSApplication() {
           )}
         </AnimatePresence>
       </Suspense>
+      </>
     );
   }
 
   // 3. Authenticated / Demo Workspace (All 10 Sections Preserved)
   return (
-    <div className="min-h-screen flex bg-white text-[#111111] antialiased">
+    <div className="min-h-screen min-h-[100dvh] flex bg-white text-[#111111] antialiased">
+      <OfflineIndicator />
       {/* Desktop Sidebar */}
       <Sidebar
         activeTab={activeTab}

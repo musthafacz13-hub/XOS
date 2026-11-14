@@ -4,12 +4,16 @@ import {
   AlertCircle,
   Loader2,
   ChevronDown,
-  X
+  X,
+  RotateCcw,
+  ShieldCheck
 } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
-import { CURRENCIES } from '../../utils/formatters';
+import { CURRENCIES, formatCurrency } from '../../utils/formatters';
 import { CurrencyCode, DateFormat, WeekStartDay, SalaryConfig } from '../../types';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import { PWAInstallButton } from '../common/PWAInstallButton';
+import { usePWAInstall } from '../../hooks/usePWAInstall';
 import { useAuth } from '../../context/AuthContext';
 import { SettingsBundleSaveError, SettingsBundleSection } from '../../services/repository';
 
@@ -80,6 +84,12 @@ export const SettingsView: React.FC = () => {
   const [extraHourRateInput, setExtraHourRateInput] = useState<string>(
     String(resolvedSalaryConfig.extraHourRate ?? 100)
   );
+  const [lastPositiveExtraRate, setLastPositiveExtraRate] = useState<string>(
+    resolvedSalaryConfig.extraHourRate > 0 ? String(resolvedSalaryConfig.extraHourRate) : '100'
+  );
+  const [overtimeEnabled, setOvertimeEnabled] = useState<boolean>(
+    (resolvedSalaryConfig.extraHourRate ?? 100) > 0
+  );
 
   const [expenseCategories, setExpenseCategories] = useState<string[]>(resolvedExpenseCategories);
   const [newCatName, setNewCatName] = useState<string>('');
@@ -104,9 +114,13 @@ export const SettingsView: React.FC = () => {
   const [isResetting, setIsResetting] = useState<boolean>(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const isResettingRef = useRef<boolean>(false);
+  const [isSalaryResetModalOpen, setIsSalaryResetModalOpen] = useState<boolean>(false);
+  const [isResettingSalary, setIsResettingSalary] = useState<boolean>(false);
+  const [salaryResetError, setSalaryResetError] = useState<string | null>(null);
   const [isPDFModalOpen, setIsPDFModalOpen] = useState<boolean>(false);
   const [hasOpenedPDFModal, setHasOpenedPDFModal] = useState<boolean>(false);
   const [bannerMessage, setBannerMessage] = useState<string | null>(null);
+  const { isInstallable, isInstalled, isIOS } = usePWAInstall();
 
   // Clear timers on unmount
   useEffect(() => {
@@ -133,9 +147,12 @@ export const SettingsView: React.FC = () => {
       setIncomeSources(resolvedIncomeSources);
     }
     if (!failedSectionsRef.current.has('salary_configs')) {
+      const rate = resolvedSalaryConfig.extraHourRate ?? 100;
       setDailyBaseSalaryInput(String(resolvedSalaryConfig.dailyBaseSalary ?? 500));
       setStandardHoursInput(String(resolvedSalaryConfig.standardWorkingHours ?? 8));
-      setExtraHourRateInput(String(resolvedSalaryConfig.extraHourRate ?? 100));
+      setExtraHourRateInput(String(rate));
+      setOvertimeEnabled(rate > 0);
+      if (rate > 0) setLastPositiveExtraRate(String(rate));
     }
   }, [
     isSaving,
@@ -153,7 +170,7 @@ export const SettingsView: React.FC = () => {
 
   const parsedDailyBase = Number(dailyBaseSalaryInput.trim());
   const parsedStandardHours = Number(standardHoursInput.trim());
-  const parsedExtraHourRate = Number(extraHourRateInput.trim());
+  const parsedExtraHourRate = overtimeEnabled ? Number(extraHourRateInput.trim()) : 0;
 
   const hasUnsavedChanges = useMemo(() => {
     return (
@@ -163,7 +180,7 @@ export const SettingsView: React.FC = () => {
       weekStartDay !== resolvedWeekStartDay ||
       dailyBaseSalaryInput.trim() === '' ||
       standardHoursInput.trim() === '' ||
-      extraHourRateInput.trim() === '' ||
+      (overtimeEnabled && extraHourRateInput.trim() === '') ||
       parsedDailyBase !== resolvedSalaryConfig.dailyBaseSalary ||
       parsedStandardHours !== resolvedSalaryConfig.standardWorkingHours ||
       parsedExtraHourRate !== resolvedSalaryConfig.extraHourRate ||
@@ -214,13 +231,56 @@ export const SettingsView: React.FC = () => {
     setCurrency(resolvedCurrency);
     setDateFormat(resolvedDateFormat);
     setWeekStartDay(resolvedWeekStartDay);
+    const rate = resolvedSalaryConfig.extraHourRate ?? 100;
     setDailyBaseSalaryInput(String(resolvedSalaryConfig.dailyBaseSalary ?? 500));
     setStandardHoursInput(String(resolvedSalaryConfig.standardWorkingHours ?? 8));
-    setExtraHourRateInput(String(resolvedSalaryConfig.extraHourRate ?? 100));
+    setExtraHourRateInput(String(rate));
+    setOvertimeEnabled(rate > 0);
     setExpenseCategories(resolvedExpenseCategories);
     setIncomeSources(resolvedIncomeSources);
     setNewCatName('');
     setNewIncName('');
+  };
+
+  const handleToggleOvertime = (enabled: boolean) => {
+    setOvertimeEnabled(enabled);
+    if (enabled) {
+      const restored = Number(lastPositiveExtraRate) > 0 ? lastPositiveExtraRate : '100';
+      setExtraHourRateInput(restored);
+    } else {
+      if (Number(extraHourRateInput) > 0) {
+        setLastPositiveExtraRate(extraHourRateInput);
+      }
+      setExtraHourRateInput('0');
+    }
+  };
+
+  const executeResetSalaryDefaults = async () => {
+    if (isResettingSalary || isSaving) return;
+    setSalaryResetError(null);
+    setIsResettingSalary(true);
+    try {
+      const defaultSalaryConfig: SalaryConfig = {
+        dailyBaseSalary: 500,
+        standardWorkingHours: 8,
+        extraHourRate: 100,
+        currency
+      };
+      await data.persistSalaryConfig(defaultSalaryConfig);
+      setDailyBaseSalaryInput('500');
+      setStandardHoursInput('8');
+      setExtraHourRateInput('100');
+      setLastPositiveExtraRate('100');
+      setOvertimeEnabled(true);
+      setIsSalaryResetModalOpen(false);
+      setBannerMessage('Salary defaults restored (₹500 / 8h / ₹100 overtime). Past attendance records were not altered.');
+      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+      bannerTimerRef.current = setTimeout(() => setBannerMessage(null), 5000);
+    } catch (err) {
+      setSalaryResetError(err instanceof Error ? err.message : 'Could not reset salary defaults.');
+    } finally {
+      setIsResettingSalary(false);
+    }
   };
 
   // Persist to user_settings, salary_configs, and profiles via repository
@@ -251,9 +311,10 @@ export const SettingsView: React.FC = () => {
     }
 
     if (
-      extraHourRateInput.trim() === '' ||
-      !Number.isFinite(parsedExtraHourRate) ||
-      parsedExtraHourRate < 0
+      overtimeEnabled &&
+      (extraHourRateInput.trim() === '' ||
+        !Number.isFinite(parsedExtraHourRate) ||
+        parsedExtraHourRate < 0)
     ) {
       setSaveErrorMessage('Extra hour rate must be zero or a positive number.');
       return;
@@ -639,92 +700,201 @@ export const SettingsView: React.FC = () => {
 
         {/* C. Salary Configuration */}
         <section aria-labelledby="settings-salary-heading" className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-10 py-7 border-t border-neutral-200/80">
-          <div className="md:col-span-4 space-y-1">
+          <div className="md:col-span-4 space-y-2">
             <h3 id="settings-salary-heading" className="text-[15px] font-semibold text-[#111111]">
               Salary Configuration
             </h3>
             <p className="text-xs text-neutral-500 leading-relaxed">
-              Rates applied automatically when recording work attendance.
+              Default daily salary rates and overtime rules applied to new attendance entries.
             </p>
+            <button
+              type="button"
+              onClick={() => {
+                setSalaryResetError(null);
+                setIsSalaryResetModalOpen(true);
+              }}
+              disabled={isSaving || isResetting || isResettingSalary}
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 text-xs font-medium text-neutral-600 hover:text-[#111111] bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset Defaults</span>
+            </button>
           </div>
 
-          <div className="md:col-span-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {/* Daily Base Salary */}
-            <div className="space-y-1.5">
-              <label htmlFor="daily-base-salary" className="block text-xs font-medium text-neutral-700">
-                Daily Base Salary
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-neutral-400 pointer-events-none">
-                  {currencySymbol}
-                </span>
-                <input
-                  id="daily-base-salary"
-                  type="number"
-                  min="0"
-                  step="any"
-                  inputMode="decimal"
-                  value={dailyBaseSalaryInput}
-                  onChange={(e) => setDailyBaseSalaryInput(e.target.value)}
-                  className={`${INPUT_CLASS} pl-8 font-mono tabular-nums`}
-                />
+          <div className="md:col-span-8 space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Daily Base Salary */}
+              <div className="space-y-1.5">
+                <label htmlFor="daily-base-salary" className="block text-xs font-medium text-neutral-700">
+                  Daily Base Salary
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-neutral-400 pointer-events-none">
+                    {currencySymbol}
+                  </span>
+                  <input
+                    id="daily-base-salary"
+                    type="number"
+                    min="0"
+                    step="any"
+                    inputMode="decimal"
+                    value={dailyBaseSalaryInput}
+                    onChange={(e) => setDailyBaseSalaryInput(e.target.value)}
+                    className={`${INPUT_CLASS} pl-8 font-mono tabular-nums`}
+                  />
+                </div>
+                <p className="text-xs text-neutral-500">
+                  Base pay earned for a standard workday.
+                </p>
               </div>
-              <p className="text-xs text-neutral-500">
-                Earned per standard workday.
-              </p>
+
+              {/* Standard Duty Hours */}
+              <div className="space-y-1.5">
+                <label htmlFor="standard-hours" className="block text-xs font-medium text-neutral-700">
+                  Standard Daily Duty Hours
+                </label>
+                <div className="relative">
+                  <input
+                    id="standard-hours"
+                    type="number"
+                    min="0.5"
+                    max="24"
+                    step="0.5"
+                    inputMode="decimal"
+                    value={standardHoursInput}
+                    onChange={(e) => setStandardHoursInput(e.target.value)}
+                    className={`${INPUT_CLASS} pr-10 font-mono tabular-nums`}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 pointer-events-none">
+                    hrs
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-500">
+                  Daily shift duration before overtime applies.
+                </p>
+              </div>
+
+              {/* Salary Currency (Synced with Primary Currency) */}
+              <div className="space-y-1.5">
+                <label htmlFor="salary-currency-select" className="block text-xs font-medium text-neutral-700">
+                  Salary Currency
+                </label>
+                <div className="relative">
+                  <select
+                    id="salary-currency-select"
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
+                    className={SELECT_CLASS}
+                  >
+                    {Object.entries(CURRENCIES).map(([code, info]) => (
+                      <option key={code} value={code}>
+                        {code} — {info.symbol}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-neutral-400 pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                </div>
+                <p className="text-xs text-neutral-500">
+                  Synced with workspace regional currency.
+                </p>
+              </div>
+
+              {/* Extra Working Hour Rate */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label htmlFor="extra-hour-rate" className="block text-xs font-medium text-neutral-700">
+                    Extra Working Hour Rate
+                  </label>
+                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={overtimeEnabled}
+                      onChange={(e) => handleToggleOvertime(e.target.checked)}
+                      className="rounded border-neutral-300 text-[#111111] focus:ring-[#111111]"
+                    />
+                    <span>Overtime</span>
+                  </label>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-neutral-400 pointer-events-none">
+                    {currencySymbol}
+                  </span>
+                  <input
+                    id="extra-hour-rate"
+                    type="number"
+                    min="0"
+                    step="any"
+                    inputMode="decimal"
+                    disabled={!overtimeEnabled}
+                    value={overtimeEnabled ? extraHourRateInput : '0'}
+                    onChange={(e) => {
+                      setExtraHourRateInput(e.target.value);
+                      if (Number(e.target.value) > 0) {
+                        setLastPositiveExtraRate(e.target.value);
+                      }
+                    }}
+                    className={`${INPUT_CLASS} pl-8 pr-9 font-mono tabular-nums disabled:bg-neutral-50 disabled:text-neutral-400`}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 pointer-events-none">
+                    /hr
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-500">
+                  {overtimeEnabled
+                    ? 'Paid per hour worked beyond standard daily hours.'
+                    : 'Overtime pay disabled (persists extra hour rate as 0).'}
+                </p>
+              </div>
             </div>
 
-            {/* Standard Working Hours */}
-            <div className="space-y-1.5">
-              <label htmlFor="standard-hours" className="block text-xs font-medium text-neutral-700">
-                Standard Working Hours
-              </label>
-              <div className="relative">
-                <input
-                  id="standard-hours"
-                  type="number"
-                  min="0.5"
-                  max="24"
-                  step="0.5"
-                  inputMode="decimal"
-                  value={standardHoursInput}
-                  onChange={(e) => setStandardHoursInput(e.target.value)}
-                  className={`${INPUT_CLASS} pr-10 font-mono tabular-nums`}
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 pointer-events-none">
-                  hrs
+            {/* Live Daily Pay Preview */}
+            <div className="p-3.5 rounded-xl bg-neutral-50 border border-neutral-200/80 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-[#111111]">Live Daily Pay Preview</span>
+                <span className="text-[11px] font-mono text-neutral-500 tabular-nums">
+                  ≈ {formatCurrency(
+                    Number.isFinite(parsedDailyBase) && Number.isFinite(parsedStandardHours) && parsedStandardHours > 0
+                      ? parsedDailyBase / parsedStandardHours
+                      : 0,
+                    currency
+                  )}/hr base
                 </span>
               </div>
-              <p className="text-xs text-neutral-500">
-                Hours per day before overtime.
-              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                <div className="p-2.5 rounded-lg bg-white border border-neutral-200/70 flex items-center justify-between">
+                  <span className="text-neutral-600">
+                    Standard ({Number.isFinite(parsedStandardHours) && parsedStandardHours > 0 ? parsedStandardHours : 8}h)
+                  </span>
+                  <span className="font-mono font-semibold text-[#111111] tabular-nums">
+                    {formatCurrency(Number.isFinite(parsedDailyBase) && parsedDailyBase >= 0 ? parsedDailyBase : 0, currency)}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-white border border-neutral-200/70 flex items-center justify-between">
+                  <span className="text-neutral-600">
+                    +2h Overtime ({(Number.isFinite(parsedStandardHours) && parsedStandardHours > 0 ? parsedStandardHours : 8) + 2}h)
+                  </span>
+                  <span className="font-mono font-semibold text-[#111111] tabular-nums">
+                    {formatCurrency(
+                      (Number.isFinite(parsedDailyBase) && parsedDailyBase >= 0 ? parsedDailyBase : 0) +
+                        2 * (overtimeEnabled && Number.isFinite(parsedExtraHourRate) && parsedExtraHourRate >= 0 ? parsedExtraHourRate : 0),
+                      currency
+                    )}
+                  </span>
+                </div>
+              </div>
             </div>
 
-            {/* Extra Hour Rate */}
-            <div className="space-y-1.5">
-              <label htmlFor="extra-hour-rate" className="block text-xs font-medium text-neutral-700">
-                Extra Hour Rate
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-neutral-400 pointer-events-none">
-                  {currencySymbol}
-                </span>
-                <input
-                  id="extra-hour-rate"
-                  type="number"
-                  min="0"
-                  step="any"
-                  inputMode="decimal"
-                  value={extraHourRateInput}
-                  onChange={(e) => setExtraHourRateInput(e.target.value)}
-                  className={`${INPUT_CLASS} pl-8 pr-9 font-mono tabular-nums`}
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 pointer-events-none">
-                  /hr
-                </span>
+            {/* Historical Protection & Schema Scope Notice */}
+            <div className="p-3.5 rounded-xl bg-white border border-neutral-200/80 space-y-1.5 text-xs text-neutral-600">
+              <div className="flex items-center gap-1.5 font-medium text-[#111111]">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#0284C7] shrink-0" />
+                <span>Historical Record Protection</span>
               </div>
-              <p className="text-xs text-neutral-500">
-                Hourly rate for overtime work.
+              <p className="leading-relaxed">
+                Past attendance &amp; salary records store their own rate and earnings snapshot. Updating these defaults only applies to new entries. To adjust any individual day (bonuses, add-ons, or custom daily rates), edit that date in Daily Salary &amp; Earnings.
+              </p>
+              <p className="text-[11px] text-neutral-500 leading-relaxed pt-0.5">
+                Database scope: global defaults persist <span className="font-mono">daily_base_salary</span>, <span className="font-mono">standard_hours</span>, <span className="font-mono">extra_hour_rate</span>, and <span className="font-mono">currency_code</span>. Dedicated global add-on salary and calculation-mode fields require additional schema columns not present in the current backend.
               </p>
             </div>
           </div>
@@ -914,6 +1084,23 @@ export const SettingsView: React.FC = () => {
 
         <div className="md:col-span-8">
           <div className="border border-neutral-200/80 rounded-xl divide-y divide-neutral-200/80 bg-white">
+            {/* Install App Row (shown when browser supports install or iOS Safari non-standalone) */}
+            {!isInstalled && (isInstallable || isIOS) && (
+              <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-medium text-[#111111]">
+                    Install XOS on Device
+                  </h4>
+                  <p className="text-xs text-neutral-500 leading-relaxed max-w-md">
+                    {isIOS
+                      ? 'Add XOS to your iPhone Home Screen for a full-screen standalone app experience.'
+                      : 'Install XOS for quick Home Screen launch and offline asset caching.'}
+                  </p>
+                </div>
+                <PWAInstallButton variant="row" className="self-start sm:self-center" />
+              </div>
+            )}
+
             {/* Export PDF Report */}
             <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
@@ -970,6 +1157,24 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
       </section>
+
+      {/* Confirmation Dialog for Salary Defaults Reset */}
+      <ConfirmDialog
+        isOpen={isSalaryResetModalOpen}
+        title="Reset Salary Defaults?"
+        message="This will restore your default daily salary configuration (500 base, 8 hours duty, 100/hr overtime). Previously recorded attendance and salary entries will retain their saved values."
+        confirmLabel="Restore Defaults"
+        isDestructive={false}
+        isLoading={isResettingSalary}
+        error={salaryResetError}
+        onConfirm={executeResetSalaryDefaults}
+        onCancel={() => {
+          if (!isResettingSalary) {
+            setSalaryResetError(null);
+            setIsSalaryResetModalOpen(false);
+          }
+        }}
+      />
 
       {/* Confirmation Dialog for Reset All App Data */}
       <ConfirmDialog

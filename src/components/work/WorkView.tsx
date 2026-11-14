@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { CalendarCheck, Plus, ChevronLeft, ChevronRight, CheckCircle2, Trash2, Edit3, X, AlertCircle } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
 import { AttendanceRecord, AttendanceStatus } from '../../types';
-import { calculateAttendanceStats } from '../../utils/calculations';
+import { calculateAttendanceStats, calculateDailyEarnedSalary } from '../../utils/calculations';
 import { formatHumanDate, getTodayString, calculateWorkingHours } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
 import { ConfirmDialog } from '../common/ConfirmDialog';
@@ -131,6 +131,24 @@ export const WorkView: React.FC = () => {
     setFormError(null);
     setIsSubmitting(true);
     try {
+      let preservedDailyEarned: number | undefined;
+      if (
+        editingRecord &&
+        status === 'Present' &&
+        editingRecord.status === 'Present' &&
+        typeof editingRecord.dailyEarnedSalary === 'number' &&
+        Math.abs((editingRecord.calculatedHours ?? 0) - hours) < 0.01
+      ) {
+        const prevFormula = calculateDailyEarnedSalary('Present', editingRecord.calculatedHours ?? 0, {
+          ...data.settings.salaryConfig,
+          dailyBaseSalary: editingRecord.dailyBaseSalary ?? data.settings.salaryConfig.dailyBaseSalary,
+          extraHourRate: editingRecord.extraHourRate ?? data.settings.salaryConfig.extraHourRate
+        }).dailyEarnedSalary;
+        if (Math.abs(editingRecord.dailyEarnedSalary - prevFormula) > 0.01) {
+          preservedDailyEarned = editingRecord.dailyEarnedSalary;
+        }
+      }
+
       await data.upsertAttendanceRecord({
         id: editingRecord?.id,
         date,
@@ -139,6 +157,9 @@ export const WorkView: React.FC = () => {
         checkOutTime: status === 'Present' ? checkOutTime : undefined,
         breakDurationMinutes: status === 'Present' ? parsedBreak : 0,
         calculatedHours: hours,
+        dailyBaseSalary: editingRecord?.dailyBaseSalary,
+        extraHourRate: editingRecord?.extraHourRate,
+        dailyEarnedSalary: preservedDailyEarned,
         notes: notes.trim()
       });
 

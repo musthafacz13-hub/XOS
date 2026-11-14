@@ -181,6 +181,76 @@ async function runTests() {
 
   console.log('✓ Test 6 passed: Pure in-memory session verified.');
 
+  // ==========================================
+  // TEST 7: Overtime Disabled & Custom Daily Overrides
+  // ==========================================
+  console.log('Test 7: Overtime disabled & custom daily overrides...');
+
+  const noOvertimeConfig: SalaryConfig = {
+    dailyBaseSalary: 600,
+    standardWorkingHours: 8,
+    extraHourRate: 0,
+    currency: 'INR'
+  };
+  const noOtRes = calculateDailyEarnedSalary('Present', 11, noOvertimeConfig);
+  assert(noOtRes.extraHours === 3, 'Extra hours still tracked when overtime rate is 0');
+  assert(noOtRes.dailyEarnedSalary === 600, 'Daily salary ignores overtime pay when extraHourRate is 0');
+
+  await repository.persistSalaryConfig({
+    dailyBaseSalary: 500,
+    standardWorkingHours: 8,
+    extraHourRate: 100,
+    currency: 'INR'
+  });
+
+  const day1 = await repository.upsertAttendanceRecord({
+    date: '2026-06-01',
+    status: 'Present',
+    calculatedHours: 8
+  });
+  assertClose(day1.dailyEarnedSalary || 0, 500, 'Day 1 uses default rates');
+
+  const day2 = await repository.upsertAttendanceRecord({
+    date: '2026-06-02',
+    status: 'Present',
+    calculatedHours: 10,
+    dailyBaseSalary: 700,
+    extraHourRate: 150
+  });
+  assertClose(day2.dailyBaseSalary || 0, 700, 'Day 2 stores custom daily base salary');
+  assertClose(day2.extraHourRate || 0, 150, 'Day 2 stores custom extra hour rate');
+  assertClose(day2.dailyEarnedSalary || 0, 1000, 'Day 2 computes 700 + 2*150 = 1000');
+
+  const day3 = await repository.upsertAttendanceRecord({
+    date: '2026-06-03',
+    status: 'Present',
+    calculatedHours: 8,
+    dailyBaseSalary: 500,
+    extraHourRate: 100,
+    dailyEarnedSalary: 650,
+    notes: 'Bonus +150'
+  });
+  assertClose(day3.dailyEarnedSalary || 0, 650, 'Day 3 stores explicit earned override 650');
+
+  // Changing global salary defaults must NEVER mutate past days
+  await repository.persistSalaryConfig({
+    dailyBaseSalary: 1200,
+    standardWorkingHours: 8,
+    extraHourRate: 250,
+    currency: 'INR'
+  });
+
+  const juneSummary = calculateMonthlySalarySummary(
+    repository.getAttendance(),
+    [],
+    repository.getSettings().salaryConfig,
+    '2026-06'
+  );
+  assertClose(juneSummary.earnedSalary, 500 + 1000 + 650, 'Monthly summary sums historical snapshots (2150)');
+  assert(juneSummary.customizedDaysCount === 3, `Monthly summary counts snapshot/custom differences vs new defaults (got ${juneSummary.customizedDaysCount})`);
+
+  console.log('✓ Test 7 passed: Custom daily overrides & historical protection verified.');
+
   console.log('\n======================================================');
   console.log('--- ALL XOS TEST SUITE CASES PASSED SUCCESSFULLY! ---');
   console.log('======================================================');

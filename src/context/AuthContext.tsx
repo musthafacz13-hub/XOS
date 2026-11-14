@@ -12,6 +12,7 @@ export interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  initError: string | null;
   isConfigured: boolean;
   isDemoUser: boolean;
   isPasswordRecovery: boolean;
@@ -25,6 +26,8 @@ export interface AuthContextType {
   enterDemoMode: () => void;
   exitDemoMode: () => void;
   clearPasswordRecoveryFlag: () => void;
+  retryInitialization: () => Promise<void>;
+  dismissInitError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -35,6 +38,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [initError, setInitError] = useState<string | null>(null);
   const [isDemoUser, setIsDemoUser] = useState<boolean>(() => {
     try {
       return sessionStorage.getItem(DEMO_USER_KEY) === 'true';
@@ -46,6 +50,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const inFlightHydrationRef = useRef<{ userId: string; promise: Promise<void> } | null>(null);
   const completedUserIdRef = useRef<string | null>(null);
+  const mountedRef = useRef<boolean>(true);
 
   // Apply auth email & fallback display name AFTER DB hydration without overwriting persisted profile
   const applyAuthProfileFallback = useCallback((u: User) => {
@@ -109,9 +114,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return promise;
   }, [applyAuthProfileFallback]);
 
+  const initializeSession = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      if (isDemoUser) {
+        repository.loadDemoData();
+      }
+      if (mountedRef.current) {
+        setInitError(null);
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (mountedRef.current) {
+      setInitError(null);
+      setLoading(true);
+    }
+
+    try {
+      const { data: { session: initialSession }, error } = await apiOptimization.coalesce(
+        'auth:initial_session',
+        async () => supabase.auth.getSession()
+      );
+
+      if (!mountedRef.current) return;
+
+      if (error) {
+        setInitError('Unable to verify your workspace session. Check your connection and try again.');
+        setLoading(false);
+        return;
+      }
+
+      if (initialSession?.user) {
+        setSession(initialSession);
+        setUser(initialSession.user);
+        setIsDemoUser(false);
+        try {
+          sessionStorage.removeItem(DEMO_USER_KEY);
+        } catch {}
+        await ensureUserHydrated(initialSession.user);
+      } else if (isDemoUser) {
+        repository.loadDemoData();
+      }
+
+      if (mountedRef.current) {
+        setInitError(null);
+        setLoading(false);
+      }
+    } catch {
+      if (mountedRef.current) {
+        setInitError('Unable to connect to your workspace right now. Check your connection and try again.');
+        setLoading(false);
+      }
+    }
+  }, [ensureUserHydrated, isDemoUser]);
+
   // Initialize session and listen for auth changes (never await DB calls inside onAuthStateChange!)
   useEffect(() => {
-    let mounted = true;
+    mountedRef.current = true;
 
     if (window.location.hash.includes('type=recovery')) {
       setIsPasswordRecovery(true);
@@ -122,12 +182,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         repository.loadDemoData();
       }
       setLoading(false);
-      return;
+      return () => {
+        mountedRef.current = false;
+      };
     }
 
     // Listen to auth events synchronously; reactive effect below handles hydration outside callback tick
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
-      if (!mounted) return;
+      if (!mountedRef.current) return;
 
       if (event === 'PASSWORD_RECOVERY') {
         setIsPasswordRecovery(true);
@@ -147,37 +209,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession(currentSession);
       setUser(currentSession.user);
       setIsDemoUser(false);
+      setInitError(null);
       try {
         sessionStorage.removeItem(DEMO_USER_KEY);
       } catch {}
     });
 
-    // Initial session lookup with request coalescing
-    apiOptimization.coalesce('auth:initial_session', async () => {
-      return supabase.auth.getSession();
-    }).then(async ({ data: { session: initialSession }, error }) => {
-      if (!mounted) return;
-      if (!error && initialSession?.user) {
-        setSession(initialSession);
-        setUser(initialSession.user);
-        setIsDemoUser(false);
-        try {
-          sessionStorage.removeItem(DEMO_USER_KEY);
-        } catch {}
-        await ensureUserHydrated(initialSession.user);
-      } else if (isDemoUser) {
-        repository.loadDemoData();
-      }
-      if (mounted) setLoading(false);
-    }).catch(() => {
-      if (mounted) setLoading(false);
-    });
+    initializeSession();
 
     return () => {
-      mounted = false;
+      mountedRef.current = false;
       subscription.unsubscribe();
     };
-  }, [ensureUserHydrated]);
+  }, [ensureUserHydrated, initializeSession]);
 
   // Hydrate whenever authenticated user ID transitions (coalesced; skips TOKEN_REFRESHED for same user.id)
   useEffect(() => {
@@ -466,10 +510,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsPasswordRecovery(false);
   };
 
+  const retryInitialization = useCallback(async () => {
+    await initializeSession();
+  }, [initializeSession]);
+
+  const dismissInitError = useCallback(() => {
+    setInitError(null);
+    setLoading(false);
+  }, []);
+
   const value = useMemo(() => ({
     user,
     session,
     loading,
+    initError,
     isConfigured: isSupabaseConfigured,
     isDemoUser,
     isPasswordRecovery,
@@ -482,8 +536,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     signOut,
     enterDemoMode,
     exitDemoMode,
-    clearPasswordRecoveryFlag
-  }), [user, session, loading, isDemoUser, isPasswordRecovery]);
+    clearPasswordRecoveryFlag,
+    retryInitialization,
+    dismissInitError
+  }), [user, session, loading, initError, isDemoUser, isPasswordRecovery, retryInitialization, dismissInitError]);
 
   return (
     <AuthContext.Provider value={value}>

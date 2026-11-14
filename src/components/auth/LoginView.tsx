@@ -101,7 +101,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
             placeholder="name@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB] transition-all disabled:opacity-60"
+            className="w-full min-h-[44px] px-3.5 py-2.5 text-base sm:text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] transition-all disabled:opacity-60"
           />
         </div>
 
@@ -129,7 +129,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full pl-3.5 pr-10 py-2.5 text-xs sm:text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB] transition-all disabled:opacity-60"
+              className="w-full min-h-[44px] pl-3.5 pr-11 py-2.5 text-base sm:text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] transition-all disabled:opacity-60"
             />
             <button
               type="button"
@@ -147,17 +147,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
           whileTap={tapScale.button}
           type="submit"
           disabled={loading}
-          className="w-full flex items-center justify-center gap-2 py-3 bg-[#111111] text-white text-xs sm:text-sm font-semibold rounded-xl hover:bg-black transition-colors shadow-sm disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+          className="w-full min-h-[48px] flex items-center justify-center gap-2 py-3 bg-[#111318] text-white text-sm font-semibold rounded-xl hover:bg-black transition-colors shadow-sm disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
         >
           {loading ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin text-[#87CEEB]" />
+              <Loader2 className="w-4 h-4 animate-spin text-[#8ECFFF]" />
               <span>Authenticating...</span>
             </>
           ) : (
             <>
               <span>Log In</span>
-              <ArrowRight className="w-4 h-4 text-[#87CEEB]" />
+              <ArrowRight className="w-4 h-4 text-[#8ECFFF]" />
             </>
           )}
         </motion.button>
@@ -176,9 +176,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
         <button
           type="button"
           onClick={() => onNavigate('magic-link')}
-          className="w-full flex items-center justify-center gap-2 py-2.5 bg-neutral-50 hover:bg-neutral-100 text-neutral-700 text-xs font-semibold rounded-xl border border-neutral-200 transition-colors cursor-pointer"
+          className="w-full min-h-[44px] flex items-center justify-center gap-2 py-2.5 bg-neutral-50 hover:bg-neutral-100 text-neutral-700 text-xs font-semibold rounded-xl border border-neutral-200 transition-colors cursor-pointer"
         >
-          <Mail className="w-3.5 h-3.5 text-[#87CEEB]" />
+          <Mail className="w-3.5 h-3.5 text-[#8ECFFF]" />
           <span>Passwordless Magic Link</span>
         </button>
 

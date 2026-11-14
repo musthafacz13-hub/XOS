@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
 @layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   body {
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: #ffffff;
+    color: #111318;
   }
 
   button,
@@ -12,6 +19,14 @@
   textarea,
   [role="button"] {
     touch-action: manipulation;
+  }
+
+  @media (max-width: 767px) {
+    input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea {
+      font-size: 16px;
+    }
   }
   
   .font-mono, tabular-nums {

@@ -148,9 +148,9 @@ export function calculateEstimatedSalary(
       presentDays += 1;
       const hours = r.calculatedHours || 0;
       const res = calculateDailyEarnedSalary('Present', hours, {
-        dailyBaseSalary,
+        dailyBaseSalary: typeof r.dailyBaseSalary === 'number' ? r.dailyBaseSalary : dailyBaseSalary,
         standardWorkingHours,
-        extraHourRate
+        extraHourRate: typeof r.extraHourRate === 'number' ? r.extraHourRate : extraHourRate
       });
       totalWorkingHours += hours;
       overtimeHours += typeof r.extraHours === 'number' ? r.extraHours : res.extraHours;
@@ -307,7 +307,11 @@ export function calculatePeriodSalarySummary(
     if (r.status === 'Present') {
       presentDays += 1;
       const hours = r.calculatedHours || 0;
-      const res = calculateDailyEarnedSalary('Present', hours, config);
+      const res = calculateDailyEarnedSalary('Present', hours, {
+        ...config,
+        dailyBaseSalary: typeof r.dailyBaseSalary === 'number' ? r.dailyBaseSalary : config.dailyBaseSalary,
+        extraHourRate: typeof r.extraHourRate === 'number' ? r.extraHourRate : config.extraHourRate
+      });
       totalWorkingHours += hours;
       totalExtraHours += typeof r.extraHours === 'number' ? r.extraHours : res.extraHours;
       totalEarned += typeof r.dailyEarnedSalary === 'number' ? r.dailyEarnedSalary : res.dailyEarnedSalary;
@@ -359,15 +363,33 @@ export function calculateMonthlySalarySummary(
   let totalWorkingHours = 0;
   let totalExtraHours = 0;
   let totalEarned = 0;
+  let customizedDaysCount = 0;
 
   monthRecords.forEach(r => {
     if (r.status === 'Present') {
       presentDays += 1;
       const hours = r.calculatedHours || 0;
-      const res = calculateDailyEarnedSalary('Present', hours, config);
+      const effectiveBase = typeof r.dailyBaseSalary === 'number' ? r.dailyBaseSalary : config.dailyBaseSalary;
+      const effectiveExtraRate = typeof r.extraHourRate === 'number' ? r.extraHourRate : config.extraHourRate;
+      const res = calculateDailyEarnedSalary('Present', hours, {
+        ...config,
+        dailyBaseSalary: effectiveBase,
+        extraHourRate: effectiveExtraRate
+      });
+      const earnedForDay = typeof r.dailyEarnedSalary === 'number' ? r.dailyEarnedSalary : res.dailyEarnedSalary;
+      const defaultRes = calculateDailyEarnedSalary('Present', hours, config);
+
+      if (
+        (typeof r.dailyBaseSalary === 'number' && Math.abs(r.dailyBaseSalary - config.dailyBaseSalary) > 0.01) ||
+        (typeof r.extraHourRate === 'number' && Math.abs(r.extraHourRate - config.extraHourRate) > 0.01) ||
+        Math.abs(earnedForDay - defaultRes.dailyEarnedSalary) > 0.01
+      ) {
+        customizedDaysCount += 1;
+      }
+
       totalWorkingHours += hours;
       totalExtraHours += (typeof r.extraHours === 'number' ? r.extraHours : res.extraHours);
-      totalEarned += (typeof r.dailyEarnedSalary === 'number' ? r.dailyEarnedSalary : res.dailyEarnedSalary);
+      totalEarned += earnedForDay;
     } else if (r.status === 'Leave') {
       leaveDays += 1;
     } else if (r.status === 'Absent') {
@@ -392,6 +414,7 @@ export function calculateMonthlySalarySummary(
     holidayDays,
     totalWorkingHours: Number(totalWorkingHours.toFixed(1)),
     totalExtraHours: Number(totalExtraHours.toFixed(1)),
+    customizedDaysCount,
     recordCount: monthRecords.length
   };
 }
