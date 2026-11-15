@@ -275,12 +275,27 @@ function validateArchiveGoalRpcResponse(rpcData: unknown): void {
     if (normalized === 'ok' || normalized === 'success' || normalized === 'true' || normalized === 'archived' || normalized === '') {
       return;
     }
+    if (normalized === 'false') {
+      throw new Error('Goal archive was rejected by the server.');
+    }
     throw new Error(`Goal archive failed: unexpected server response (${rpcData}).`);
   }
 
   const candidate = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+  if (typeof candidate === 'boolean') {
+    if (candidate !== true) {
+      throw new Error('Goal archive was rejected by the server.');
+    }
+    return;
+  }
   if (candidate && typeof candidate === 'object') {
     const record = candidate as Record<string, unknown>;
+    if ('xos_archive_goal' in record && typeof record.xos_archive_goal === 'boolean') {
+      if (record.xos_archive_goal !== true) {
+        throw new Error('Goal archive was rejected by the server.');
+      }
+      return;
+    }
     if (typeof record.error === 'string' && record.error.trim().length > 0) {
       throw new Error(record.error.trim());
     }
@@ -800,7 +815,7 @@ function mapGoalRow(g: any): Goal {
       : undefined;
 
   return {
-    id: g.id,
+    id: typeof g.id === 'string' ? g.id.trim() : g.id,
     title: g.title || 'Untitled Goal',
     description: g.description || '',
     category: g.category || 'Personal',
@@ -1862,6 +1877,14 @@ export const repository = {
       throw new Error('Goal ID is required to archive a goal.');
     }
 
+    const matchingGoal = memoryState.goals.find(g => g.id === goalId);
+    if (!matchingGoal && memoryState.savingsGoals.some(sg => sg.id === goalId)) {
+      throw new Error('Invalid archive target: received a savings account ID instead of the goal ID.');
+    }
+    if (matchingGoal?.status === 'Archived') {
+      throw new Error('Goal not found or already archived');
+    }
+
     const existingPromise = archiveGoalInFlightPromises.get(goalId);
     if (existingPromise) {
       return existingPromise;
@@ -1883,29 +1906,21 @@ export const repository = {
 
         apiOptimization.invalidateCache();
 
-        const targetGoal = memoryState.goals.find(g => g.id === goalId);
-        memoryState.goals = memoryState.goals.filter(g => g.id !== goalId);
-        if (targetGoal?.savingsGoalId) {
-          memoryState.savingsGoals = memoryState.savingsGoals.filter(sg => sg.id !== targetGoal.savingsGoalId);
-          memoryState.savingsTransactions = memoryState.savingsTransactions.filter(
-            tx => tx.savingsGoalId !== targetGoal.savingsGoalId
-          );
-        }
+        // Mark Goal as cancelled (Paused in UI state) while preserving linked Savings account & transactions
+        memoryState.goals = memoryState.goals.map(g =>
+          g.id === goalId ? { ...g, status: 'Paused' } : g
+        );
         notifyListeners();
 
-        // Refetch and synchronize Goals, Savings, and Dashboard state from Supabase
+        // Refetch and synchronize Goals, Savings, and Dashboard state from authoritative Supabase tables
         await this.fetchAllUserData(ctx.user.id);
         return;
       }
 
-      const targetGoal = memoryState.goals.find(g => g.id === goalId);
-      memoryState.goals = memoryState.goals.filter(g => g.id !== goalId);
-      if (targetGoal?.savingsGoalId) {
-        memoryState.savingsGoals = memoryState.savingsGoals.filter(sg => sg.id !== targetGoal.savingsGoalId);
-        memoryState.savingsTransactions = memoryState.savingsTransactions.filter(
-          tx => tx.savingsGoalId !== targetGoal.savingsGoalId
-        );
-      }
+      // Local/Demo mode: mark Goal archived while preserving linked savings account & transaction history
+      memoryState.goals = memoryState.goals.map(g =>
+        g.id === goalId ? { ...g, status: 'Archived' } : g
+      );
       notifyListeners();
     })().finally(() => {
       archiveGoalInFlightPromises.delete(goalId);

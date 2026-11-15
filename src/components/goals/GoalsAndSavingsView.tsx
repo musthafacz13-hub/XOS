@@ -72,12 +72,14 @@ export const GoalsAndSavingsView: React.FC = () => {
       if (e.key === 'Escape') {
         if (isGoalModalOpen && !isSubmittingGoal) setIsGoalModalOpen(false);
         if (isTxModalOpen && !isSubmittingTx) setIsTxModalOpen(false);
-        if (selectedDetailGoalId) setSelectedDetailGoalId(null);
+        if (selectedDetailGoalId && deleteTargetId === null && !isDeleting) {
+          setSelectedDetailGoalId(null);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isGoalModalOpen, isTxModalOpen, isSubmittingGoal, isSubmittingTx, selectedDetailGoalId]);
+  }, [isGoalModalOpen, isTxModalOpen, isSubmittingGoal, isSubmittingTx, selectedDetailGoalId, deleteTargetId, isDeleting]);
 
   const resolvedGoals = useMemo(
     () => resolveGoalsWithSavings(data.goals, data.savingsGoals),
@@ -240,7 +242,7 @@ export const GoalsAndSavingsView: React.FC = () => {
     }
   };
 
-  // Handle Goal Deletion (delegates atomically to xos_archive_goal RPC)
+  // Handle Goal Archival (delegates atomically to xos_archive_goal RPC)
   const handleDeleteGoal = async () => {
     if (!deleteTargetId || isDeletingRef.current || isDeleting) return;
     isDeletingRef.current = true;
@@ -254,7 +256,7 @@ export const GoalsAndSavingsView: React.FC = () => {
       }
       setDeleteTargetId(null);
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Failed to delete goal.');
+      setDeleteError(err instanceof Error ? err.message : 'Failed to archive goal.');
     } finally {
       isDeletingRef.current = false;
       setIsDeleting(false);
@@ -841,12 +843,14 @@ export const GoalsAndSavingsView: React.FC = () => {
                   </button>
                   <button
                     type="button"
+                    disabled={isPaused || selectedDetailGoal.status === 'Archived' || isDeleting}
                     onClick={() => {
                       setDeleteError(null);
                       setDeleteTargetId(selectedDetailGoal.id);
                     }}
-                    className="p-2 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
-                    title="Delete Goal & Account"
+                    className="p-2 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Archive Goal"
+                    aria-label="Archive Goal"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -1011,16 +1015,17 @@ export const GoalsAndSavingsView: React.FC = () => {
         </div>
       )}
 
-      {/* Delete Confirmation */}
+      {/* Archive Confirmation */}
       <ConfirmDialog
         isOpen={deleteTargetId !== null}
-        title="Delete Goal & Connected Savings Account"
-        message="Are you sure you want to permanently delete this goal and its connected savings fund and transaction history?"
-        confirmLabel="Delete Goal"
+        title="Archive Goal"
+        message="Are you sure you want to archive this goal? This marks the goal as cancelled and removes it from active lists, while preserving its connected savings account and transaction history."
+        confirmLabel="Archive Goal"
         isLoading={isDeleting}
         error={deleteError}
         onConfirm={handleDeleteGoal}
         onCancel={() => {
+          if (isDeleting) return;
           setDeleteError(null);
           setDeleteTargetId(null);
         }}

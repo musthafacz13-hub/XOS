@@ -2888,7 +2888,7 @@ async function runPersistenceTests() {
     // ==========================================
     // TEST 30: Goal Archive RPC Integration (xos_archive_goal), Error Handling, Coalescing & Refresh Exclusion
     // ==========================================
-    console.log('Test 30: xos_archive_goal(p_goal_id) RPC, error rollback, duplicate submit guard, refetch sync & refresh exclusion...');
+    console.log('Test 30: xos_archive_goal(p_goal_id) RPC, boolean true/false handling, error rollback, savings preservation & refresh exclusion...');
     {
       const dbGoals: any[] = [
         {
@@ -2922,8 +2922,20 @@ async function runPersistenceTests() {
         { id: UUID_2, user_id: USER_A, name: 'Archive Target Goal', target_amount: 1500, current_balance: 300, created_at: '2026-06-01T00:00:00Z' },
         { id: UUID_4, user_id: USER_A, name: 'Keep Active Goal', target_amount: 2000, current_balance: 1000, created_at: '2026-06-02T00:00:00Z' }
       ];
+      const dbSavingsTransactions: any[] = [
+        {
+          id: '55555555-5555-4555-8555-555555555555',
+          user_id: USER_A,
+          savings_goal_id: UUID_2,
+          transaction_type: 'deposit',
+          amount: 300,
+          transaction_date: '2026-06-01',
+          notes: 'Initial deposit',
+          created_at: '2026-06-01T00:00:00Z'
+        }
+      ];
 
-      let archiveRpcMode: 'error' | 'obj_false' | 'void_null' | 'bool_true' = 'error';
+      let archiveRpcMode: 'error' | 'not_found_error' | 'bool_false' | 'obj_false' | 'void_null' | 'bool_true' = 'error';
       let archiveCallCount = 0;
       let goalsSelectCount = 0;
       const calledRpcs: Array<{ fn: string; args: Record<string, any> }> = [];
@@ -2936,7 +2948,7 @@ async function runPersistenceTests() {
             return { data: dbGoals, error: null };
           },
           savings_goals: () => ({ data: dbSavingsGoals, error: null }),
-          savings_transactions: () => ({ data: [], error: null })
+          savings_transactions: () => ({ data: dbSavingsTransactions, error: null })
         },
         async (fn, args) => {
           calledRpcs.push({ fn, args });
@@ -2949,14 +2961,21 @@ async function runPersistenceTests() {
             if (archiveRpcMode === 'error') {
               return { data: null, error: { message: 'Could not find function public.xos_delete_goal or permission denied' } };
             }
+            if (archiveRpcMode === 'not_found_error') {
+              return { data: null, error: { message: 'Goal not found or already archived' } };
+            }
+            if (archiveRpcMode === 'bool_false') {
+              return { data: false, error: null };
+            }
             if (archiveRpcMode === 'obj_false') {
               return { data: { success: false, message: 'Goal archive aborted on server' }, error: null };
             }
-            // Live backend sets status = 'cancelled' when archiving a Goal
+            // Live backend sets status = 'cancelled' when archiving a Goal and preserves savings & transactions
             const target = dbGoals.find(g => g.id === args.p_goal_id);
-            if (target) {
-              target.status = 'cancelled';
+            if (!target || target.status === 'cancelled' || target.status === 'archived') {
+              return { data: null, error: { message: 'Goal not found or already archived' } };
             }
+            target.status = 'cancelled';
             return { data: archiveRpcMode === 'void_null' ? null : true, error: null };
           }
           return { data: null, error: { message: `Unexpected RPC ${fn}` } };
@@ -2971,24 +2990,41 @@ async function runPersistenceTests() {
       const preResolved = resolveGoalsWithSavings(repository.getGoals(), repository.getSavingsGoals());
       assert(preResolved.filter(g => g.isActive).length === 2, 'Pre-archive has 2 active goals');
 
-      // 1) RPC error & { success: false } MUST reject cleanly and preserve existing state without refetching
-      for (const badMode of ['error', 'obj_false'] as const) {
+      // 0) Passing savings_goal_id instead of goal.id must fail cleanly before invoking RPC
+      {
+        const callsBefore = archiveCallCount;
+        let sgRejected = false;
+        try {
+          await repository.deleteGoal(UUID_2);
+        } catch (err) {
+          sgRejected = err instanceof Error && err.message.includes('savings account ID');
+        }
+        assert(sgRejected, 'Passing savings_goal_id instead of goal.id must be rejected');
+        assert(archiveCallCount === callsBefore, 'Passing savings_goal_id must not invoke xos_archive_goal');
+      }
+
+      // 1) RPC error, "Goal not found or already archived", boolean false, & { success: false } MUST reject cleanly and preserve state without refetching
+      for (const badMode of ['error', 'not_found_error', 'bool_false', 'obj_false'] as const) {
         archiveRpcMode = badMode;
         const selectsBefore = goalsSelectCount;
-        let threw = false;
+        let caughtMessage = '';
         try {
           await repository.deleteGoal(UUID_1);
-        } catch {
-          threw = true;
+        } catch (err) {
+          caughtMessage = err instanceof Error ? err.message : String(err);
         }
-        assert(threw, `Archive mode '${badMode}' must throw error`);
+        assert(caughtMessage.length > 0, `Archive mode '${badMode}' must throw error`);
+        if (badMode === 'not_found_error') {
+          assert(caughtMessage === 'Goal not found or already archived', 'Exact Supabase error message surfaced without masking');
+        }
         assert(goalsSelectCount === selectsBefore, `Archive failure mode '${badMode}' must NOT trigger success refetch`);
         assert(repository.getGoals().some(g => g.id === UUID_1), `Goal kept in state on '${badMode}'`);
         assert(repository.getSavingsGoals().some(sg => sg.id === UUID_2), `Linked savings kept in state on '${badMode}'`);
+        assert(repository.getSavingsTransactions().some(tx => tx.savingsGoalId === UUID_2), `Linked savings tx kept in state on '${badMode}'`);
       }
 
-      // 2) Duplicate concurrent archival for the same UUID coalesces into ONE xos_archive_goal({ p_goal_id }) RPC call and refetches data
-      archiveRpcMode = 'void_null';
+      // 2) Duplicate concurrent archival for the same UUID coalesces into ONE xos_archive_goal({ p_goal_id }) RPC call returning boolean true and refetches data
+      archiveRpcMode = 'bool_true';
       archiveCallCount = 0;
       const selectsBeforeSuccess = goalsSelectCount;
       await Promise.all([repository.deleteGoal(UUID_1), repository.deleteGoal(UUID_1)]);
@@ -3000,16 +3036,21 @@ async function runPersistenceTests() {
       );
       assert(goalsSelectCount > selectsBeforeSuccess, 'Successful archive triggered Goals/Savings refetch synchronization');
 
-      // Even though backend kept row with status='cancelled', it must NOT appear in active/resolved Goal lists or Dashboard totals
+      // Linked savings account and transaction history MUST remain preserved in DB/state, while cancelled Goal is excluded from active/resolved lists
+      assert(repository.getSavingsGoals().some(sg => sg.id === UUID_2), 'Linked savings account remains preserved after Goal archival');
+      assert(repository.getSavingsTransactions().some(tx => tx.savingsGoalId === UUID_2), 'Linked savings transaction history remains preserved after Goal archival');
+
       const postArchiveResolved = resolveGoalsWithSavings(repository.getGoals(), repository.getSavingsGoals());
       assert(!postArchiveResolved.some(i => i.goal.id === UUID_1), 'Archived (cancelled) goal excluded from active & resolved lists immediately');
       assert(postArchiveResolved.filter(i => i.isActive).length === 1 && postArchiveResolved[0].goal.id === UUID_3, 'Remaining active goal preserved on Dashboard');
 
-      // 3) Simulate full page reload / session refresh -> archived (cancelled) Goal remains excluded
+      // 3) Simulate full page reload / session refresh -> archived (cancelled) Goal remains excluded, while linked savings & txs remain preserved
       repository.clearUserData();
       repository.setActiveUserId(USER_A);
       await repository.fetchAllUserData(USER_A);
 
+      assert(repository.getSavingsGoals().some(sg => sg.id === UUID_2), 'Linked savings account remains preserved after full reload');
+      assert(repository.getSavingsTransactions().some(tx => tx.savingsGoalId === UUID_2), 'Linked savings transactions remain preserved after full reload');
       const postRefreshResolved = resolveGoalsWithSavings(repository.getGoals(), repository.getSavingsGoals());
       assert(!postRefreshResolved.some(i => i.goal.id === UUID_1), 'Archived (cancelled) goal remains excluded after full reload');
       assert(postRefreshResolved.filter(i => i.isActive).length === 1 && postRefreshResolved[0].goal.id === UUID_3, 'Only active non-archived goal shows after refresh');
