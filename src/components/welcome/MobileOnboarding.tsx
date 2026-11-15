@@ -120,10 +120,10 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
   const SlideIcon = currentSlide?.icon;
 
   return (
-    <div className="min-h-screen min-h-[100dvh] bg-white text-[#111318] flex flex-col justify-between pl-[max(1.25rem,env(safe-area-inset-left,0px))] pr-[max(1.25rem,env(safe-area-inset-right,0px))] pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-[max(1.25rem,env(safe-area-inset-bottom,0px))] overflow-x-clip">
+    <div className="h-[100dvh] w-full bg-white text-[#111318] flex flex-col justify-between pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pt-[max(0.5rem,env(safe-area-inset-top,0px))] pb-[max(1rem,env(safe-area-inset-bottom,0px))] overflow-hidden select-none">
       {/* Top Bar */}
-      <header className="w-full min-h-12 flex items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-2.5">
+      <header className="w-full h-11 sm:h-12 flex items-center justify-between gap-3 shrink-0 px-1">
+        <div className="flex items-center gap-2">
           <XOSLogo size="sm" />
           <span className="text-base font-bold tracking-tight text-[#111318]">XOS</span>
         </div>
@@ -132,7 +132,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
           <button
             type="button"
             onClick={handleSkip}
-            className="min-h-[44px] px-3 -mr-2 inline-flex items-center justify-center text-xs font-semibold text-[#687482] hover:text-[#111318] transition-colors cursor-pointer rounded-xl"
+            className="min-h-[40px] px-3 -mr-2 inline-flex items-center justify-center text-xs font-semibold text-[#687482] hover:text-[#111318] transition-colors cursor-pointer rounded-xl"
           >
             Skip
           </button>
@@ -140,7 +140,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
           <button
             type="button"
             onClick={() => onNavigate('login')}
-            className="min-h-[44px] px-3 -mr-2 inline-flex items-center justify-center text-xs font-semibold text-[#111318] hover:bg-neutral-100 transition-colors cursor-pointer rounded-xl"
+            className="min-h-[40px] px-3 -mr-2 inline-flex items-center justify-center text-xs font-semibold text-[#111318] hover:bg-neutral-100 transition-colors cursor-pointer rounded-xl"
           >
             Log In
           </button>
@@ -149,7 +149,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
 
       {/* Center Single-Panel Stage */}
       <main
-        className="flex-1 flex flex-col justify-center py-4 sm:py-6 max-w-sm w-full mx-auto"
+        className="flex-1 flex flex-col justify-center items-center max-w-sm w-full mx-auto px-1 py-2 my-auto"
         style={!isFinalWelcome ? { touchAction: 'pan-y' } : undefined}
         onTouchStart={!isFinalWelcome ? handleTouchStart : undefined}
         onTouchEnd={!isFinalWelcome ? handleTouchEnd : undefined}
@@ -158,28 +158,28 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
           {!isFinalWelcome && currentSlide && SlideIcon ? (
             <motion.section
               key={currentSlide.id}
-              initial={{ opacity: 0, x: direction > 0 ? 22 : -22 }}
+              initial={{ opacity: 0, x: direction > 0 ? 20 : -20 }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: direction > 0 ? -22 : 22 }}
-              transition={{ duration: 0.22, ease: SLIDE_EASE }}
+              exit={{ opacity: 0, x: direction > 0 ? -20 : 20 }}
+              transition={{ duration: 0.2, ease: SLIDE_EASE }}
               aria-labelledby={`onboarding-title-${currentSlide.id}`}
-              className="w-full min-h-[248px] sm:min-h-[276px] bg-white border border-neutral-200/90 rounded-3xl px-5 py-6 sm:p-7 shadow-sm flex flex-col items-center justify-center text-center space-y-5"
+              className="w-full bg-white border border-neutral-200/90 rounded-3xl p-5 sm:p-6 shadow-sm flex flex-col items-center justify-center text-center space-y-3.5 sm:space-y-4"
             >
-              <div className="w-15 h-15 sm:w-16 sm:h-16 rounded-2xl bg-[#EAF6FF] border border-[#8ECFFF]/60 flex items-center justify-center">
-                <SlideIcon className="w-7 h-7 text-[#111318]" strokeWidth={1.9} />
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-[#EAF6FF] border border-[#8ECFFF]/60 flex items-center justify-center shrink-0">
+                <SlideIcon className="w-6 h-6 sm:w-7 sm:h-7 text-[#111318]" strokeWidth={1.9} />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-1.5 sm:space-y-2">
                 <span className="text-[11px] font-semibold text-[#687482] tracking-wide block">
                   {step + 1} of {totalSlides}
                 </span>
                 <h1
                   id={`onboarding-title-${currentSlide.id}`}
-                  className="text-xl sm:text-2xl font-bold tracking-tight text-[#111318] leading-tight"
+                  className="text-lg sm:text-xl font-bold tracking-tight text-[#111318] leading-tight"
                 >
                   {currentSlide.title}
                 </h1>
-                <p className="text-sm text-[#687482] leading-relaxed font-normal">
+                <p className="text-xs sm:text-sm text-[#687482] leading-relaxed font-normal max-w-xs mx-auto">
                   {currentSlide.description}
                 </p>
               </div>
@@ -187,33 +187,33 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
           ) : (
             <motion.section
               key="mobile-welcome-final"
-              initial={{ opacity: 0, x: direction > 0 ? 22 : -22 }}
+              initial={{ opacity: 0, x: direction > 0 ? 20 : -20 }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: direction > 0 ? -22 : 22 }}
-              transition={{ duration: 0.22, ease: SLIDE_EASE }}
+              exit={{ opacity: 0, x: direction > 0 ? -20 : 20 }}
+              transition={{ duration: 0.2, ease: SLIDE_EASE }}
               aria-labelledby="mobile-welcome-heading"
-              className="w-full flex flex-col items-center text-center space-y-5 sm:space-y-6"
+              className="w-full flex flex-col items-center text-center space-y-4 sm:space-y-5"
             >
-              <XOSLogo size="lg" className="border-neutral-200/80 shadow-xs" />
+              <XOSLogo size="md" className="border-neutral-200/80 shadow-xs" />
 
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 <h1
                   id="mobile-welcome-heading"
-                  className="text-[1.75rem] sm:text-[1.875rem] font-extrabold tracking-tight text-[#111318] leading-[1.12]"
+                  className="text-xl sm:text-2xl font-extrabold tracking-tight text-[#111318] leading-tight"
                   style={{ textWrap: 'balance' }}
                 >
                   Order your life. Master your time.
                 </h1>
-                <p className="text-sm text-[#687482] leading-relaxed font-normal max-w-xs mx-auto">
+                <p className="text-xs sm:text-sm text-[#687482] leading-relaxed font-normal max-w-xs mx-auto">
                   Your private workspace for daily spending, attendance, earnings, savings, and personal goals.
                 </p>
               </div>
 
-              <div className="w-full space-y-2.5 pt-1">
+              <div className="w-full space-y-2 pt-1 max-w-xs">
                 <button
                   type="button"
                   onClick={() => onNavigate('signup')}
-                  className="w-full min-h-[48px] px-5 py-3 bg-[#111318] hover:bg-black text-white text-sm font-semibold rounded-2xl transition-colors flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                  className="w-full min-h-[44px] px-4 py-2.5 bg-[#111318] hover:bg-black text-white text-xs sm:text-sm font-semibold rounded-2xl transition-colors flex items-center justify-center gap-2 shadow-xs cursor-pointer"
                 >
                   <span>Get Started</span>
                   <ArrowRight className="w-4 h-4 text-[#8ECFFF]" />
@@ -222,7 +222,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
                 <button
                   type="button"
                   onClick={() => onNavigate('login')}
-                  className="w-full min-h-[48px] px-5 py-3 bg-white hover:bg-neutral-50 border border-neutral-200 text-[#111318] text-sm font-semibold rounded-2xl transition-colors flex items-center justify-center cursor-pointer"
+                  className="w-full min-h-[44px] px-4 py-2.5 bg-white hover:bg-neutral-50 border border-neutral-200 text-[#111318] text-xs sm:text-sm font-semibold rounded-2xl transition-colors flex items-center justify-center cursor-pointer"
                 >
                   Sign In with Password
                 </button>
@@ -230,7 +230,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
                 <button
                   type="button"
                   onClick={() => onNavigate('magic-link')}
-                  className="w-full min-h-[44px] px-4 py-2.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200/80 text-[#111318] text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full min-h-[40px] px-3.5 py-2 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200/80 text-[#111318] text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Mail className="w-3.5 h-3.5 text-[#687482]" />
                   <span>Continue with Magic Link</span>
@@ -247,7 +247,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
 
       {/* Bottom Controls / Minimal Footer */}
       {!isFinalWelcome ? (
-        <footer className="max-w-sm w-full mx-auto space-y-3.5 shrink-0">
+        <footer className="max-w-sm w-full mx-auto space-y-3 shrink-0 px-1">
           {/* Progress Indicator Bars */}
           <div className="flex items-center justify-center gap-2" role="group" aria-label="Onboarding steps">
             {ONBOARDING_SLIDES.map((slide, idx) => {
@@ -259,7 +259,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
                   onClick={() => goToStep(idx, idx > step ? 1 : -1)}
                   aria-label={`Go to ${slide.title}`}
                   aria-current={active ? 'step' : undefined}
-                  className="py-2 px-0.5 cursor-pointer flex items-center justify-center"
+                  className="py-1 px-0.5 cursor-pointer flex items-center justify-center"
                 >
                   <span
                     className={`block h-1.5 rounded-full transition-all duration-200 ${
@@ -276,12 +276,12 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
           </div>
 
           {/* Primary Navigation Row */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             {step > 0 && (
               <button
                 type="button"
                 onClick={handleBack}
-                className="min-h-[48px] px-4 rounded-2xl bg-white hover:bg-neutral-50 border border-neutral-200 text-[#111318] text-sm font-semibold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                className="min-h-[44px] px-3.5 rounded-2xl bg-white hover:bg-neutral-50 border border-neutral-200 text-[#111318] text-xs sm:text-sm font-semibold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
                 aria-label="Previous slide"
               >
                 <ArrowLeft className="w-4 h-4 text-[#687482]" />
@@ -292,7 +292,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
             <button
               type="button"
               onClick={handleNext}
-              className="flex-1 min-h-[48px] px-5 rounded-2xl bg-[#111318] hover:bg-black text-white text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors shadow-xs cursor-pointer"
+              className="flex-1 min-h-[44px] sm:min-h-[48px] px-5 rounded-2xl bg-[#111318] hover:bg-black text-white text-xs sm:text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors shadow-xs cursor-pointer"
             >
               <span>{step === totalSlides - 1 ? 'Get Started' : 'Next'}</span>
               <ArrowRight className="w-4 h-4 text-[#8ECFFF]" />
@@ -300,12 +300,12 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
           </div>
         </footer>
       ) : (
-        <footer className="max-w-sm w-full mx-auto pt-3.5 border-t border-neutral-200/80 flex flex-wrap items-center justify-between gap-2 text-xs text-[#687482] shrink-0">
+        <footer className="max-w-sm w-full mx-auto pt-2.5 border-t border-neutral-200/80 flex flex-wrap items-center justify-between gap-2 text-xs text-[#687482] shrink-0 px-1">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleBack}
-              className="min-h-[44px] px-2.5 -ml-2 rounded-xl hover:bg-neutral-100 text-xs font-medium text-[#687482] hover:text-[#111318] transition-colors inline-flex items-center gap-1 cursor-pointer"
+              className="min-h-[38px] px-2 -ml-2 rounded-xl hover:bg-neutral-100 text-xs font-medium text-[#687482] hover:text-[#111318] transition-colors inline-flex items-center gap-1 cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Overview</span>
@@ -321,7 +321,7 @@ export const MobileOnboarding: React.FC<MobileOnboardingProps> = ({ onNavigate }
             target="_blank"
             rel="noopener noreferrer"
             aria-label="View XOS on GitHub"
-            className="min-h-[40px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-neutral-50 border border-neutral-200 text-xs font-medium text-[#111318] transition-colors"
+            className="min-h-[38px] inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white hover:bg-neutral-50 border border-neutral-200 text-xs font-medium text-[#111318] transition-colors"
           >
             <svg
               aria-hidden="true"
