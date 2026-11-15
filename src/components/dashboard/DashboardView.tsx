@@ -16,7 +16,8 @@ import {
   calculateFinancialTotals, 
   calculateMonthlySalarySummary, 
   calculateDebtSummary, 
-  filterRecordsByDateRange 
+  filterRecordsByDateRange,
+  resolveGoalsWithSavings
 } from '../../utils/calculations';
 import { formatCurrency, formatHumanDate, getMonthString } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
@@ -59,15 +60,36 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     [data.expenses, dateFilter.preset, dateFilter.startDate, dateFilter.endDate]
   );
 
+  // Exclude savings linked strictly to archived/cancelled goals from Dashboard balances
+  const archivedOrCancelledSavingsIds = useMemo(
+    () =>
+      new Set(
+        data.goals
+          .filter(g => (g.status === 'Archived' || g.status === 'Paused') && g.savingsGoalId)
+          .map(g => g.savingsGoalId as string)
+      ),
+    [data.goals]
+  );
+
+  const activeSavingsGoals = useMemo(
+    () => data.savingsGoals.filter(sg => !archivedOrCancelledSavingsIds.has(sg.id)),
+    [data.savingsGoals, archivedOrCancelledSavingsIds]
+  );
+
+  const activeSavingsTransactions = useMemo(
+    () => data.savingsTransactions.filter(tx => !archivedOrCancelledSavingsIds.has(tx.savingsGoalId)),
+    [data.savingsTransactions, archivedOrCancelledSavingsIds]
+  );
+
   // Financial calculations
   const financialTotals = useMemo(
-    () => calculateFinancialTotals(filteredIncomes, filteredExpenses, data.savingsGoals, data.savingsTransactions),
-    [filteredIncomes, filteredExpenses, data.savingsGoals, data.savingsTransactions]
+    () => calculateFinancialTotals(filteredIncomes, filteredExpenses, activeSavingsGoals, activeSavingsTransactions),
+    [filteredIncomes, filteredExpenses, activeSavingsGoals, activeSavingsTransactions]
   );
 
   const globalTotals = useMemo(
-    () => calculateFinancialTotals(data.incomes, data.expenses, data.savingsGoals, data.savingsTransactions),
-    [data.incomes, data.expenses, data.savingsGoals, data.savingsTransactions]
+    () => calculateFinancialTotals(data.incomes, data.expenses, activeSavingsGoals, activeSavingsTransactions),
+    [data.incomes, data.expenses, activeSavingsGoals, activeSavingsTransactions]
   );
 
   // Work, Salary, and Debt calculations
@@ -94,10 +116,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     [data.debts, data.debtRepayments]
   );
 
-  // Active Goals & Dreams
-  const activeGoals = useMemo(
-    () => data.goals.filter(g => g.status === 'In Progress' || g.status === 'Not Started'),
-    [data.goals]
+  // Active Goals & Dreams (derived from canonical 1:1 Goal <-> SavingsGoal link)
+  const activeGoalItems = useMemo(
+    () => resolveGoalsWithSavings(data.goals, data.savingsGoals).filter(item => item.isActive),
+    [data.goals, data.savingsGoals]
   );
 
   // Recent Activity (Expenses & Incomes sorted by date)
@@ -367,7 +389,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="flex items-center justify-between border-b border-black/[0.06] pb-3">
           <div className="flex items-center gap-2">
             <Target className="w-5 h-5 text-[#87CEEB]" />
-            <h3 className="font-bold text-sm text-[#111111]">Active Goals & Dreams ({activeGoals.length})</h3>
+            <h3 className="font-bold text-sm text-[#111111]">Active Goals & Dreams ({activeGoalItems.length})</h3>
           </div>
           <button
             onClick={() => onNavigateTab('goals')}
@@ -378,23 +400,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         </div>
 
-        {activeGoals.length === 0 ? (
+        {activeGoalItems.length === 0 ? (
           <EmptyState
             icon={Target}
-            title="No goals or dreams yet"
-            description="Define your first personal ambition, financial target, or milestone."
+            title="No active goals yet"
+            description="Define a personal ambition or financial target to start tracking your progress."
             actionLabel="Create First Goal"
             onAction={() => onOpenQuickAction('goal')}
             className="border-dashed"
           />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {activeGoals.slice(0, 4).map((goal) => {
-              const hasAmount = goal.targetAmount && goal.targetAmount > 0;
-              const progressPct = Math.max(0, Math.min(100, Math.round(goal.progressPercentage || 0)));
+            {activeGoalItems.slice(0, 4).map((item) => {
+              const { goal, savedAmount, targetAmount, progressPercentage } = item;
+              const hasAmount = targetAmount > 0;
 
               return (
-                <div key={goal.id} className="p-4 rounded-xl border border-black/[0.06] bg-neutral-50/60 space-y-2.5">
+                <button
+                  key={goal.id}
+                  type="button"
+                  onClick={() => onNavigateTab('goals')}
+                  className="p-4 rounded-xl border border-black/[0.06] bg-neutral-50/60 hover:border-black/[0.14] hover:bg-neutral-50 transition-all space-y-2.5 text-left cursor-pointer"
+                >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 block">
@@ -407,19 +434,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </span>
                   </div>
 
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-xs text-neutral-600 font-mono tabular-nums">
-                      <span>{hasAmount ? `Target: ${formatCurrency(goal.targetAmount!, data.settings.currency)}` : (goal.targetDate ? formatHumanDate(goal.targetDate) : 'Progress')}</span>
-                      <span>{progressPct}%</span>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-baseline gap-2 text-xs text-neutral-600 font-mono tabular-nums">
+                      <span className="truncate">
+                        {hasAmount
+                          ? `Saved: ${formatCurrency(savedAmount, data.settings.currency)} / ${formatCurrency(targetAmount, data.settings.currency)}`
+                          : (goal.targetDate ? formatHumanDate(goal.targetDate) : 'Progress')}
+                      </span>
+                      <span className="font-bold text-[#111111] shrink-0">{progressPercentage}%</span>
                     </div>
                     <div className="w-full h-1.5 bg-neutral-200 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-[#87CEEB] transition-all duration-300"
-                        style={{ width: `${progressPct}%` }}
+                        style={{ width: `${progressPercentage}%` }}
                       />
                     </div>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>

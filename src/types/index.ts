@@ -67,7 +67,7 @@ export interface UserSettings {
 
 export type GoalCategory = 'Career' | 'Financial' | 'Health' | 'Travel' | 'Learning' | 'Life' | 'Personal' | string;
 export type GoalPriority = 'Low' | 'Medium' | 'High';
-export type GoalStatus = 'Not Started' | 'In Progress' | 'Completed' | 'Paused';
+export type GoalStatus = 'Not Started' | 'In Progress' | 'Completed' | 'Paused' | 'Archived';
 
 export interface Goal {
   id: string;

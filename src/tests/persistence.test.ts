@@ -45,7 +45,13 @@ import {
   localDateInputToUtcIso,
   utcTimestampToLocalDate
 } from '../utils/formatters';
-import { calculateMonthlySalarySummary, filterRecordsByDateRange } from '../utils/calculations';
+import {
+  calculateMonthlySalarySummary,
+  filterRecordsByDateRange,
+  resolveGoalsWithSavings,
+  calculateUnifiedGoalTotals,
+  calculateGoalStats
+} from '../utils/calculations';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -1738,7 +1744,7 @@ async function runPersistenceTests() {
     {
       let rpcCallCount = 0;
       let tableDeleteCount = 0;
-      let rpcMode: 'error' | 'null' | 'false' | 'obj_false' | 'empty_obj' | 'obj_true' | 'bool_true' = 'obj_true';
+      let rpcMode: 'error' | 'null' | 'false' | 'obj_false' | 'empty_obj' | 'status_error' | 'status_ok' | 'obj_true' | 'bool_true' = 'obj_true';
       let isResetOnBackend = false;
 
       const dbState = {
@@ -1797,11 +1803,13 @@ async function runPersistenceTests() {
               rpcCallCount++;
               await new Promise(resolve => setTimeout(resolve, 15));
               if (rpcMode === 'error') return { data: null, error: { message: 'RLS/Auth rejected reset' } };
-              if (rpcMode === 'null') return { data: null, error: null };
               if (rpcMode === 'false') return { data: false, error: null };
               if (rpcMode === 'obj_false') return { data: { success: false, message: 'Server aborted reset' }, error: null };
               if (rpcMode === 'empty_obj') return { data: {}, error: null };
+              if (rpcMode === 'status_error') return { data: { status: 'error', message: 'Reset failed' }, error: null };
               isResetOnBackend = true;
+              if (rpcMode === 'null') return { data: null, error: null };
+              if (rpcMode === 'status_ok') return { data: { status: 'ok' }, error: null };
               return { data: rpcMode === 'bool_true' ? true : { success: true }, error: null };
             }
             return { data: null, error: { message: `Unexpected RPC ${fn}` } };
@@ -1841,7 +1849,7 @@ async function runPersistenceTests() {
       (resetClient as any).__setSessionUserId(USER_A);
 
       // 2) RPC errors and falsy/invalid success confirmations must reject WITHOUT clearing cache or local state
-      for (const badMode of ['error', 'null', 'false', 'obj_false', 'empty_obj'] as const) {
+      for (const badMode of ['error', 'false', 'obj_false', 'empty_obj', 'status_error'] as const) {
         rpcMode = badMode;
         let failed = false;
         try {
@@ -1884,10 +1892,18 @@ async function runPersistenceTests() {
       assert(repository.getSettings().profile.name === 'Preserved User', 'Preserved profile display_name hydrated from profiles');
       assert(repository.getSettings().profile.email === 'musthafa@test.local', 'Authenticated profile email preserved');
 
-      // 4) Boolean true RPC response also accepted cleanly
+      // 4) Boolean true, status:'ok', and PostgreSQL RETURNS void (null data with null error) accepted cleanly
       rpcMode = 'bool_true';
       await repository.resetUserData();
       assert(repository.getActiveUserId() === USER_A, 'Boolean true RPC response succeeded cleanly');
+
+      rpcMode = 'status_ok';
+      await repository.resetUserData();
+      assert(repository.getActiveUserId() === USER_A, 'Status ok RPC response succeeded cleanly');
+
+      rpcMode = 'null';
+      await repository.resetUserData();
+      assert(repository.getActiveUserId() === USER_A, 'PostgreSQL RETURNS void (null data, null error) RPC response succeeded cleanly');
     }
     console.log('✓ Test 23 passed.');
 
@@ -2564,8 +2580,446 @@ async function runPersistenceTests() {
     }
     console.log('✓ Test 27 passed.');
 
+    // ==========================================
+    // TEST 28: Post-Reset Missing Row Default Restoration (No Stale Memory Inheritance)
+    // ==========================================
+    console.log('Test 28: Post-reset missing settings/config rows & empty categories restore clean defaults...');
+    {
+      let backendResetDone = false;
+      const sparseResetClient = createMockSupabase(
+        USER_A,
+        {
+          expenses: () => ({
+            data: backendResetDone ? [] : [{ id: UUID_1, title: 'Old', amount: 50, category: 'CustomCat', expense_date: '2026-05-01', payment_method: 'Cash', is_recurring: false, created_at: '2026-05-01' }],
+            error: null
+          }),
+          user_settings: () => ({
+            // Simulate RPC deleting user_settings & salary_configs rows (or leaving empty arrays)
+            data: backendResetDone ? null : {
+              user_id: USER_A,
+              currency_code: 'USD',
+              date_format: 'MM/DD/YYYY',
+              week_starts_on: 0,
+              expense_categories: ['CustomCatOnly'],
+              income_sources: ['CustomSourceOnly'],
+              dashboard_widgets: [{ id: 'w_old', name: 'Old', visible: false, order: 99 }]
+            },
+            error: null
+          }),
+          salary_configs: () => ({
+            data: backendResetDone ? null : {
+              user_id: USER_A,
+              currency_code: 'USD',
+              daily_base_salary: 1200,
+              addon_salary: 250,
+              addon_enabled: true,
+              standard_hours: 9,
+              extra_hour_rate: 300,
+              overtime_enabled: false
+            },
+            error: null
+          }),
+          profiles: () => ({
+            data: { id: USER_A, display_name: 'Musthafa', avatar_url: null },
+            error: null
+          })
+        },
+        async (fn) => {
+          if (fn === 'xos_reset_user_data') {
+            backendResetDone = true;
+            return { data: null, error: null };
+          }
+          return { data: null, error: { message: 'Unexpected RPC' } };
+        }
+      );
+
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      configureRepositoryBackendForTests(sparseResetClient, true);
+      await repository.fetchAllUserData(USER_A);
+
+      assert(repository.getSettings().currency === 'USD', 'Pre-reset USD loaded');
+      assert(repository.getSettings().salaryConfig.dailyBaseSalary === 1200, 'Pre-reset salary config loaded');
+      assert(repository.getSettings().salaryConfig.addonEnabled === true, 'Pre-reset addonEnabled loaded');
+      assert(repository.getSettings().customExpenseCategories[0] === 'CustomCatOnly', 'Pre-reset custom categories loaded');
+
+      await repository.resetUserData();
+
+      const afterSettings = repository.getSettings();
+      assert(repository.getExpenses().length === 0, 'Expenses wiped on reset');
+      assert(afterSettings.currency === 'INR', `Currency restored to default INR when user_settings deleted (got ${afterSettings.currency})`);
+      assert(afterSettings.dateFormat === 'YYYY-MM-DD', 'Date format restored to default when user_settings deleted');
+      assert(afterSettings.weekStartDay === 'Monday', 'Week start restored to default when user_settings deleted');
+      assert(afterSettings.customExpenseCategories.includes('Food & Dining') && !afterSettings.customExpenseCategories.includes('CustomCatOnly'), 'Expense categories restored to clean defaults (no stale pre-reset categories)');
+      assert(afterSettings.customIncomeSources.includes('Salary') && !afterSettings.customIncomeSources.includes('CustomSourceOnly'), 'Income sources restored to clean defaults');
+      assert(afterSettings.salaryConfig.dailyBaseSalary === 500, 'Salary dailyBaseSalary restored to default 500 when salary_configs deleted');
+      assert(afterSettings.salaryConfig.addonEnabled === false && afterSettings.salaryConfig.addonSalary === 0, 'Salary addon config restored to default');
+      assert(afterSettings.salaryConfig.overtimeEnabled === true && afterSettings.salaryConfig.extraHourRate === 100, 'Salary overtime config restored to default');
+      assert(afterSettings.profile.name === 'Musthafa', 'Authenticated profile preserved after missing-row reset');
+    }
+    console.log('✓ Test 28 passed.');
+
+    // ==========================================
+    // TEST 29: Goals & Savings 1:1 Sync, Edit Sync, Archived/Cancelled Filtering & Null Link Resilience
+    // ==========================================
+    console.log('Test 29: Goals & Savings 1:1 sync, edit sync, archived/cancelled filtering & legacy null-link resilience...');
+    {
+      const dbGoals: any[] = [
+        // 1) Active linked goal whose stored progress_percentage lags behind savings balance (must derive from savings balance!)
+        {
+          id: 'g_active_1',
+          user_id: USER_A,
+          title: 'Emergency Fund',
+          description: '6 months buffer',
+          category: 'Financial',
+          target_amount: 1000,
+          progress_percentage: 0, // Stale DB column; savings_goals has 400 -> UI must compute 40%
+          priority: 'high',
+          status: 'in_progress',
+          savings_goal_id: 'sg_1',
+          created_at: '2026-06-01T00:00:00Z',
+          updated_at: '2026-06-01T00:00:00Z'
+        },
+        // 2) Soft-archived goal via status='archived' -> MUST NOT reappear as active after refresh
+        {
+          id: 'g_arch_status',
+          user_id: USER_A,
+          title: 'Archived By Status',
+          category: 'Financial',
+          target_amount: 500,
+          progress_percentage: 10,
+          priority: 'medium',
+          status: 'archived',
+          savings_goal_id: 'sg_arch_1',
+          created_at: '2026-06-01T00:00:00Z'
+        },
+        // 3) Soft-archived goal via archived_at -> MUST NOT reappear as active after refresh
+        {
+          id: 'g_arch_ts',
+          user_id: USER_A,
+          title: 'Archived By Timestamp',
+          category: 'Travel',
+          target_amount: 800,
+          progress_percentage: 20,
+          priority: 'low',
+          status: 'in_progress',
+          archived_at: '2026-06-05T00:00:00Z',
+          savings_goal_id: 'sg_arch_2',
+          created_at: '2026-06-01T00:00:00Z'
+        },
+        // 4) Cancelled goal -> maps to Paused, MUST NOT be counted/shown as Active Goal on Dashboard or Active filter
+        {
+          id: 'g_cancelled',
+          user_id: USER_A,
+          title: 'Paused Vacation',
+          category: 'Travel',
+          target_amount: 2000,
+          progress_percentage: 10,
+          priority: 'medium',
+          status: 'cancelled',
+          savings_goal_id: 'sg_cancelled',
+          created_at: '2026-06-01T00:00:00Z'
+        },
+        // 5) Legacy broken goal with null savings_goal_id -> MUST NOT crash fetchAllUserData!
+        {
+          id: 'g_legacy_null',
+          user_id: USER_A,
+          title: 'Legacy Unlinked Goal',
+          category: 'Personal',
+          target_amount: 300,
+          progress_percentage: 15,
+          priority: 'low',
+          status: 'in_progress',
+          savings_goal_id: null,
+          created_at: '2026-06-01T00:00:00Z'
+        },
+        // 6) Duplicate claimer pointing to sg_1 -> strict 1:1 enforcement prevents double-counting sg_1 balance
+        {
+          id: 'g_dup_claim',
+          user_id: USER_A,
+          title: 'Duplicate Link Attempt',
+          category: 'Financial',
+          target_amount: 1000,
+          progress_percentage: 0,
+          priority: 'medium',
+          status: 'in_progress',
+          savings_goal_id: 'sg_1',
+          created_at: '2026-06-02T00:00:00Z'
+        }
+      ];
+
+      const dbSavingsGoals: any[] = [
+        { id: 'sg_1', user_id: USER_A, name: 'Emergency Fund', target_amount: 1000, current_balance: 400, created_at: '2026-06-01T00:00:00Z' },
+        { id: 'sg_1', user_id: USER_A, name: 'Emergency Fund', target_amount: 1000, current_balance: 400, created_at: '2026-06-01T00:00:00Z' }, // Duplicate row ID check
+        { id: 'sg_arch_1', user_id: USER_A, name: 'Archived Fund', target_amount: 500, current_balance: 50, created_at: '2026-06-01T00:00:00Z' },
+        { id: 'sg_arch_2', user_id: USER_A, name: 'Archived TS Fund', target_amount: 800, current_balance: 160, archived_at: '2026-06-05T00:00:00Z', created_at: '2026-06-01T00:00:00Z' },
+        { id: 'sg_cancelled', user_id: USER_A, name: 'Paused Vacation', target_amount: 2000, current_balance: 200, created_at: '2026-06-01T00:00:00Z' }
+      ];
+
+      const dbSavingsTxs: any[] = [];
+
+      const syncClient = createMockSupabase(USER_A, {
+        goals: (ctx) => {
+          if (ctx.op === 'update') {
+            const idFilter = ctx.filters.find(f => f.col === 'id')?.val;
+            const idx = dbGoals.findIndex(g => g.id === idFilter);
+            if (idx >= 0) {
+              dbGoals[idx] = { ...dbGoals[idx], ...ctx.payload, updated_at: new Date().toISOString() };
+              return { data: dbGoals[idx], error: null };
+            }
+            return { data: null, error: null };
+          }
+          const filtered = dbGoals.filter(row => ctx.filters.every(f => row[f.col] === f.val));
+          if (ctx.singleMode !== 'none') {
+            return { data: filtered[0] || null, error: null };
+          }
+          return { data: filtered, error: null };
+        },
+        savings_goals: (ctx) => {
+          if (ctx.op === 'update') {
+            const idFilter = ctx.filters.find(f => f.col === 'id')?.val;
+            let updatedRow: any = null;
+            for (let i = 0; i < dbSavingsGoals.length; i++) {
+              if (dbSavingsGoals[i].id === idFilter) {
+                dbSavingsGoals[i] = { ...dbSavingsGoals[i], ...ctx.payload, updated_at: new Date().toISOString() };
+                updatedRow = dbSavingsGoals[i];
+              }
+            }
+            return { data: updatedRow, error: null };
+          }
+          const filtered = dbSavingsGoals.filter(row => ctx.filters.every(f => row[f.col] === f.val));
+          if (ctx.singleMode !== 'none') {
+            return { data: filtered[0] || null, error: null };
+          }
+          return { data: filtered, error: null };
+        },
+        savings_transactions: (ctx) => {
+          if (ctx.op === 'insert') {
+            const tx = { id: `st_${dbSavingsTxs.length + 1}`, ...ctx.payload, created_at: new Date().toISOString() };
+            dbSavingsTxs.unshift(tx);
+            const delta = tx.transaction_type === 'deposit' ? tx.amount : -tx.amount;
+            for (const sg of dbSavingsGoals) {
+              if (sg.id === tx.savings_goal_id) {
+                sg.current_balance = Math.max(0, Number(sg.current_balance) + delta);
+              }
+            }
+            return { data: tx, error: null };
+          }
+          return { data: dbSavingsTxs, error: null };
+        }
+      });
+
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      configureRepositoryBackendForTests(syncClient, true);
+
+      await repository.fetchAllUserData(USER_A);
+      const initialGoals = repository.getGoals();
+      const initialSavings = repository.getSavingsGoals();
+
+      // Hydration must not crash on legacy null savings_goal_id and must exclude soft-archived rows
+      assert(!initialGoals.some(g => g.id === 'g_arch_status' || g.id === 'g_arch_ts'), 'Archived goals filtered out cleanly on fetch');
+      assert(initialGoals.some(g => g.id === 'g_legacy_null'), 'Legacy goal with null savings_goal_id survived hydration without crashing');
+      assert(initialSavings.filter(sg => sg.id === 'sg_1').length === 1, 'Duplicate savings_goals IDs deduplicated');
+      assert(!initialSavings.some(sg => sg.id === 'sg_arch_1' || sg.id === 'sg_arch_2'), 'Archived goal linked savings accounts filtered out');
+
+      // Unified Goal + Savings resolution
+      const resolved1 = resolveGoalsWithSavings(initialGoals, initialSavings);
+      const emergencyItem = resolved1.find(r => r.goal.id === 'g_active_1')!;
+      const dupClaimItem = resolved1.find(r => r.goal.id === 'g_dup_claim')!;
+      const cancelledItem = resolved1.find(r => r.goal.id === 'g_cancelled');
+
+      assert(emergencyItem.savedAmount === 400 && emergencyItem.progressPercentage === 40, `Active goal progress derived from linked savings balance (expected 40%, got ${emergencyItem.progressPercentage}%)`);
+      assert(emergencyItem.isActive === true, 'Linked in-progress goal is active');
+      assert(dupClaimItem.hasValidSavingsLink === false && dupClaimItem.savedAmount === 0, 'Strict 1:1 link prevents duplicate claim double-counting sg_1 balance');
+      assert(initialGoals.find(g => g.id === 'g_cancelled')?.status === 'Paused', 'Cancelled goal maps safely in repository state');
+      assert(cancelledItem === undefined, 'Cancelled/archived goal is excluded from resolved active/goal UI lists');
+
+      // Editing the goal syncs name & target_amount to linked savings_goals without breaking savings_goal_id or balance
+      await repository.updateGoal('g_active_1', {
+        title: 'Emergency Cash Buffer',
+        targetAmount: 2000,
+        description: 'Expanded buffer'
+      });
+      const updatedSg = dbSavingsGoals.find(sg => sg.id === 'sg_1')!;
+      const updatedDbGoal = dbGoals.find(g => g.id === 'g_active_1')!;
+      assert(updatedSg.name === 'Emergency Cash Buffer' && updatedSg.target_amount === 2000, 'Goal edit synced title & target_amount to linked savings_goals');
+      assert(updatedSg.current_balance === 400 && updatedDbGoal.savings_goal_id === 'sg_1', 'Goal edit preserved balance and 1:1 savings_goal_id link');
+
+      // Deposit into linked savings updates Goal progress immediately AND across full refresh
+      await repository.addSavingsTransaction({
+        savingsGoalId: 'sg_1',
+        amount: 600,
+        type: 'deposit',
+        date: '2026-06-10',
+        note: 'Top up'
+      });
+
+      const resolvedAfterDeposit = resolveGoalsWithSavings(repository.getGoals(), repository.getSavingsGoals());
+      const emergencyAfterDeposit = resolvedAfterDeposit.find(r => r.goal.id === 'g_active_1')!;
+      assert(emergencyAfterDeposit.savedAmount === 1000 && emergencyAfterDeposit.progressPercentage === 50, `Immediate deposit sync (1000/2000 = 50%, got ${emergencyAfterDeposit.progressPercentage}%)`);
+
+      // Full refresh check
+      await repository.fetchAllUserData(USER_A);
+      const resolvedAfterRefresh = resolveGoalsWithSavings(repository.getGoals(), repository.getSavingsGoals());
+      const emergencyAfterRefresh = resolvedAfterRefresh.find(r => r.goal.id === 'g_active_1')!;
+      assert(emergencyAfterRefresh.savedAmount === 1000 && emergencyAfterRefresh.progressPercentage === 50, 'Goal progress stays 50% after full DB refresh');
+
+      // Deposit remaining 1000 -> auto-completes goal and removes it from Active Dashboard list
+      await repository.addSavingsTransaction({
+        savingsGoalId: 'sg_1',
+        amount: 1000,
+        type: 'deposit',
+        date: '2026-06-11',
+        note: 'Completion'
+      });
+      const resolvedCompleted = resolveGoalsWithSavings(repository.getGoals(), repository.getSavingsGoals());
+      const emergencyCompleted = resolvedCompleted.find(r => r.goal.id === 'g_active_1')!;
+      assert(emergencyCompleted.isCompleted === true && emergencyCompleted.isActive === false && emergencyCompleted.progressPercentage === 100, 'Reaching target completes goal and removes from Active list');
+
+      // Totals and stats consistency
+      const unifiedTotals = calculateUnifiedGoalTotals(resolvedCompleted);
+      const goalStats = calculateGoalStats(repository.getGoals(), repository.getSavingsGoals());
+      assert(unifiedTotals.completedGoalsCount === 1 && goalStats.completedCount === 1, 'Goal stats match unified totals');
+      assert(unifiedTotals.totalSavedAmount === 2000, `Unified total saved excludes archived/cancelled/duplicate balances (expected 2000, got ${unifiedTotals.totalSavedAmount})`);
+    }
+    console.log('✓ Test 29 passed.');
+
+    // ==========================================
+    // TEST 30: Goal Archive RPC Integration (xos_archive_goal), Error Handling, Coalescing & Refresh Exclusion
+    // ==========================================
+    console.log('Test 30: xos_archive_goal(p_goal_id) RPC, error rollback, duplicate submit guard, refetch sync & refresh exclusion...');
+    {
+      const dbGoals: any[] = [
+        {
+          id: UUID_1,
+          user_id: USER_A,
+          title: 'Archive Target Goal',
+          description: 'Travel savings',
+          category: 'Travel',
+          target_amount: 1500,
+          progress_percentage: 20,
+          priority: 'medium',
+          status: 'in_progress',
+          savings_goal_id: UUID_2,
+          created_at: '2026-06-01T00:00:00Z'
+        },
+        {
+          id: UUID_3,
+          user_id: USER_A,
+          title: 'Keep Active Goal',
+          description: 'Laptop fund',
+          category: 'Career',
+          target_amount: 2000,
+          progress_percentage: 50,
+          priority: 'high',
+          status: 'in_progress',
+          savings_goal_id: UUID_4,
+          created_at: '2026-06-02T00:00:00Z'
+        }
+      ];
+      const dbSavingsGoals: any[] = [
+        { id: UUID_2, user_id: USER_A, name: 'Archive Target Goal', target_amount: 1500, current_balance: 300, created_at: '2026-06-01T00:00:00Z' },
+        { id: UUID_4, user_id: USER_A, name: 'Keep Active Goal', target_amount: 2000, current_balance: 1000, created_at: '2026-06-02T00:00:00Z' }
+      ];
+
+      let archiveRpcMode: 'error' | 'obj_false' | 'void_null' | 'bool_true' = 'error';
+      let archiveCallCount = 0;
+      let goalsSelectCount = 0;
+      const calledRpcs: Array<{ fn: string; args: Record<string, any> }> = [];
+
+      const archiveClient = createMockSupabase(
+        USER_A,
+        {
+          goals: () => {
+            goalsSelectCount += 1;
+            return { data: dbGoals, error: null };
+          },
+          savings_goals: () => ({ data: dbSavingsGoals, error: null }),
+          savings_transactions: () => ({ data: [], error: null })
+        },
+        async (fn, args) => {
+          calledRpcs.push({ fn, args });
+          if (fn === 'xos_delete_goal') {
+            throw new Error('Deprecated xos_delete_goal RPC must NEVER be called');
+          }
+          if (fn === 'xos_archive_goal') {
+            archiveCallCount += 1;
+            await new Promise(resolve => setTimeout(resolve, 15));
+            if (archiveRpcMode === 'error') {
+              return { data: null, error: { message: 'Could not find function public.xos_delete_goal or permission denied' } };
+            }
+            if (archiveRpcMode === 'obj_false') {
+              return { data: { success: false, message: 'Goal archive aborted on server' }, error: null };
+            }
+            // Live backend sets status = 'cancelled' when archiving a Goal
+            const target = dbGoals.find(g => g.id === args.p_goal_id);
+            if (target) {
+              target.status = 'cancelled';
+            }
+            return { data: archiveRpcMode === 'void_null' ? null : true, error: null };
+          }
+          return { data: null, error: { message: `Unexpected RPC ${fn}` } };
+        }
+      );
+
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      configureRepositoryBackendForTests(archiveClient, true);
+      await repository.fetchAllUserData(USER_A);
+
+      const preResolved = resolveGoalsWithSavings(repository.getGoals(), repository.getSavingsGoals());
+      assert(preResolved.filter(g => g.isActive).length === 2, 'Pre-archive has 2 active goals');
+
+      // 1) RPC error & { success: false } MUST reject cleanly and preserve existing state without refetching
+      for (const badMode of ['error', 'obj_false'] as const) {
+        archiveRpcMode = badMode;
+        const selectsBefore = goalsSelectCount;
+        let threw = false;
+        try {
+          await repository.deleteGoal(UUID_1);
+        } catch {
+          threw = true;
+        }
+        assert(threw, `Archive mode '${badMode}' must throw error`);
+        assert(goalsSelectCount === selectsBefore, `Archive failure mode '${badMode}' must NOT trigger success refetch`);
+        assert(repository.getGoals().some(g => g.id === UUID_1), `Goal kept in state on '${badMode}'`);
+        assert(repository.getSavingsGoals().some(sg => sg.id === UUID_2), `Linked savings kept in state on '${badMode}'`);
+      }
+
+      // 2) Duplicate concurrent archival for the same UUID coalesces into ONE xos_archive_goal({ p_goal_id }) RPC call and refetches data
+      archiveRpcMode = 'void_null';
+      archiveCallCount = 0;
+      const selectsBeforeSuccess = goalsSelectCount;
+      await Promise.all([repository.deleteGoal(UUID_1), repository.deleteGoal(UUID_1)]);
+
+      assert(archiveCallCount === 1, `Concurrent deleteGoal calls coalesced into 1 xos_archive_goal call (got ${archiveCallCount})`);
+      assert(
+        calledRpcs.every(c => c.fn === 'xos_archive_goal' && c.args.p_goal_id === UUID_1),
+        'All archive RPC calls used xos_archive_goal with exact parameter p_goal_id'
+      );
+      assert(goalsSelectCount > selectsBeforeSuccess, 'Successful archive triggered Goals/Savings refetch synchronization');
+
+      // Even though backend kept row with status='cancelled', it must NOT appear in active/resolved Goal lists or Dashboard totals
+      const postArchiveResolved = resolveGoalsWithSavings(repository.getGoals(), repository.getSavingsGoals());
+      assert(!postArchiveResolved.some(i => i.goal.id === UUID_1), 'Archived (cancelled) goal excluded from active & resolved lists immediately');
+      assert(postArchiveResolved.filter(i => i.isActive).length === 1 && postArchiveResolved[0].goal.id === UUID_3, 'Remaining active goal preserved on Dashboard');
+
+      // 3) Simulate full page reload / session refresh -> archived (cancelled) Goal remains excluded
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      await repository.fetchAllUserData(USER_A);
+
+      const postRefreshResolved = resolveGoalsWithSavings(repository.getGoals(), repository.getSavingsGoals());
+      assert(!postRefreshResolved.some(i => i.goal.id === UUID_1), 'Archived (cancelled) goal remains excluded after full reload');
+      assert(postRefreshResolved.filter(i => i.isActive).length === 1 && postRefreshResolved[0].goal.id === UUID_3, 'Only active non-archived goal shows after refresh');
+      const postRefreshTotals = calculateUnifiedGoalTotals(postRefreshResolved);
+      assert(postRefreshTotals.totalSavedAmount === 1000 && postRefreshTotals.totalTargetAmount === 2000, 'Archived (cancelled) goal savings excluded from unified totals after refresh');
+    }
+    console.log('✓ Test 30 passed.');
+
     console.log('\n======================================================');
-    console.log('--- ALL 27 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
+    console.log('--- ALL 30 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
     console.log('======================================================');
   } finally {
     configureRepositoryBackendForTests(null, null);

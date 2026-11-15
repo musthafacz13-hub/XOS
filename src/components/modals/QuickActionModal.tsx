@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { X, CreditCard, TrendingUp, CalendarCheck, Target, PiggyBank } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useXOSData } from '../../hooks/useXOSData';
 import { AttendanceStatus, ExpenseCategory, IncomeSource, PaymentMethod } from '../../types';
-import { getTodayString } from '../../utils/formatters';
+import { getTodayString, formatCurrency } from '../../utils/formatters';
+import { resolveGoalsWithSavings } from '../../utils/calculations';
 import { modalBackdropVariants, modalContentVariants, MOTION_SPRINGS } from '../../utils/motion';
 
 interface QuickActionModalProps {
@@ -74,16 +75,52 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   const [goalTargetDate, setGoalTargetDate] = useState('');
   const [goalPriority, setGoalPriority] = useState<'Low' | 'Medium' | 'High'>('Medium');
 
+  const expenseCategories = useMemo(() => {
+    const list = (data.settings.customExpenseCategories || []).filter(Boolean);
+    return list.length > 0 ? Array.from(new Set(list)) : ['Other'];
+  }, [data.settings.customExpenseCategories]);
+
+  const incomeSources = useMemo(() => {
+    const list = (data.settings.customIncomeSources || []).filter(Boolean);
+    return list.length > 0 ? Array.from(new Set(list)) : ['Other'];
+  }, [data.settings.customIncomeSources]);
+
+  const availableSavingsGoals = useMemo(() => {
+    const resolved = resolveGoalsWithSavings(data.goals, data.savingsGoals);
+    const activeLinked = resolved
+      .filter(item => item.savingsGoal && !item.isArchived)
+      .map(item => item.savingsGoal!);
+    if (activeLinked.length > 0) {
+      return activeLinked;
+    }
+    const archivedIds = new Set(
+      data.goals
+        .filter(g => (g.status === 'Archived' || g.status === 'Paused') && g.savingsGoalId)
+        .map(g => g.savingsGoalId as string)
+    );
+    return Array.from(
+      new Map(
+        data.savingsGoals
+          .filter(sg => sg && sg.id && !archivedIds.has(sg.id))
+          .map(sg => [sg.id, sg])
+      ).values()
+    );
+  }, [data.goals, data.savingsGoals]);
+
   // Savings State
-  const [savingsGoalId, setSavingsGoalId] = useState(data.savingsGoals[0]?.id || '');
+  const [savingsGoalId, setSavingsGoalId] = useState(availableSavingsGoals[0]?.id || '');
   const [savingsAmount, setSavingsAmount] = useState('');
   const [savingsType, setSavingsType] = useState<'deposit' | 'withdrawal'>('deposit');
 
   useEffect(() => {
-    if (data.savingsGoals.length > 0 && (!savingsGoalId || !data.savingsGoals.some(g => g.id === savingsGoalId))) {
-      setSavingsGoalId(data.savingsGoals[0].id);
+    if (availableSavingsGoals.length === 0) {
+      if (savingsGoalId) setSavingsGoalId('');
+      return;
     }
-  }, [data.savingsGoals, savingsGoalId]);
+    if (!savingsGoalId || !availableSavingsGoals.some(g => g.id === savingsGoalId)) {
+      setSavingsGoalId(availableSavingsGoals[0].id);
+    }
+  }, [availableSavingsGoals, savingsGoalId]);
 
   // Reset form values & dates when modal opens
   useEffect(() => {
@@ -114,19 +151,26 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   // Clear errors when tab or open state changes
   useEffect(() => {
     setActionError(null);
+    isSubmittingRef.current = false;
     setIsSubmitting(false);
   }, [activeTab, isOpen]);
 
   const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!expenseTitle.trim() || !expenseAmount) return;
+    if (isSubmittingRef.current || isSubmitting) return;
+
+    if (!expenseTitle.trim()) {
+      setActionError('Expense title is required.');
+      return;
+    }
 
     const numAmount = parseFloat(expenseAmount);
-    if (isNaN(numAmount) || numAmount <= 0) {
+    if (!expenseAmount || isNaN(numAmount) || numAmount <= 0) {
       setActionError('Expense amount must be greater than zero.');
       return;
     }
 
+    isSubmittingRef.current = true;
     setActionError(null);
     setIsSubmitting(true);
     try {
@@ -144,20 +188,27 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       console.error('Failed to add expense:', err);
       setActionError(err?.message || 'Database error: Could not save expense.');
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
 
   const handleAddIncome = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!incomeTitle.trim() || !incomeAmount) return;
+    if (isSubmittingRef.current || isSubmitting) return;
+
+    if (!incomeTitle.trim()) {
+      setActionError('Income title is required.');
+      return;
+    }
 
     const numAmount = parseFloat(incomeAmount);
-    if (isNaN(numAmount) || numAmount <= 0) {
+    if (!incomeAmount || isNaN(numAmount) || numAmount <= 0) {
       setActionError('Income amount must be greater than zero.');
       return;
     }
 
+    isSubmittingRef.current = true;
     setActionError(null);
     setIsSubmitting(true);
     try {
@@ -174,6 +225,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       console.error('Failed to add income:', err);
       setActionError(err?.message || 'Database error: Could not save income.');
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -213,12 +265,17 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
 
   const handleAddGoal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!goalTitle.trim() || isSubmitting) return;
+    if (isSubmittingRef.current || isSubmitting) return;
+    if (!goalTitle.trim()) {
+      setActionError('Goal title is required.');
+      return;
+    }
     const parsedTarget = parseFloat(goalTargetAmount);
     if (isNaN(parsedTarget) || parsedTarget <= 0) {
       setActionError('Target amount is required and must be greater than zero.');
       return;
     }
+    isSubmittingRef.current = true;
     setActionError(null);
     setIsSubmitting(true);
     try {
@@ -234,18 +291,28 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
     } catch (err: any) {
       setActionError(err?.message || 'Database error: Could not save goal.');
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
 
   const handleAddSavingsTx = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!savingsGoalId || !savingsAmount || isSubmitting) return;
+    if (!savingsGoalId || isSubmittingRef.current || isSubmitting) return;
     const parsedAmount = parseFloat(savingsAmount);
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+    if (!savingsAmount || isNaN(parsedAmount) || parsedAmount <= 0) {
       setActionError('Transaction amount must be greater than zero.');
       return;
     }
+    if (savingsType === 'withdrawal') {
+      const targetSg = availableSavingsGoals.find(sg => sg.id === savingsGoalId);
+      const currentSaved = targetSg?.currentAmount || 0;
+      if (parsedAmount > currentSaved + 0.001) {
+        setActionError(`Withdrawal cannot exceed saved balance of ${formatCurrency(currentSaved, data.settings.currency)}.`);
+        return;
+      }
+    }
+    isSubmittingRef.current = true;
     setActionError(null);
     setIsSubmitting(true);
     try {
@@ -260,6 +327,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
     } catch (err: any) {
       setActionError(err?.message || 'Database error: Could not save savings transaction.');
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -378,7 +446,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
                     onChange={(e) => setExpenseCategory(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
                   >
-                    {data.settings.customExpenseCategories.map((cat) => (
+                    {expenseCategories.map((cat) => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </select>
@@ -477,7 +545,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
                     onChange={(e) => setIncomeSource(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
                   >
-                    {data.settings.customIncomeSources.map((src) => (
+                    {incomeSources.map((src) => (
                       <option key={src} value={src}>{src}</option>
                     ))}
                   </select>
@@ -706,9 +774,9 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
 
           {activeTab === 'savings' && (
             <form onSubmit={handleAddSavingsTx} className="space-y-4">
-              {data.savingsGoals.length === 0 ? (
+              {availableSavingsGoals.length === 0 ? (
                 <div className="p-5 text-center text-xs text-neutral-500 bg-neutral-50 rounded-xl border border-neutral-200">
-                  No savings reserve funds created yet. Create a savings fund first under the Savings tab.
+                  No active goal savings funds available yet. Create a goal first under the Goals tab.
                 </div>
               ) : (
                 <>
@@ -719,7 +787,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
                       onChange={(e) => setSavingsGoalId(e.target.value)}
                       className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
                     >
-                      {data.savingsGoals.map((sg) => (
+                      {availableSavingsGoals.map((sg) => (
                         <option key={sg.id} value={sg.id}>{sg.name}</option>
                       ))}
                     </select>

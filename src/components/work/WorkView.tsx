@@ -84,7 +84,9 @@ export const WorkView: React.FC = () => {
       setStatus(existing.status);
       setCheckInTime(existing.checkInTime || '09:00');
       setCheckOutTime(existing.checkOutTime || '17:30');
-      setBreakDurationMinutes(String(existing.breakDurationMinutes || 30));
+      setBreakDurationMinutes(
+        String(typeof existing.breakDurationMinutes === 'number' ? existing.breakDurationMinutes : 30)
+      );
       setNotes(existing.notes || '');
     } else {
       setEditingRecord(null);
@@ -424,7 +426,9 @@ export const WorkView: React.FC = () => {
 
                 <div className="flex items-center justify-between text-xs text-neutral-500 font-mono">
                   <span>{rec.checkInTime && rec.checkOutTime ? `${rec.checkInTime} - ${rec.checkOutTime}` : 'Shift open'}</span>
-                  <span className="font-bold text-[#111111]">{rec.calculatedHours ? `${rec.calculatedHours} hrs` : '—'}</span>
+                  <span className="font-bold text-[#111111]">
+                    {rec.status === 'Present' && typeof rec.calculatedHours === 'number' ? `${rec.calculatedHours} hrs` : '—'}
+                  </span>
                 </div>
 
                 {rec.notes && (
@@ -484,7 +488,7 @@ export const WorkView: React.FC = () => {
                       {rec.checkInTime && rec.checkOutTime ? `${rec.checkInTime} - ${rec.checkOutTime}` : '—'}
                     </td>
                     <td className="py-3 px-4 text-center font-mono font-bold text-[#111111] tabular-nums">
-                      {rec.calculatedHours ? `${rec.calculatedHours}h` : '—'}
+                      {rec.status === 'Present' && typeof rec.calculatedHours === 'number' ? `${rec.calculatedHours}h` : '—'}
                     </td>
                     <td className="py-3 px-4 text-neutral-500">
                       {rec.notes || '—'}
@@ -565,7 +569,9 @@ export const WorkView: React.FC = () => {
                         setStatus(existingForDate.status);
                         setCheckInTime(existingForDate.checkInTime || '09:00');
                         setCheckOutTime(existingForDate.checkOutTime || '17:30');
-                        setBreakDurationMinutes(String(existingForDate.breakDurationMinutes || 30));
+                        setBreakDurationMinutes(
+                          String(typeof existingForDate.breakDurationMinutes === 'number' ? existingForDate.breakDurationMinutes : 30)
+                        );
                         setNotes(existingForDate.notes || '');
                       }
                     }}

@@ -484,19 +484,149 @@ export function calculateMonthlySalarySummary(
   };
 }
 
-export function calculateGoalStats(goals: Goal[]) {
-  const activeGoals = goals.filter(g => g.status === 'In Progress' || g.status === 'Not Started');
-  const completedGoals = goals.filter(g => g.status === 'Completed');
-  const averageProgress = goals.length > 0
-    ? Math.round(goals.reduce((sum, g) => sum + Math.max(0, Math.min(100, g.progressPercentage || 0)), 0) / goals.length)
+export interface ResolvedGoalItem {
+  goal: Goal;
+  savingsGoal?: SavingsGoal;
+  savedAmount: number;
+  targetAmount: number;
+  remainingAmount: number;
+  progressPercentage: number;
+  isCompleted: boolean;
+  isPaused: boolean;
+  isArchived: boolean;
+  isActive: boolean;
+  hasValidSavingsLink: boolean;
+}
+
+export function resolveGoalsWithSavings(
+  goals: Goal[],
+  savingsGoals: SavingsGoal[]
+): ResolvedGoalItem[] {
+  const savingsById = new Map<string, SavingsGoal>();
+  for (const sg of savingsGoals) {
+    if (sg && sg.id && !savingsById.has(sg.id)) {
+      savingsById.set(sg.id, sg);
+    }
+  }
+
+  const claimedSavingsIds = new Set<string>();
+  const resolved: ResolvedGoalItem[] = [];
+
+  for (const goal of goals) {
+    if (!goal || goal.status === 'Archived' || goal.status === 'Paused') {
+      continue;
+    }
+
+    const sgId = typeof goal.savingsGoalId === 'string' ? goal.savingsGoalId.trim() : '';
+    const candidateSg = sgId && !claimedSavingsIds.has(sgId) ? savingsById.get(sgId) : undefined;
+    if (candidateSg) {
+      claimedSavingsIds.add(candidateSg.id);
+    }
+
+    const savedAmount = candidateSg ? Math.max(0, Number(candidateSg.currentAmount) || 0) : 0;
+    const rawTarget = goal.targetAmount ?? candidateSg?.targetAmount ?? 0;
+    const targetAmount = Math.max(0, Number(rawTarget) || 0);
+    const remainingAmount = Math.max(0, Number((targetAmount - savedAmount).toFixed(2)));
+    const isPaused = false;
+
+    let progressPercentage = 0;
+    if (candidateSg && targetAmount > 0) {
+      progressPercentage = Math.min(100, Math.max(0, Math.round((savedAmount / targetAmount) * 100)));
+    } else if (targetAmount > 0 && savedAmount > 0) {
+      progressPercentage = Math.min(100, Math.max(0, Math.round((savedAmount / targetAmount) * 100)));
+    } else if (goal.status === 'Completed' && targetAmount <= 0) {
+      progressPercentage = 100;
+    } else if (!candidateSg && targetAmount <= 0) {
+      progressPercentage = Math.min(100, Math.max(0, Math.round(goal.progressPercentage || 0)));
+    }
+
+    const isCompleted =
+      !isPaused &&
+      (targetAmount > 0 ? savedAmount >= targetAmount : goal.status === 'Completed');
+
+    const isActive = !isPaused && !isCompleted;
+
+    resolved.push({
+      goal,
+      savingsGoal: candidateSg,
+      savedAmount: Number(savedAmount.toFixed(2)),
+      targetAmount: Number(targetAmount.toFixed(2)),
+      remainingAmount,
+      progressPercentage,
+      isCompleted,
+      isPaused,
+      isArchived: false,
+      isActive,
+      hasValidSavingsLink: Boolean(candidateSg)
+    });
+  }
+
+  return resolved;
+}
+
+export function calculateUnifiedGoalTotals(items: ResolvedGoalItem[]) {
+  const nonArchived = items.filter(i => !i.isArchived);
+  const totalTargetAmount = nonArchived.reduce((sum, i) => sum + i.targetAmount, 0);
+  const totalSavedAmount = nonArchived.reduce((sum, i) => sum + i.savedAmount, 0);
+  const totalRemainingAmount = Math.max(0, Number((totalTargetAmount - totalSavedAmount).toFixed(2)));
+  const overallProgress =
+    totalTargetAmount > 0
+      ? Math.min(100, Math.round((totalSavedAmount / totalTargetAmount) * 100))
+      : 0;
+
+  let activeGoalsCount = 0;
+  let completedGoalsCount = 0;
+  for (const item of nonArchived) {
+    if (item.isCompleted) {
+      completedGoalsCount += 1;
+    } else if (item.isActive) {
+      activeGoalsCount += 1;
+    }
+  }
+
+  return {
+    totalCount: nonArchived.length,
+    totalTargetAmount: Number(totalTargetAmount.toFixed(2)),
+    totalSavedAmount: Number(totalSavedAmount.toFixed(2)),
+    totalRemainingAmount,
+    overallProgress,
+    activeGoalsCount,
+    completedGoalsCount
+  };
+}
+
+export function calculateGoalStats(goals: Goal[], savingsGoals?: SavingsGoal[]) {
+  if (Array.isArray(savingsGoals)) {
+    const resolved = resolveGoalsWithSavings(goals, savingsGoals);
+    const totals = calculateUnifiedGoalTotals(resolved);
+    const averageProgress =
+      resolved.length > 0
+        ? Math.round(resolved.reduce((sum, i) => sum + i.progressPercentage, 0) / resolved.length)
+        : 0;
+
+    return {
+      total: totals.totalCount,
+      activeCount: totals.activeGoalsCount,
+      completedCount: totals.completedGoalsCount,
+      averageProgress,
+      completionPercentage:
+        totals.totalCount > 0 ? Math.round((totals.completedGoalsCount / totals.totalCount) * 100) : 0
+    };
+  }
+
+  const visibleGoals = goals.filter(g => g.status !== 'Archived' && g.status !== 'Paused');
+  const activeGoals = visibleGoals.filter(g => g.status === 'In Progress' || g.status === 'Not Started');
+  const completedGoals = visibleGoals.filter(g => g.status === 'Completed');
+  const averageProgress = visibleGoals.length > 0
+    ? Math.round(visibleGoals.reduce((sum, g) => sum + Math.max(0, Math.min(100, g.progressPercentage || 0)), 0) / visibleGoals.length)
     : 0;
 
   return {
-    total: goals.length,
+    total: visibleGoals.length,
     activeCount: activeGoals.length,
     completedCount: completedGoals.length,
     averageProgress,
-    completionPercentage: goals.length > 0 ? Math.round((completedGoals.length / goals.length) * 100) : 0
+    completionPercentage: visibleGoals.length > 0 ? Math.round((completedGoals.length / visibleGoals.length) * 100) : 0
   };
 }
 
@@ -516,6 +646,7 @@ export function calculateDebtOutstanding(debt: Debt, repayments: DebtRepayment[]
 }
 
 export function calculateDebtSummary(debts: Debt[], repayments: DebtRepayment[]) {
+  const receivableDebts = debts.filter(d => d.direction !== 'pay');
   let totalLent = 0;
   let outstandingReceivable = 0;
   let totalRepaid = 0;
@@ -523,7 +654,7 @@ export function calculateDebtSummary(debts: Debt[], repayments: DebtRepayment[])
   let partiallyPaidCount = 0;
   let paidCount = 0;
 
-  debts.forEach(d => {
+  receivableDebts.forEach(d => {
     const outstanding = calculateDebtOutstanding(d, repayments);
     totalLent += d.original_amount || 0;
     outstandingReceivable += outstanding;
@@ -545,7 +676,7 @@ export function calculateDebtSummary(debts: Debt[], repayments: DebtRepayment[])
     outstandingCount,
     partiallyPaidCount,
     paidCount,
-    totalRecords: debts.length
+    totalRecords: receivableDebts.length
   };
 }
 

@@ -15,7 +15,7 @@ import { ConfirmDialog } from '../common/ConfirmDialog';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 import { useAuth } from '../../context/AuthContext';
-import { SettingsBundleSaveError, SettingsBundleSection } from '../../services/repository';
+import { repository, SettingsBundleSaveError, SettingsBundleSection } from '../../services/repository';
 
 const PDFExportModal = lazy(() =>
   import('../modals/PDFExportModal').then(m => ({ default: m.PDFExportModal }))
@@ -480,8 +480,41 @@ export const SettingsView: React.FC = () => {
 
     try {
       await data.resetUserData();
+      const postReset = repository.getSettings();
+      const nextProfileName = postReset.profile.name || user?.user_metadata?.full_name || '';
+      const nextSalary = postReset.salaryConfig;
+
       failedSectionsRef.current.clear();
-      lastSyncedKeyRef.current = '';
+      setProfileName(nextProfileName);
+      setCurrency((postReset.currency || 'INR') as CurrencyCode);
+      setDateFormat((postReset.dateFormat || 'YYYY-MM-DD') as DateFormat);
+      setWeekStartDay((postReset.weekStartDay || 'Monday') as WeekStartDay);
+      setExpenseCategories(postReset.customExpenseCategories || []);
+      setIncomeSources(postReset.customIncomeSources || []);
+      setDailyBaseSalaryInput(String(nextSalary.dailyBaseSalary ?? 500));
+      setAddonSalaryInput(String(nextSalary.addonSalary ?? 0));
+      setAddonEnabled(Boolean(nextSalary.addonEnabled));
+      setStandardHoursInput(String(nextSalary.standardWorkingHours ?? 8));
+      setExtraHourRateInput(String(nextSalary.extraHourRate ?? 100));
+      setOvertimeEnabled(
+        nextSalary.overtimeEnabled !== undefined ? Boolean(nextSalary.overtimeEnabled) : true
+      );
+      lastSyncedKeyRef.current = JSON.stringify({
+        name: nextProfileName,
+        currency: postReset.currency || 'INR',
+        dateFormat: postReset.dateFormat || 'YYYY-MM-DD',
+        weekStartDay: postReset.weekStartDay || 'Monday',
+        customExpenseCategories: postReset.customExpenseCategories || [],
+        customIncomeSources: postReset.customIncomeSources || [],
+        dailyBaseSalary: nextSalary.dailyBaseSalary,
+        addonSalary: nextSalary.addonSalary,
+        addonEnabled: nextSalary.addonEnabled,
+        standardWorkingHours: nextSalary.standardWorkingHours,
+        extraHourRate: nextSalary.extraHourRate,
+        overtimeEnabled: nextSalary.overtimeEnabled,
+        salaryCurrency: nextSalary.currency
+      });
+
       setSaveErrorMessage(null);
       setSaveSuccessMessage(null);
       setCatFeedback(null);

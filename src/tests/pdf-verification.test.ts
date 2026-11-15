@@ -157,6 +157,42 @@ async function runPDFTests() {
   assert(!singlePageText.includes('¹1,500'), 'PDF must not contain garbled WinAnsi Rupee character');
   console.log('✓ Test 4 passed: Single-page INR PDF cleanly formatted without page numbers or glyph corruption.');
 
+  // Case 5: Archived goal savings excluded from Executive Summary and payable debt labeled clearly
+  console.log('Test 5: Verifying archived savings exclusion & payable debt labeling in PDF...');
+  const archivedSavingsBlob = await generateXOSReportPDF(
+    {
+      ...populatedData,
+      settings: { ...DEFAULT_USER_SETTINGS, currency: 'USD', dateFormat: 'YYYY-MM-DD' },
+      debts: [
+        ...populatedData.debts,
+        {
+          id: 'd_pay',
+          person_name: 'Supplier X',
+          original_amount: 900,
+          remaining_amount: 900,
+          lent_date: '2026-05-06',
+          status: 'outstanding',
+          direction: 'pay',
+          created_at: '2026-05-06'
+        }
+      ],
+      savingsGoals: [
+        { id: 'sg1', name: 'Active Reserve', targetAmount: 10000, currentAmount: 3500, createdAt: '2026-01-01' },
+        { id: 'sg_arch', name: 'Archived Reserve', targetAmount: 5000, currentAmount: 4200, createdAt: '2026-01-01' }
+      ],
+      goals: [
+        { id: 'g1', title: 'Active Goal', description: 'Active goal description', category: 'Career', progressPercentage: 35, targetAmount: 10000, status: 'In Progress', priority: 'High', createdAt: '2026-05-01', savingsGoalId: 'sg1' },
+        { id: 'g_arch', title: 'Archived Goal', description: 'Archived goal description', category: 'Travel', progressPercentage: 84, targetAmount: 5000, status: 'Archived', priority: 'Low', createdAt: '2026-05-01', savingsGoalId: 'sg_arch' }
+      ]
+    },
+    { datePreset: 'all' }
+  );
+  const archivedCheckText = new TextDecoder('latin1').decode(new Uint8Array(await archivedSavingsBlob.arrayBuffer()));
+  assert(archivedCheckText.includes('$3,500'), 'PDF must include active savings $3,500');
+  assert(!archivedCheckText.includes('$7,700'), 'PDF Executive Summary must NOT include archived savings ($3,500 + $4,200 = $7,700)');
+  assert(archivedCheckText.includes('[To Pay]'), 'Payable debt rows must be clearly labeled with [To Pay]');
+  console.log('✓ Test 5 passed: Archived savings excluded from Executive Summary & payable debt labeled clearly.');
+
   console.log('\n--- ALL PDF EXPORT TESTS PASSED SUCCESSFULLY! ---');
 }
 

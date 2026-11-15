@@ -446,6 +446,39 @@ async function runTests() {
 
   console.log('✓ Test 9 passed: Separate Receive & Pay debt totals verified.');
 
+  // ==========================================
+  // TEST 10: calculateDebtSummary Excludes Payables & Zero-Hour Present Attendance
+  // ==========================================
+  console.log('Test 10: calculateDebtSummary excludes pay-direction debts & explicit 0h Present hours...');
+  repository.clearAllData();
+  await repository.addDebt({
+    person_name: 'Client A',
+    original_amount: 1000,
+    lent_date: '2026-07-01',
+    direction: 'receive'
+  });
+  await repository.addDebt({
+    person_name: 'Vendor B',
+    original_amount: 2500,
+    lent_date: '2026-07-02',
+    direction: 'pay'
+  });
+  const recSummary = calculateDebtSummary(repository.getDebts(), repository.getDebtRepayments());
+  assertClose(recSummary.totalLent, 1000, 'calculateDebtSummary totalLent counts only receivable debts');
+  assertClose(recSummary.outstandingReceivable, 1000, 'calculateDebtSummary excludes payable debts');
+  assert(recSummary.totalRecords === 1, `calculateDebtSummary totalRecords excludes payable debts (got ${recSummary.totalRecords})`);
+
+  const zeroHourPresent: AttendanceRecord[] = [
+    { id: 'att_zero', date: '2026-07-05', status: 'Present', breakDurationMinutes: 0, calculatedHours: 0 },
+    { id: 'att_eight', date: '2026-07-06', status: 'Present', breakDurationMinutes: 0, calculatedHours: 8 }
+  ];
+  const zeroHourStats = calculateAttendanceStats(zeroHourPresent, '2026-07', 8);
+  assert(zeroHourStats.presentDays === 2, 'Counts both Present days including explicit 0h day');
+  assertClose(zeroHourStats.totalHours, 8, 'Explicit 0h Present day adds 0h without falling back to expectedDailyHours');
+  assert(zeroHourStats.missingHoursCount === 0, 'Explicit 0h Present day is not treated as missing hours');
+
+  console.log('✓ Test 10 passed: Payable exclusion & explicit 0h attendance verified.');
+
   console.log('\n======================================================');
   console.log('--- ALL XOS TEST SUITE CASES PASSED SUCCESSFULLY! ---');
   console.log('======================================================');

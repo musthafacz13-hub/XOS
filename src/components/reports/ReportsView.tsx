@@ -43,9 +43,29 @@ export const ReportsView: React.FC = () => {
     [data.attendance, periodPreset, customStart, customEnd]
   );
 
+  const archivedOrCancelledSavingsIds = useMemo(
+    () =>
+      new Set(
+        data.goals
+          .filter(g => (g.status === 'Archived' || g.status === 'Paused') && g.savingsGoalId)
+          .map(g => g.savingsGoalId as string)
+      ),
+    [data.goals]
+  );
+
+  const activeSavingsGoals = useMemo(
+    () => data.savingsGoals.filter(sg => !archivedOrCancelledSavingsIds.has(sg.id)),
+    [data.savingsGoals, archivedOrCancelledSavingsIds]
+  );
+
+  const activeSavingsTransactions = useMemo(
+    () => data.savingsTransactions.filter(tx => !archivedOrCancelledSavingsIds.has(tx.savingsGoalId)),
+    [data.savingsTransactions, archivedOrCancelledSavingsIds]
+  );
+
   const totals = useMemo(
-    () => calculateFinancialTotals(filteredIncomes, filteredExpenses, data.savingsGoals, data.savingsTransactions),
-    [filteredIncomes, filteredExpenses, data.savingsGoals, data.savingsTransactions]
+    () => calculateFinancialTotals(filteredIncomes, filteredExpenses, activeSavingsGoals, activeSavingsTransactions),
+    [filteredIncomes, filteredExpenses, activeSavingsGoals, activeSavingsTransactions]
   );
 
   const currentMonth = getMonthString();
@@ -239,7 +259,7 @@ export const ReportsView: React.FC = () => {
               <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs">
                 <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Total Reserves</span>
                 <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(totals.currentSavingsBalance, data.settings.currency)}</div>
-                <span className="text-[11px] text-neutral-400">Across {data.savingsGoals.length} Funds</span>
+                <span className="text-[11px] text-neutral-400">Across {activeSavingsGoals.length} Funds</span>
               </div>
 
               <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs">

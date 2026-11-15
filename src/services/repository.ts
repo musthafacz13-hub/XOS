@@ -183,10 +183,12 @@ let configuredOverride: boolean | null = null;
 let activeUserId: string | null = null;
 let fetchSequence = 0;
 let resetInFlightPromise: Promise<void> | null = null;
+const archiveGoalInFlightPromises = new Map<string, Promise<void>>();
 
 function validateResetRpcResponse(rpcData: unknown): void {
+  // Standard PostgreSQL RETURNS void functions return data: null (with error: null) via PostgREST.
   if (rpcData === null || rpcData === undefined) {
-    throw new Error('Account reset failed: server did not return a confirmation.');
+    return;
   }
   if (typeof rpcData === 'boolean') {
     if (rpcData !== true) {
@@ -194,10 +196,24 @@ function validateResetRpcResponse(rpcData: unknown): void {
     }
     return;
   }
+  if (typeof rpcData === 'string') {
+    const normalized = rpcData.trim().toLowerCase();
+    if (normalized === 'ok' || normalized === 'success' || normalized === 'true' || normalized === '') {
+      return;
+    }
+    throw new Error(`Account reset failed: unexpected server response (${rpcData}).`);
+  }
 
   const candidate = Array.isArray(rpcData) ? rpcData[0] : rpcData;
   if (candidate && typeof candidate === 'object') {
     const record = candidate as Record<string, unknown>;
+    const keys = Object.keys(record);
+    if (keys.length === 0) {
+      throw new Error('Account reset failed: server returned an empty confirmation payload.');
+    }
+    if (typeof record.error === 'string' && record.error.trim().length > 0) {
+      throw new Error(record.error.trim());
+    }
     if ('success' in record) {
       if (record.success !== true) {
         const msg =
@@ -218,9 +234,87 @@ function validateResetRpcResponse(rpcData: unknown): void {
       }
       return;
     }
+    if ('reset' in record) {
+      if (record.reset !== true) {
+        const msg =
+          (typeof record.message === 'string' && record.message) ||
+          'Account reset failed on the server.';
+        throw new Error(msg);
+      }
+      return;
+    }
+    if (typeof record.status === 'string') {
+      const normalizedStatus = record.status.trim().toLowerCase();
+      if (['error', 'failed', 'rejected', 'false'].includes(normalizedStatus)) {
+        const msg =
+          (typeof record.message === 'string' && record.message) ||
+          'Account reset failed on the server.';
+        throw new Error(msg);
+      }
+      return;
+    }
+    return;
   }
 
   throw new Error('Account reset failed: invalid confirmation response from server.');
+}
+
+function validateArchiveGoalRpcResponse(rpcData: unknown): void {
+  // Standard PostgreSQL RETURNS void returns data: null (with error: null) via PostgREST.
+  if (rpcData === null || rpcData === undefined) {
+    return;
+  }
+  if (typeof rpcData === 'boolean') {
+    if (rpcData !== true) {
+      throw new Error('Goal archive was rejected by the server.');
+    }
+    return;
+  }
+  if (typeof rpcData === 'string') {
+    const normalized = rpcData.trim().toLowerCase();
+    if (normalized === 'ok' || normalized === 'success' || normalized === 'true' || normalized === 'archived' || normalized === '') {
+      return;
+    }
+    throw new Error(`Goal archive failed: unexpected server response (${rpcData}).`);
+  }
+
+  const candidate = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+  if (candidate && typeof candidate === 'object') {
+    const record = candidate as Record<string, unknown>;
+    if (typeof record.error === 'string' && record.error.trim().length > 0) {
+      throw new Error(record.error.trim());
+    }
+    if ('success' in record && record.success !== true) {
+      const msg =
+        (typeof record.message === 'string' && record.message) ||
+        'Database error: Could not archive goal.';
+      throw new Error(msg);
+    }
+    if ('ok' in record && record.ok !== true) {
+      const msg =
+        (typeof record.message === 'string' && record.message) ||
+        'Database error: Could not archive goal.';
+      throw new Error(msg);
+    }
+    if ('archived' in record && record.archived !== true) {
+      const msg =
+        (typeof record.message === 'string' && record.message) ||
+        'Database error: Could not archive goal.';
+      throw new Error(msg);
+    }
+    if (typeof record.status === 'string') {
+      const normalizedStatus = record.status.trim().toLowerCase();
+      if (['error', 'failed', 'rejected', 'false'].includes(normalizedStatus)) {
+        const msg =
+          (typeof record.message === 'string' && record.message) ||
+          'Database error: Could not archive goal.';
+        throw new Error(msg);
+      }
+    }
+    return;
+  }
+
+  throw new Error('Database error: Invalid goal archive confirmation from server.');
 }
 
 function classifyFetchError(err: unknown): 'abort' | 'timeout' | 'other' {
@@ -354,7 +448,7 @@ export function fromDbAttendanceStatus(val: unknown): AttendanceStatus {
 
 export function toDbGoalStatus(
   status: GoalStatus | string
-): 'not_started' | 'in_progress' | 'completed' | 'paused' {
+): 'not_started' | 'in_progress' | 'completed' | 'paused' | 'archived' {
   const normalized = String(status || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   switch (normalized) {
     case 'not_started':
@@ -365,6 +459,8 @@ export function toDbGoalStatus(
       return 'completed';
     case 'paused':
       return 'paused';
+    case 'archived':
+      return 'archived';
     default:
       throw new Error(`Unsupported goal status: ${String(status)}`);
   }
@@ -382,9 +478,23 @@ export function fromDbGoalStatus(val: unknown): GoalStatus {
     case 'paused':
     case 'cancelled':
       return 'Paused';
+    case 'archived':
+      return 'Archived';
     default:
       return 'In Progress';
   }
+}
+
+function isDbRowArchived(row: any): boolean {
+  if (!row || typeof row !== 'object') return false;
+  if (row.archived_at !== null && row.archived_at !== undefined && row.archived_at !== '') {
+    return true;
+  }
+  if (row.is_archived === true) {
+    return true;
+  }
+  const normalizedStatus = String(row.status || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return normalizedStatus === 'archived';
 }
 
 export function toDbGoalPriority(priority: GoalPriority | string): 'low' | 'medium' | 'high' {
@@ -674,31 +784,32 @@ export function extractCreatedGoalIds(rpcData: unknown): { goalId: string; savin
 function mapGoalRow(g: any): Goal {
   const status = fromDbGoalStatus(g.status);
   const priority = fromDbGoalPriority(g.priority);
+  const parsedProgress = Number(g.progress_percentage);
   const progress =
-    g.progress_percentage !== null && g.progress_percentage !== undefined
-      ? Math.max(0, Math.min(100, Number(g.progress_percentage)))
+    g.progress_percentage !== null &&
+    g.progress_percentage !== undefined &&
+    Number.isFinite(parsedProgress)
+      ? Math.max(0, Math.min(100, parsedProgress))
       : status === 'Completed'
         ? 100
         : 0;
   const savingsGoalId = typeof g.savings_goal_id === 'string' ? g.savings_goal_id.trim() : '';
-  if (!savingsGoalId) {
-    throw new Error(`Invalid goal record (${String(g.id || 'unknown')}): missing required savings_goal_id.`);
-  }
+  const parsedTarget =
+    g.target_amount !== null && g.target_amount !== undefined && Number.isFinite(Number(g.target_amount))
+      ? Number(g.target_amount)
+      : undefined;
 
   return {
     id: g.id,
-    title: g.title,
+    title: g.title || 'Untitled Goal',
     description: g.description || '',
-    category: g.category,
-    targetAmount:
-      g.target_amount !== null && g.target_amount !== undefined
-        ? Number(g.target_amount)
-        : undefined,
+    category: g.category || 'Personal',
+    targetAmount: parsedTarget,
     progressPercentage: progress,
     targetDate: g.target_date || undefined,
     priority,
     status,
-    createdAt: g.created_at,
+    createdAt: g.created_at || getTodayString(),
     completedAt: g.completed_at || undefined,
     savingsGoalId
   };
@@ -913,35 +1024,103 @@ export const repository = {
     }
 
     const savingsGoalsRes = readResult(5);
-    if (savingsGoalsRes.ok && Array.isArray(savingsGoalsRes.data)) {
-      memoryState.savingsGoals = savingsGoalsRes.data.map(mapSavingsGoalRow);
-    }
-
     const savingsTxRes = readResult(6);
-    if (savingsTxRes.ok && Array.isArray(savingsTxRes.data)) {
-      memoryState.savingsTransactions = savingsTxRes.data.map(mapSavingsTxRow);
-    }
-
     const salaryPayoutsRes = readResult(7);
     if (salaryPayoutsRes.ok && Array.isArray(salaryPayoutsRes.data)) {
       memoryState.salaryPayouts = salaryPayoutsRes.data.map(mapSalaryPayoutRow);
     }
 
     const goalsRes = readResult(8);
+
+    const archivedSavingsGoalIds = new Set<string>();
     if (goalsRes.ok && Array.isArray(goalsRes.data)) {
-      memoryState.goals = goalsRes.data.map(mapGoalRow);
+      for (const rawGoal of goalsRes.data) {
+        if (isDbRowArchived(rawGoal) && typeof rawGoal.savings_goal_id === 'string' && rawGoal.savings_goal_id.trim()) {
+          archivedSavingsGoalIds.add(rawGoal.savings_goal_id.trim());
+        }
+      }
+    }
+    if (savingsGoalsRes.ok && Array.isArray(savingsGoalsRes.data)) {
+      for (const rawSg of savingsGoalsRes.data) {
+        if (isDbRowArchived(rawSg) && typeof rawSg.id === 'string' && rawSg.id.trim()) {
+          archivedSavingsGoalIds.add(rawSg.id.trim());
+        }
+      }
+    }
+
+    if (savingsGoalsRes.ok && Array.isArray(savingsGoalsRes.data)) {
+      const seenSgIds = new Set<string>();
+      const mappedSavings: SavingsGoal[] = [];
+      for (const rawSg of savingsGoalsRes.data) {
+        if (!rawSg || isDbRowArchived(rawSg)) continue;
+        const sgId = typeof rawSg.id === 'string' ? rawSg.id.trim() : '';
+        if (!sgId || archivedSavingsGoalIds.has(sgId) || seenSgIds.has(sgId)) continue;
+        seenSgIds.add(sgId);
+        mappedSavings.push(mapSavingsGoalRow(rawSg));
+      }
+      memoryState.savingsGoals = mappedSavings;
+    }
+
+    if (savingsTxRes.ok && Array.isArray(savingsTxRes.data)) {
+      const seenTxIds = new Set<string>();
+      const mappedTxs: SavingsTransaction[] = [];
+      for (const rawTx of savingsTxRes.data) {
+        if (!rawTx || isDbRowArchived(rawTx)) continue;
+        const txId = typeof rawTx.id === 'string' ? rawTx.id.trim() : '';
+        const txSgId = typeof rawTx.savings_goal_id === 'string' ? rawTx.savings_goal_id.trim() : '';
+        if (!txId || archivedSavingsGoalIds.has(txSgId) || seenTxIds.has(txId)) continue;
+        seenTxIds.add(txId);
+        mappedTxs.push(mapSavingsTxRow(rawTx));
+      }
+      memoryState.savingsTransactions = mappedTxs;
+    }
+
+    if (goalsRes.ok && Array.isArray(goalsRes.data)) {
+      const seenGoalIds = new Set<string>();
+      const mappedGoals: Goal[] = [];
+      for (const rawGoal of goalsRes.data) {
+        if (!rawGoal || isDbRowArchived(rawGoal)) continue;
+        const gId = typeof rawGoal.id === 'string' ? rawGoal.id.trim() : '';
+        if (!gId || seenGoalIds.has(gId)) continue;
+        seenGoalIds.add(gId);
+        try {
+          mappedGoals.push(mapGoalRow(rawGoal));
+        } catch (err) {
+          partialErrors.push({
+            table: 'goals',
+            message: err instanceof Error ? err.message : 'Skipped invalid goal record'
+          });
+        }
+      }
+      memoryState.goals = mappedGoals;
     }
 
     const settingsRes = readResult(9);
     const profileRes = readResult(10);
     const salaryConfigRes = readResult(11);
 
+    const defaultSettings = createDefaultSettings();
+
     // Currency precedence: user_settings.currency_code -> salary_configs.currency_code -> 'INR'
     const savedSettingsCurrency = settingsRes.ok ? settingsRes.data?.currency_code : undefined;
     const savedSalaryCurrency = salaryConfigRes.ok ? salaryConfigRes.data?.currency_code : undefined;
     const resolvedCurrency = (savedSettingsCurrency || savedSalaryCurrency || 'INR') as CurrencyCode;
 
-    let nextSettings: UserSettings = { ...memoryState.settings };
+    let nextSettings: UserSettings = {
+      ...defaultSettings,
+      profile: {
+        ...defaultSettings.profile,
+        email: memoryState.settings.profile.email || ''
+      },
+      salaryConfig: {
+        ...defaultSettings.salaryConfig,
+        currency: resolvedCurrency
+      },
+      widgets: defaultSettings.widgets.map(w => ({ ...w })),
+      customExpenseCategories: [...defaultSettings.customExpenseCategories],
+      customIncomeSources: [...defaultSettings.customIncomeSources],
+      isDemoMode: false
+    };
 
     if (settingsRes.ok) {
       const sData = settingsRes.data;
@@ -949,17 +1128,17 @@ export const repository = {
         nextSettings = {
           ...nextSettings,
           currency: resolvedCurrency,
-          dateFormat: (sData.date_format as DateFormat) || nextSettings.dateFormat,
-          weekStartDay: fromDbWeekStartDay(sData.week_starts_on, nextSettings.weekStartDay),
+          dateFormat: (sData.date_format as DateFormat) || defaultSettings.dateFormat,
+          weekStartDay: fromDbWeekStartDay(sData.week_starts_on, defaultSettings.weekStartDay),
           customExpenseCategories:
             Array.isArray(sData.expense_categories) && sData.expense_categories.length > 0
               ? sData.expense_categories
-              : nextSettings.customExpenseCategories,
+              : [...defaultSettings.customExpenseCategories],
           customIncomeSources:
             Array.isArray(sData.income_sources) && sData.income_sources.length > 0
               ? sData.income_sources
-              : nextSettings.customIncomeSources,
-          widgets: mergeWidgets(sData.dashboard_widgets, nextSettings.widgets)
+              : [...defaultSettings.customIncomeSources],
+          widgets: mergeWidgets(sData.dashboard_widgets, defaultSettings.widgets)
         };
       } else {
         nextSettings = {
@@ -967,33 +1146,61 @@ export const repository = {
           currency: resolvedCurrency
         };
       }
-    }
-
-    if (profileRes.ok && profileRes.data) {
+    } else {
+      // Query failed: preserve previously hydrated regional preferences
       nextSettings = {
         ...nextSettings,
-        profile: {
-          ...nextSettings.profile,
-          name: profileRes.data.display_name ?? nextSettings.profile.name,
-          avatarUrl: profileRes.data.avatar_url || nextSettings.profile.avatarUrl
-        }
+        currency: memoryState.settings.currency,
+        dateFormat: memoryState.settings.dateFormat,
+        weekStartDay: memoryState.settings.weekStartDay,
+        customExpenseCategories: [...memoryState.settings.customExpenseCategories],
+        customIncomeSources: [...memoryState.settings.customIncomeSources],
+        widgets: memoryState.settings.widgets.map(w => ({ ...w }))
       };
     }
 
-    if (salaryConfigRes.ok && salaryConfigRes.data) {
+    if (profileRes.ok) {
+      if (profileRes.data) {
+        nextSettings = {
+          ...nextSettings,
+          profile: {
+            ...nextSettings.profile,
+            name: profileRes.data.display_name ?? defaultSettings.profile.name,
+            avatarUrl: profileRes.data.avatar_url || undefined
+          }
+        };
+      }
+    } else {
       nextSettings = {
         ...nextSettings,
-        salaryConfig: mapSalaryConfigRow(salaryConfigRes.data, {
-          ...nextSettings.salaryConfig,
-          currency: resolvedCurrency
-        })
+        profile: { ...memoryState.settings.profile }
       };
-    } else if (settingsRes.ok) {
+    }
+
+    if (salaryConfigRes.ok) {
+      if (salaryConfigRes.data) {
+        nextSettings = {
+          ...nextSettings,
+          salaryConfig: mapSalaryConfigRow(salaryConfigRes.data, {
+            ...defaultSettings.salaryConfig,
+            currency: resolvedCurrency
+          })
+        };
+      } else {
+        nextSettings = {
+          ...nextSettings,
+          salaryConfig: {
+            ...defaultSettings.salaryConfig,
+            currency: resolvedCurrency
+          }
+        };
+      }
+    } else {
       nextSettings = {
         ...nextSettings,
         salaryConfig: {
-          ...nextSettings.salaryConfig,
-          currency: resolvedCurrency
+          ...memoryState.settings.salaryConfig,
+          ...(settingsRes.ok ? { currency: resolvedCurrency } : {})
         }
       };
     }
@@ -1560,18 +1767,53 @@ export const repository = {
       const confirmed = mapGoalRow(data);
       memoryState.goals = memoryState.goals.map(g => (g.id === id ? confirmed : g));
 
-      const { data: refreshedSg, error: sgError } = await ctx.client
-        .from('savings_goals')
-        .select('*')
-        .eq('id', confirmed.savingsGoalId)
-        .eq('user_id', ctx.user.id)
-        .maybeSingle();
+      if (confirmed.savingsGoalId) {
+        const sgPayload: Record<string, any> = {};
+        if (updates.title !== undefined) sgPayload.name = updates.title.trim();
+        if (updates.description !== undefined) sgPayload.notes = updates.description ? updates.description.trim() : null;
+        if (updates.targetAmount !== undefined) sgPayload.target_amount = updates.targetAmount;
+        if (updates.targetDate !== undefined) sgPayload.target_date = updates.targetDate || null;
 
-      if (!sgError && refreshedSg) {
-        const mappedSg = mapSavingsGoalRow(refreshedSg);
-        memoryState.savingsGoals = memoryState.savingsGoals.map(sg =>
-          sg.id === mappedSg.id ? mappedSg : sg
-        );
+        let mappedSg: SavingsGoal | null = null;
+        if (Object.keys(sgPayload).length > 0) {
+          sgPayload.updated_at = new Date().toISOString();
+          const { data: updatedSg } = await ctx.client
+            .from('savings_goals')
+            .update(sgPayload)
+            .eq('id', confirmed.savingsGoalId)
+            .eq('user_id', ctx.user.id)
+            .select()
+            .maybeSingle();
+          if (updatedSg) {
+            mappedSg = mapSavingsGoalRow(updatedSg);
+          }
+        }
+
+        if (!mappedSg) {
+          const { data: refreshedSg, error: sgError } = await ctx.client
+            .from('savings_goals')
+            .select('*')
+            .eq('id', confirmed.savingsGoalId)
+            .eq('user_id', ctx.user.id)
+            .maybeSingle();
+
+          if (!sgError && refreshedSg) {
+            mappedSg = mapSavingsGoalRow(refreshedSg);
+          }
+        }
+
+        if (mappedSg) {
+          const finalSg: SavingsGoal = {
+            ...mappedSg,
+            ...(updates.title !== undefined ? { name: updates.title.trim() } : {}),
+            ...(updates.targetAmount !== undefined ? { targetAmount: updates.targetAmount } : {}),
+            ...(updates.targetDate !== undefined ? { targetDate: updates.targetDate || undefined } : {}),
+            ...(updates.description !== undefined ? { description: updates.description || '' } : {})
+          };
+          memoryState.savingsGoals = memoryState.savingsGoals.map(sg =>
+            sg.id === finalSg.id ? finalSg : sg
+          );
+        }
       }
 
       notifyListeners();
@@ -1615,27 +1857,62 @@ export const repository = {
   },
 
   async deleteGoal(id: string): Promise<void> {
-    const ctx = await requirePersistenceContext();
+    const goalId = String(id || '').trim();
+    if (!goalId) {
+      throw new Error('Goal ID is required to archive a goal.');
+    }
 
-    if (ctx.mode === 'supabase') {
-      const { error: rpcError } = await ctx.client.rpc('xos_archive_goal', {
-        p_goal_id: id
-      });
+    const existingPromise = archiveGoalInFlightPromises.get(goalId);
+    if (existingPromise) {
+      return existingPromise;
+    }
 
-      if (rpcError) {
-        throw new Error(rpcError.message || 'Database error: Could not archive goal.');
+    const archivePromise = (async () => {
+      const ctx = await requirePersistenceContext();
+
+      if (ctx.mode === 'supabase') {
+        const { data: rpcData, error: rpcError } = await ctx.client.rpc('xos_archive_goal', {
+          p_goal_id: goalId
+        });
+
+        if (rpcError) {
+          throw new Error(rpcError.message || 'Database error: Could not archive goal.');
+        }
+
+        validateArchiveGoalRpcResponse(rpcData);
+
+        apiOptimization.invalidateCache();
+
+        const targetGoal = memoryState.goals.find(g => g.id === goalId);
+        memoryState.goals = memoryState.goals.filter(g => g.id !== goalId);
+        if (targetGoal?.savingsGoalId) {
+          memoryState.savingsGoals = memoryState.savingsGoals.filter(sg => sg.id !== targetGoal.savingsGoalId);
+          memoryState.savingsTransactions = memoryState.savingsTransactions.filter(
+            tx => tx.savingsGoalId !== targetGoal.savingsGoalId
+          );
+        }
+        notifyListeners();
+
+        // Refetch and synchronize Goals, Savings, and Dashboard state from Supabase
+        await this.fetchAllUserData(ctx.user.id);
+        return;
       }
-    }
 
-    const targetGoal = memoryState.goals.find(g => g.id === id);
-    memoryState.goals = memoryState.goals.filter(g => g.id !== id);
-    if (targetGoal?.savingsGoalId) {
-      memoryState.savingsGoals = memoryState.savingsGoals.filter(sg => sg.id !== targetGoal.savingsGoalId);
-      memoryState.savingsTransactions = memoryState.savingsTransactions.filter(
-        tx => tx.savingsGoalId !== targetGoal.savingsGoalId
-      );
-    }
-    notifyListeners();
+      const targetGoal = memoryState.goals.find(g => g.id === goalId);
+      memoryState.goals = memoryState.goals.filter(g => g.id !== goalId);
+      if (targetGoal?.savingsGoalId) {
+        memoryState.savingsGoals = memoryState.savingsGoals.filter(sg => sg.id !== targetGoal.savingsGoalId);
+        memoryState.savingsTransactions = memoryState.savingsTransactions.filter(
+          tx => tx.savingsGoalId !== targetGoal.savingsGoalId
+        );
+      }
+      notifyListeners();
+    })().finally(() => {
+      archiveGoalInFlightPromises.delete(goalId);
+    });
+
+    archiveGoalInFlightPromises.set(goalId, archivePromise);
+    return archivePromise;
   },
 
   // EXPENSES (Backed by public.expenses)
@@ -2419,7 +2696,6 @@ export const repository = {
           .select('*')
           .eq('savings_goal_id', tx.savingsGoalId)
           .eq('user_id', ctx.user.id)
-          .maybeSingle()
       ]);
 
       if (sgRefresh.error || !sgRefresh.data) {
@@ -2432,10 +2708,14 @@ export const repository = {
       );
 
       if (!goalRefresh.error && goalRefresh.data) {
-        const mappedLinkedGoal = mapGoalRow(goalRefresh.data);
-        memoryState.goals = memoryState.goals.map(g =>
-          g.id === mappedLinkedGoal.id ? mappedLinkedGoal : g
-        );
+        const refreshedRows = Array.isArray(goalRefresh.data) ? goalRefresh.data : [goalRefresh.data];
+        for (const row of refreshedRows) {
+          if (!row || isDbRowArchived(row)) continue;
+          const mappedLinkedGoal = mapGoalRow(row);
+          memoryState.goals = memoryState.goals.map(g =>
+            g.id === mappedLinkedGoal.id ? mappedLinkedGoal : g
+          );
+        }
       }
 
       notifyListeners();
@@ -2508,7 +2788,6 @@ export const repository = {
           .select('*')
           .eq('savings_goal_id', targetTx.savingsGoalId)
           .eq('user_id', ctx.user.id)
-          .maybeSingle()
       ]);
 
       if (sgRefresh.error || !sgRefresh.data) {
@@ -2521,10 +2800,14 @@ export const repository = {
       );
 
       if (!goalRefresh.error && goalRefresh.data) {
-        const mappedLinkedGoal = mapGoalRow(goalRefresh.data);
-        memoryState.goals = memoryState.goals.map(g =>
-          g.id === mappedLinkedGoal.id ? mappedLinkedGoal : g
-        );
+        const refreshedRows = Array.isArray(goalRefresh.data) ? goalRefresh.data : [goalRefresh.data];
+        for (const row of refreshedRows) {
+          if (!row || isDbRowArchived(row)) continue;
+          const mappedLinkedGoal = mapGoalRow(row);
+          memoryState.goals = memoryState.goals.map(g =>
+            g.id === mappedLinkedGoal.id ? mappedLinkedGoal : g
+          );
+        }
       }
 
       notifyListeners();

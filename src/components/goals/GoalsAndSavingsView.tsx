@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
   Target, 
   Plus, 
@@ -15,8 +15,9 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
-import { Goal, GoalCategory, GoalPriority, GoalStatus, SavingsGoal, SavingsTransaction } from '../../types';
+import { Goal, GoalCategory, GoalPriority, SavingsGoal } from '../../types';
 import { formatCurrency, formatHumanDate, getTodayString } from '../../utils/formatters';
+import { calculateUnifiedGoalTotals, resolveGoalsWithSavings } from '../../utils/calculations';
 import { EmptyState } from '../common/EmptyState';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 
@@ -32,6 +33,7 @@ export const GoalsAndSavingsView: React.FC = () => {
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [isSubmittingGoal, setIsSubmittingGoal] = useState(false);
+  const isSubmittingGoalRef = useRef(false);
   const [goalFormError, setGoalFormError] = useState<string | null>(null);
 
   // Selected Goal for Savings Activity / Detail Modal (derived from live state)
@@ -47,10 +49,12 @@ export const GoalsAndSavingsView: React.FC = () => {
   const [txNote, setTxNote] = useState('');
   const [txError, setTxError] = useState<string | null>(null);
   const [isSubmittingTx, setIsSubmittingTx] = useState(false);
+  const isSubmittingTxRef = useRef(false);
 
   // Deletion State
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const isDeletingRef = useRef(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Form Fields - Goal
@@ -75,15 +79,24 @@ export const GoalsAndSavingsView: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isGoalModalOpen, isTxModalOpen, isSubmittingGoal, isSubmittingTx, selectedDetailGoalId]);
 
-  const savingsById = useMemo(
-    () => new Map(data.savingsGoals.map(sg => [sg.id, sg])),
-    [data.savingsGoals]
+  const resolvedGoals = useMemo(
+    () => resolveGoalsWithSavings(data.goals, data.savingsGoals),
+    [data.goals, data.savingsGoals]
   );
 
-  // Helper to find the connected Savings Goal via strict 1:1 ID relationship
+  const resolvedByGoalId = useMemo(
+    () => new Map(resolvedGoals.map(item => [item.goal.id, item])),
+    [resolvedGoals]
+  );
+
+  const selectedResolvedGoal = selectedDetailGoalId
+    ? resolvedByGoalId.get(selectedDetailGoalId) || null
+    : null;
+
+  // Helper to find the strictly 1:1 connected Savings Goal
   const getConnectedSavingsGoal = useCallback(
-    (goal: Goal): SavingsGoal | undefined => savingsById.get(goal.savingsGoalId),
-    [savingsById]
+    (goal: Goal): SavingsGoal | undefined => resolvedByGoalId.get(goal.id)?.savingsGoal,
+    [resolvedByGoalId]
   );
 
   // Open Create Modal
@@ -117,7 +130,12 @@ export const GoalsAndSavingsView: React.FC = () => {
   // Handle Save Goal (Create or Update)
   const handleSaveGoal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || isSubmittingGoal) return;
+    if (isSubmittingGoalRef.current || isSubmittingGoal) return;
+
+    if (!title.trim()) {
+      setGoalFormError('Goal name is required.');
+      return;
+    }
 
     const parsedTarget = parseFloat(targetAmount);
     if (isNaN(parsedTarget) || parsedTarget <= 0) {
@@ -131,6 +149,7 @@ export const GoalsAndSavingsView: React.FC = () => {
       return;
     }
 
+    isSubmittingGoalRef.current = true;
     setGoalFormError(null);
     setIsSubmittingGoal(true);
 
@@ -162,6 +181,7 @@ export const GoalsAndSavingsView: React.FC = () => {
     } catch (err) {
       setGoalFormError(err instanceof Error ? err.message : 'Failed to save goal & savings account.');
     } finally {
+      isSubmittingGoalRef.current = false;
       setIsSubmittingGoal(false);
     }
   };
@@ -178,7 +198,7 @@ export const GoalsAndSavingsView: React.FC = () => {
   // Handle Save Transaction (Deposit / Withdrawal)
   const handleSaveTx = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedDetailGoal || isSubmittingTx) return;
+    if (!selectedDetailGoal || isSubmittingTxRef.current || isSubmittingTx) return;
 
     const parsedAmount = parseFloat(txAmount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
@@ -198,6 +218,7 @@ export const GoalsAndSavingsView: React.FC = () => {
       return;
     }
 
+    isSubmittingTxRef.current = true;
     setTxError(null);
     setIsSubmittingTx(true);
 
@@ -214,13 +235,15 @@ export const GoalsAndSavingsView: React.FC = () => {
     } catch (err) {
       setTxError(err instanceof Error ? err.message : 'Failed to record transaction.');
     } finally {
+      isSubmittingTxRef.current = false;
       setIsSubmittingTx(false);
     }
   };
 
   // Handle Goal Deletion (delegates atomically to xos_archive_goal RPC)
   const handleDeleteGoal = async () => {
-    if (!deleteTargetId || isDeleting) return;
+    if (!deleteTargetId || isDeletingRef.current || isDeleting) return;
+    isDeletingRef.current = true;
     setDeleteError(null);
     setIsDeleting(true);
 
@@ -233,42 +256,19 @@ export const GoalsAndSavingsView: React.FC = () => {
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : 'Failed to delete goal.');
     } finally {
+      isDeletingRef.current = false;
       setIsDeleting(false);
     }
   };
 
-  // Totals across all goals & connected savings
-  const goalTotals = useMemo(() => {
-    const totalTargetAmount = data.goals.reduce((sum, g) => sum + (g.targetAmount || 0), 0);
-    const totalSavedAmount = data.savingsGoals.reduce((sum, sg) => sum + (sg.currentAmount || 0), 0);
-    const totalRemainingAmount = Math.max(0, totalTargetAmount - totalSavedAmount);
-    const overallProgress = totalTargetAmount > 0 ? Math.min(100, Math.round((totalSavedAmount / totalTargetAmount) * 100)) : 0;
-
-    let activeGoalsCount = 0;
-    let completedGoalsCount = 0;
-    data.goals.forEach(g => {
-      const sg = savingsById.get(g.savingsGoalId);
-      const saved = sg?.currentAmount || 0;
-      const target = g.targetAmount || 0;
-      if (sg && target > 0 && saved >= target) {
-        completedGoalsCount += 1;
-      }
-      if (!sg || saved < target) {
-        activeGoalsCount += 1;
-      }
-    });
-
-    return {
-      totalTargetAmount,
-      totalSavedAmount,
-      totalRemainingAmount,
-      overallProgress,
-      activeGoalsCount,
-      completedGoalsCount
-    };
-  }, [data.goals, data.savingsGoals, savingsById]);
+  // Totals across non-archived goals & 1:1 connected savings accounts
+  const goalTotals = useMemo(
+    () => calculateUnifiedGoalTotals(resolvedGoals),
+    [resolvedGoals]
+  );
 
   const {
+    totalCount,
     totalTargetAmount,
     totalSavedAmount,
     totalRemainingAmount,
@@ -277,34 +277,31 @@ export const GoalsAndSavingsView: React.FC = () => {
     completedGoalsCount
   } = goalTotals;
 
-  // Filtered goals
-  const filteredGoals = useMemo(() => {
+  // Filtered goals (using canonical resolved goal state; paused/cancelled excluded from Active tab)
+  const filteredResolvedGoals = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    return data.goals.filter(g => {
-      const connectedSg = savingsById.get(g.savingsGoalId);
-      const saved = connectedSg?.currentAmount || 0;
-      const target = g.targetAmount || 0;
-      const isCompleted = target > 0 && saved >= target;
-
-      if (activeTab === 'active' && isCompleted) return false;
-      if (activeTab === 'completed' && !isCompleted) return false;
-      if (selectedCategory !== 'all' && g.category !== selectedCategory) return false;
+    return resolvedGoals.filter(item => {
+      if (activeTab === 'active' && !item.isActive) return false;
+      if (activeTab === 'completed' && !item.isCompleted) return false;
+      if (selectedCategory !== 'all' && item.goal.category !== selectedCategory) return false;
       if (q) {
-        return g.title.toLowerCase().includes(q) || (g.description && g.description.toLowerCase().includes(q));
+        return (
+          item.goal.title.toLowerCase().includes(q) ||
+          (item.goal.description && item.goal.description.toLowerCase().includes(q))
+        );
       }
       return true;
     });
-  }, [data.goals, savingsById, activeTab, selectedCategory, searchQuery]);
+  }, [resolvedGoals, activeTab, selectedCategory, searchQuery]);
 
   const selectedGoalTransactions = useMemo(() => {
-    if (!selectedDetailGoal) return [];
-    const connectedSg = savingsById.get(selectedDetailGoal.savingsGoalId);
-    if (!connectedSg) return [];
+    if (!selectedResolvedGoal?.savingsGoal) return [];
+    const connectedSgId = selectedResolvedGoal.savingsGoal.id;
     return data.savingsTransactions
-      .filter(tx => tx.savingsGoalId === connectedSg.id)
+      .filter(tx => tx.savingsGoalId === connectedSgId)
       .slice()
       .sort((a, b) => b.date.localeCompare(a.date));
-  }, [selectedDetailGoal, savingsById, data.savingsTransactions]);
+  }, [selectedResolvedGoal, data.savingsTransactions]);
 
   const categories = ['Financial', 'Career', 'Health', 'Travel', 'Learning', 'Life', 'Personal'];
 
@@ -366,7 +363,7 @@ export const GoalsAndSavingsView: React.FC = () => {
                 {formatCurrency(totalRemainingAmount, data.settings.currency)}
               </div>
               <p className="text-xs text-neutral-500 mt-1">
-                Across {data.goals.length} active goal accounts
+                Across {totalCount} goal accounts
               </p>
             </div>
           </div>
@@ -394,7 +391,7 @@ export const GoalsAndSavingsView: React.FC = () => {
           </div>
           <div className="text-[11px] font-mono text-neutral-500 pt-2 border-t border-neutral-200 flex justify-between">
             <span>Total Goals:</span>
-            <span className="text-black font-bold">{data.goals.length}</span>
+            <span className="text-black font-bold">{totalCount}</span>
           </div>
         </div>
       </div>
@@ -409,7 +406,7 @@ export const GoalsAndSavingsView: React.FC = () => {
               activeTab === 'all' ? 'bg-[#111111] text-white' : 'text-neutral-600 hover:text-black'
             }`}
           >
-            All Goals ({data.goals.length})
+            All Goals ({totalCount})
           </button>
           <button
             type="button"
@@ -457,7 +454,7 @@ export const GoalsAndSavingsView: React.FC = () => {
       </div>
 
       {/* Goals List */}
-      {filteredGoals.length === 0 ? (
+      {filteredResolvedGoals.length === 0 ? (
         <EmptyState
           icon={Target}
           title="No unified goal & savings accounts found"
@@ -471,13 +468,14 @@ export const GoalsAndSavingsView: React.FC = () => {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredGoals.map(goal => {
-            const connectedSg = getConnectedSavingsGoal(goal);
-            const savedAmount = connectedSg?.currentAmount || 0;
-            const targetAmount = goal.targetAmount || 0;
-            const remainingAmount = Math.max(0, targetAmount - savedAmount);
-            const progress = targetAmount > 0 ? Math.min(100, Math.round((savedAmount / targetAmount) * 100)) : 0;
-            const isCompleted = targetAmount > 0 && savedAmount >= targetAmount;
+          {filteredResolvedGoals.map(item => {
+            const { goal, savedAmount, targetAmount, remainingAmount, progressPercentage, isCompleted, isPaused, hasValidSavingsLink } = item;
+            const statusLabel = isCompleted ? 'Completed' : isPaused ? 'Paused' : 'In Progress';
+            const statusBadgeClass = isCompleted
+              ? 'bg-emerald-100 text-emerald-800'
+              : isPaused
+                ? 'bg-neutral-200 text-neutral-700'
+                : 'bg-sky-100 text-sky-800';
 
             return (
               <div
@@ -492,10 +490,8 @@ export const GoalsAndSavingsView: React.FC = () => {
                         <span className="text-[10px] font-bold px-2 py-0.5 bg-neutral-100 text-neutral-700 rounded-md uppercase tracking-wider">
                           {goal.category}
                         </span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${
-                          isCompleted ? 'bg-emerald-100 text-emerald-800' : 'bg-sky-100 text-sky-800'
-                        }`}>
-                          {isCompleted ? 'Completed' : 'In Progress'}
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${statusBadgeClass}`}>
+                          {statusLabel}
                         </span>
                       </div>
                       <h3 className="text-base font-bold text-[#111111] mt-2 group-hover:text-black tracking-tight truncate">
@@ -504,6 +500,11 @@ export const GoalsAndSavingsView: React.FC = () => {
                       {goal.description && (
                         <p className="text-xs text-neutral-500 mt-1 line-clamp-2">
                           {goal.description}
+                        </p>
+                      )}
+                      {!hasValidSavingsLink && (
+                        <p className="text-[11px] text-amber-700 mt-1">
+                          Savings account link unavailable
                         </p>
                       )}
                     </div>
@@ -525,11 +526,11 @@ export const GoalsAndSavingsView: React.FC = () => {
                     <div className="w-full h-2 bg-neutral-100 rounded-full overflow-hidden">
                       <div 
                         className={`h-full transition-all duration-300 ${isCompleted ? 'bg-emerald-500' : 'bg-[#111111]'}`}
-                        style={{ width: `${progress}%` }}
+                        style={{ width: `${progressPercentage}%` }}
                       />
                     </div>
                     <div className="flex justify-between items-center text-[11px] text-neutral-400 font-mono pt-1">
-                      <span>{progress}% funded</span>
+                      <span>{progressPercentage}% funded</span>
                       {goal.targetDate && (
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
@@ -573,8 +574,9 @@ export const GoalsAndSavingsView: React.FC = () => {
               </div>
               <button
                 type="button"
+                disabled={isSubmittingGoal}
                 onClick={() => setIsGoalModalOpen(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-900 transition-colors cursor-pointer"
+                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-900 transition-colors cursor-pointer disabled:opacity-50"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -702,14 +704,23 @@ export const GoalsAndSavingsView: React.FC = () => {
       )}
 
       {/* GOAL DETAIL & SAVINGS ACTIVITY MODAL */}
-      {selectedDetailGoal && (() => {
-        const connectedSg = getConnectedSavingsGoal(selectedDetailGoal);
-        const saved = connectedSg?.currentAmount || 0;
-        const target = selectedDetailGoal.targetAmount || 0;
-        const remaining = Math.max(0, target - saved);
-        const progress = target > 0 ? Math.min(100, Math.round((saved / target) * 100)) : 0;
-        const isCompleted = target > 0 && saved >= target;
+      {selectedDetailGoal && selectedResolvedGoal && (() => {
+        const {
+          savedAmount: saved,
+          targetAmount: target,
+          remainingAmount: remaining,
+          progressPercentage: progress,
+          isCompleted,
+          isPaused,
+          hasValidSavingsLink
+        } = selectedResolvedGoal;
         const txs = selectedGoalTransactions;
+        const detailBadgeLabel = isCompleted ? 'Completed' : isPaused ? 'Paused' : 'In Progress';
+        const detailBadgeClass = isCompleted
+          ? 'bg-emerald-100 text-emerald-800'
+          : isPaused
+            ? 'bg-neutral-200 text-neutral-700'
+            : 'bg-sky-100 text-sky-800';
 
         return (
           <div
@@ -729,10 +740,8 @@ export const GoalsAndSavingsView: React.FC = () => {
                     <span className="text-[10px] font-bold px-2 py-0.5 bg-neutral-100 text-neutral-700 rounded-md uppercase tracking-wider">
                       {selectedDetailGoal.category}
                     </span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${
-                      isCompleted ? 'bg-emerald-100 text-emerald-800' : 'bg-sky-100 text-sky-800'
-                    }`}>
-                      {isCompleted ? 'Completed' : 'In Progress'}
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${detailBadgeClass}`}>
+                      {detailBadgeLabel}
                     </span>
                   </div>
                   <h3 className="text-xl font-bold text-[#111111] mt-1 tracking-tight">
@@ -791,20 +800,29 @@ export const GoalsAndSavingsView: React.FC = () => {
                 )}
               </div>
 
+              {!hasValidSavingsLink && (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                  <span>This goal has no connected savings account record. Deposits and withdrawals are disabled.</span>
+                </div>
+              )}
+
               {/* Action Buttons */}
               <div className="flex flex-wrap items-center gap-2.5">
                 <button
                   type="button"
+                  disabled={!hasValidSavingsLink}
                   onClick={() => openTxModal('deposit')}
-                  className="flex items-center gap-1.5 px-4 py-2.5 bg-[#111111] text-white text-xs font-semibold rounded-xl hover:bg-black transition-colors cursor-pointer shadow-xs"
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-[#111111] text-white text-xs font-semibold rounded-xl hover:bg-black transition-colors cursor-pointer shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <ArrowUpRight className="w-4 h-4 text-[#87CEEB]" />
                   <span>Add Money (Deposit)</span>
                 </button>
                 <button
                   type="button"
+                  disabled={!hasValidSavingsLink}
                   onClick={() => openTxModal('withdrawal')}
-                  className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-[#111111] border border-neutral-300 text-xs font-semibold rounded-xl hover:bg-neutral-50 transition-colors cursor-pointer"
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-[#111111] border border-neutral-300 text-xs font-semibold rounded-xl hover:bg-neutral-50 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <ArrowDownLeft className="w-4 h-4 text-neutral-700" />
                   <span>Withdraw Money</span>
@@ -918,8 +936,9 @@ export const GoalsAndSavingsView: React.FC = () => {
               </div>
               <button
                 type="button"
+                disabled={isSubmittingTx}
                 onClick={() => setIsTxModalOpen(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-900 cursor-pointer"
+                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-900 cursor-pointer disabled:opacity-50"
               >
                 <X className="w-4 h-4" />
               </button>

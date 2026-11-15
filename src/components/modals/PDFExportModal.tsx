@@ -21,6 +21,7 @@ import { WaterRippleContainer } from '../common/WaterRipple';
 import { modalBackdropVariants, modalContentVariants } from '../../utils/motion';
 import { DateFilterPreset } from '../../types';
 import { getTodayString } from '../../utils/formatters';
+import { resolveGoalsWithSavings } from '../../utils/calculations';
 
 interface PDFExportModalProps {
   isOpen: boolean;
@@ -138,11 +139,21 @@ export const PDFExportModal: React.FC<PDFExportModalProps> = ({
     }
   };
 
-  // Live item counter
+  // Live item counter (aligned with non-archived exported items)
   const totalFinancialRecords = data.incomes.length + data.expenses.length;
   const totalDebtRecords = data.debts.length;
   const totalAttendanceRecords = data.attendance.length;
-  const totalGoals = data.goals.length;
+  const archivedSavingsIds = new Set(
+    data.goals
+      .filter(g => (g.status === 'Archived' || g.status === 'Paused') && g.savingsGoalId)
+      .map(g => g.savingsGoalId as string)
+  );
+  const totalSavingsGoalsCount = new Set(
+    data.savingsGoals
+      .filter(sg => sg && sg.id && !archivedSavingsIds.has(sg.id))
+      .map(sg => sg.id)
+  ).size;
+  const totalGoals = resolveGoalsWithSavings(data.goals, data.savingsGoals).length;
 
   return (
     <AnimatePresence>
@@ -153,7 +164,7 @@ export const PDFExportModal: React.FC<PDFExportModalProps> = ({
           animate="animate"
           exit="exit"
           className="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4"
-          onClick={onClose}
+          onClick={() => { if (!isGenerating) onClose(); }}
           role="dialog"
           aria-modal="true"
         >
@@ -181,8 +192,10 @@ export const PDFExportModal: React.FC<PDFExportModalProps> = ({
 
               <motion.button
                 whileTap={{ scale: 0.9 }}
+                type="button"
+                disabled={isGenerating}
                 onClick={onClose}
-                className="p-1.5 rounded-lg text-neutral-400 hover:text-black hover:bg-neutral-100 transition-colors cursor-pointer"
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-black hover:bg-neutral-100 transition-colors cursor-pointer disabled:opacity-50"
                 aria-label="Close dialog"
               >
                 <X className="w-4 h-4" />
@@ -290,7 +303,7 @@ export const PDFExportModal: React.FC<PDFExportModalProps> = ({
                     },
                     {
                       label: 'Savings Goals',
-                      count: `${data.savingsGoals.length} goals`,
+                      count: `${totalSavingsGoalsCount} goals`,
                       icon: PiggyBank,
                       checked: includeSavings,
                       toggle: () => setIncludeSavings(!includeSavings)

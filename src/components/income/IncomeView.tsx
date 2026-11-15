@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { TrendingUp, Plus, Search, Trash2, Edit3, Banknote, ShieldCheck, X } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { useXOSData } from '../../hooks/useXOSData';
@@ -24,6 +24,7 @@ export const IncomeView: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIncome, setEditingIncome] = useState<Income | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Form Fields
@@ -73,14 +74,20 @@ export const IncomeView: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !amount) return;
+    if (isSubmittingRef.current || isSubmitting) return;
+
+    if (!title.trim()) {
+      setFormError('Income title is required.');
+      return;
+    }
 
     const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount <= 0) {
+    if (!amount || isNaN(numAmount) || numAmount <= 0) {
       setFormError('Amount must be greater than zero.');
       return;
     }
 
+    isSubmittingRef.current = true;
     setFormError(null);
     setIsSubmitting(true);
 
@@ -104,6 +111,7 @@ export const IncomeView: React.FC = () => {
       console.error('Failed to save income:', err);
       setFormError(err?.message || 'Database error: Could not save income.');
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -147,6 +155,18 @@ export const IncomeView: React.FC = () => {
       }))
       .sort((a, b) => b.amount - a.amount);
   }, [filteredIncomes]);
+
+  const incomeSourceOptions = useMemo(() => {
+    const base = (data.settings.customIncomeSources || []).filter(Boolean);
+    return base.length > 0 ? Array.from(new Set(base)) : ['Other'];
+  }, [data.settings.customIncomeSources]);
+
+  const modalSourceOptions = useMemo(() => {
+    if (source && !incomeSourceOptions.includes(source)) {
+      return [source, ...incomeSourceOptions];
+    }
+    return incomeSourceOptions;
+  }, [incomeSourceOptions, source]);
 
   return (
     <div className="space-y-6">
@@ -255,7 +275,7 @@ export const IncomeView: React.FC = () => {
           className="w-full sm:w-auto min-h-[40px] px-2.5 py-2 text-xs border border-neutral-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
         >
           <option value="all">All Income Sources</option>
-          {data.settings.customIncomeSources.map(s => (
+          {incomeSourceOptions.map(s => (
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
@@ -457,7 +477,7 @@ export const IncomeView: React.FC = () => {
                     onChange={(e) => setSource(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
                   >
-                    {data.settings.customIncomeSources.map(s => (
+                    {modalSourceOptions.map(s => (
                       <option key={s} value={s}>{s}</option>
                     ))}
                   </select>

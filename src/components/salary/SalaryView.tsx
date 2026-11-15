@@ -523,6 +523,8 @@ export const SalaryView: React.FC = () => {
     }
   };
 
+  const isSubmittingPaymentRef = useRef(false);
+
   const openPaymentModal = () => {
     setPaymentAmount(String(monthlySummary.remainingSalary > 0 ? monthlySummary.remainingSalary : monthlySummary.earnedSalary));
     setPaymentDate(todayStr);
@@ -530,21 +532,27 @@ export const SalaryView: React.FC = () => {
     setIsSyncingToIncome(true);
     setAllowReplace(false);
     setPaymentError(null);
+    isSubmittingPaymentRef.current = false;
     setIsSubmittingPayment(false);
     setIsPaymentModalOpen(true);
   };
 
   const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmittingPayment) return;
+    if (isSubmittingPaymentRef.current || isSubmittingPayment) return;
     const parsedAmount = parseFloat(paymentAmount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
       setPaymentError('Please enter a valid salary payment amount greater than 0.');
       return;
     }
+    if (!paymentDate) {
+      setPaymentError('Please select a payment date.');
+      return;
+    }
 
     const { periodStart, periodEnd } = getMonthDateBounds(selectedMonth);
 
+    isSubmittingPaymentRef.current = true;
     setPaymentError(null);
     setIsSubmittingPayment(true);
     try {
@@ -561,6 +569,7 @@ export const SalaryView: React.FC = () => {
     } catch (err) {
       setPaymentError(err instanceof Error ? err.message : 'Failed to record salary payment.');
     } finally {
+      isSubmittingPaymentRef.current = false;
       setIsSubmittingPayment(false);
     }
   };

@@ -15,7 +15,7 @@ import {
   CurrencyCode
 } from '../types';
 import { formatCurrency, formatDate, getTodayString } from '../utils/formatters';
-import { calculateDebtOutstanding, calculateDebtSummary } from '../utils/calculations';
+import { calculateDebtOutstanding, calculateDebtSummary, resolveGoalsWithSavings } from '../utils/calculations';
 
 export interface PDFExportOptions {
   datePreset?: DateFilterPreset | 'all';
@@ -154,7 +154,21 @@ export async function generateXOSReportPDF(
   const outstandingReceivable = debtSummary.outstandingReceivable;
   const totalRepaid = debtSummary.totalRepaid;
 
-  const totalSavings = data.savingsGoals.reduce((acc, g) => acc + (Number(g.currentAmount) || 0), 0);
+  const resolvedGoals = resolveGoalsWithSavings(data.goals, data.savingsGoals);
+  const archivedSavingsIds = new Set(
+    data.goals
+      .filter(g => (g.status === 'Archived' || g.status === 'Paused') && g.savingsGoalId)
+      .map(g => g.savingsGoalId as string)
+  );
+  const uniqueSavingsGoals = Array.from(
+    new Map(
+      data.savingsGoals
+        .filter(sg => sg && sg.id && !archivedSavingsIds.has(sg.id))
+        .map(sg => [sg.id, sg])
+    ).values()
+  );
+
+  const totalSavings = uniqueSavingsGoals.reduce((acc, g) => acc + (Number(g.currentAmount) || 0), 0);
 
   const autoTableFn = (autoTable as unknown as { default?: typeof autoTable }).default || autoTable;
 
@@ -492,10 +506,13 @@ export async function generateXOSReportPDF(
             ? 'Partially Paid'
             : 'Outstanding';
 
+          const descText = d.description || d.notes || '-';
+          const formattedDesc = d.direction === 'pay' ? `[To Pay] ${descText}` : descText;
+
           return [
             sanitizePdfText(formatDate(d.lent_date, dateFormat)),
             sanitizePdfText(d.person_name),
-            sanitizePdfText(d.description || d.notes || '-'),
+            sanitizePdfText(formattedDesc),
             formatPdfCurrency(d.original_amount, currencyCode),
             formatPdfCurrency(repaid, currencyCode),
             formatPdfCurrency(remaining, currencyCode),
@@ -540,7 +557,7 @@ export async function generateXOSReportPDF(
           sanitizePdfText(a.status),
           sanitizePdfText(a.checkInTime || '-'),
           sanitizePdfText(a.checkOutTime || '-'),
-          a.calculatedHours ? `${a.calculatedHours} hrs` : '-',
+          a.status === 'Present' && typeof a.calculatedHours === 'number' ? `${a.calculatedHours} hrs` : '-',
           sanitizePdfText(a.notes || '-')
         ])
       : [[{
@@ -604,15 +621,17 @@ export async function generateXOSReportPDF(
     });
   }
 
+  // Using precomputed resolvedGoals and uniqueSavingsGoals excluding archived/paused accounts
+
   // ==========================================
   // SECTION 6: SAVINGS & WEALTH ACCUMULATION
   // ==========================================
   if (includeSavings) {
     renderedAnySection = true;
-    drawSectionHeader('Savings & Reserves', `${data.savingsGoals.length} goals`);
+    drawSectionHeader('Savings & Reserves', `${uniqueSavingsGoals.length} goals`);
 
-    const savingsRows: any[][] = data.savingsGoals.length > 0
-      ? data.savingsGoals.map(g => {
+    const savingsRows: any[][] = uniqueSavingsGoals.length > 0
+      ? uniqueSavingsGoals.map(g => {
           const target = Number(g.targetAmount) || 0;
           const current = Number(g.currentAmount) || 0;
           const percent = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 100;
@@ -650,18 +669,21 @@ export async function generateXOSReportPDF(
   // ==========================================
   if (includeGoals) {
     renderedAnySection = true;
-    drawSectionHeader('Goals & Ambitions Roadmap', `${data.goals.length} items`);
+    drawSectionHeader('Goals & Ambitions Roadmap', `${resolvedGoals.length} items`);
 
-    const goalRows: any[][] = data.goals.length > 0
-      ? data.goals.map(g => [
-          sanitizePdfText(g.title),
-          sanitizePdfText(g.category || 'General'),
-          sanitizePdfText(g.priority),
-          sanitizePdfText(g.status),
-          `${g.progressPercentage ?? 0}%`,
-          g.targetDate ? sanitizePdfText(formatDate(g.targetDate, dateFormat)) : 'Open',
-          g.targetAmount ? formatPdfCurrency(g.targetAmount, currencyCode) : '-'
-        ])
+    const goalRows: any[][] = resolvedGoals.length > 0
+      ? resolvedGoals.map(item => {
+          const effectiveStatus = item.isCompleted ? 'Completed' : item.goal.status;
+          return [
+            sanitizePdfText(item.goal.title),
+            sanitizePdfText(item.goal.category || 'General'),
+            sanitizePdfText(item.goal.priority),
+            sanitizePdfText(effectiveStatus),
+            `${item.progressPercentage}%`,
+            item.goal.targetDate ? sanitizePdfText(formatDate(item.goal.targetDate, dateFormat)) : 'Open',
+            item.targetAmount ? formatPdfCurrency(item.targetAmount, currencyCode) : '-'
+          ];
+        })
       : [[{
           content: 'No life goals or ambitions recorded.',
           colSpan: 7,

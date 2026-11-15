@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CreditCard, Plus, Search, Trash2, Edit3, PieChart as PieChartIcon, X } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { useXOSData } from '../../hooks/useXOSData';
@@ -25,6 +25,7 @@ export const ExpensesView: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Form fields
@@ -85,14 +86,20 @@ export const ExpensesView: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !amount) return;
+    if (isSubmittingRef.current || isSubmitting) return;
+
+    if (!title.trim()) {
+      setFormError('Expense title is required.');
+      return;
+    }
 
     const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount <= 0) {
+    if (!amount || isNaN(numAmount) || numAmount <= 0) {
       setFormError('Amount must be greater than zero.');
       return;
     }
 
+    isSubmittingRef.current = true;
     setFormError(null);
     setIsSubmitting(true);
 
@@ -119,6 +126,7 @@ export const ExpensesView: React.FC = () => {
       console.error('Failed to save expense:', err);
       setFormError(err?.message || 'Database error: Could not save expense.');
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -158,6 +166,18 @@ export const ExpensesView: React.FC = () => {
       }))
       .sort((a, b) => b.value - a.value);
   }, [filteredExpenses]);
+
+  const expenseCategoryOptions = useMemo(() => {
+    const base = (data.settings.customExpenseCategories || []).filter(Boolean);
+    return base.length > 0 ? Array.from(new Set(base)) : ['Other'];
+  }, [data.settings.customExpenseCategories]);
+
+  const modalCategoryOptions = useMemo(() => {
+    if (category && !expenseCategoryOptions.includes(category)) {
+      return [category, ...expenseCategoryOptions];
+    }
+    return expenseCategoryOptions;
+  }, [expenseCategoryOptions, category]);
 
   return (
     <div className="space-y-6">
@@ -274,7 +294,7 @@ export const ExpensesView: React.FC = () => {
             className="flex-1 sm:flex-initial min-w-0 min-h-[40px] px-2.5 py-2 text-xs border border-neutral-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
           >
             <option value="all">All Categories</option>
-            {data.settings.customExpenseCategories.map(c => (
+            {expenseCategoryOptions.map(c => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
@@ -489,7 +509,7 @@ export const ExpensesView: React.FC = () => {
                     onChange={(e) => setCategory(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
                   >
-                    {data.settings.customExpenseCategories.map(c => (
+                    {modalCategoryOptions.map(c => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>

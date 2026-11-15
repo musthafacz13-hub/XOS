@@ -31,7 +31,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
 }) => {
   const { user, isDemoUser, isConfigured } = useAuth();
   const activeNavItem = NAV_ITEMS.find(item => item.id === activeTab);
-  const title = activeNavItem ? activeNavItem.label : 'Dashboard';
+  const title = activeTab === 'savings' ? 'Goals & Savings' : (activeNavItem ? activeNavItem.label : 'Dashboard');
 
   const todayStr = new Date().toLocaleDateString('en-US', {
     weekday: 'short',
@@ -46,7 +46,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
     }));
   };
 
-  const showDateFilter = ['dashboard', 'reports', 'expenses', 'income'].includes(activeTab);
+  const showDateFilter = activeTab === 'dashboard';
 
   return (
     <header className="pt-[env(safe-area-inset-top,0px)] min-h-[calc(4rem+env(safe-area-inset-top,0px))] border-b border-black/[0.06] liquid-glass px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 sticky top-0 z-20">
