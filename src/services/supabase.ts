@@ -8,13 +8,24 @@ import { apiOptimization } from './apiClient';
 const rawUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_URL : '') || '';
 const rawAnonKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) || (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_ANON_KEY : '') || '';
 
+function isValidSupabaseUrl(value: string): boolean {
+  if (!value || value.includes('your-project-ref')) {
+    return false;
+  }
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' && Boolean(parsed.hostname) && parsed.hostname !== 'placeholder.supabase.co';
+  } catch {
+    return false;
+  }
+}
+
 // Clean validation checking if real credentials are provided
 export const isSupabaseConfigured = Boolean(
   rawUrl &&
   rawAnonKey &&
-  !rawUrl.includes('your-project-ref') &&
   !rawAnonKey.includes('your-anon-public-key') &&
-  rawUrl.startsWith('https://')
+  isValidSupabaseUrl(rawUrl)
 );
 
 // Fallback placeholder credentials so createClient never throws an unhandled exception at boot time
@@ -23,6 +34,7 @@ const supabaseAnonKey = isSupabaseConfigured ? rawAnonKey : 'eyJhbGciOiJIUzI1NiI
 
 export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
+    flowType: 'pkce',
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,

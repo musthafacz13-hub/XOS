@@ -12,6 +12,7 @@ import {
 } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
 
 export const WorkView: React.FC = () => {
   const data = useXOSData();
@@ -178,7 +179,7 @@ export const WorkView: React.FC = () => {
 
       setIsModalOpen(false);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Failed to save attendance record.');
+      setFormError(sanitizeDatabaseErrorMessage(err, 'Failed to save attendance record.'));
     } finally {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
@@ -720,7 +721,7 @@ export const WorkView: React.FC = () => {
             await data.deleteAttendanceRecord(deleteTargetId);
             setDeleteTargetId(null);
           } catch (err) {
-            setDeleteError(err instanceof Error ? err.message : 'Failed to delete attendance record.');
+            setDeleteError(sanitizeDatabaseErrorMessage(err, 'Failed to delete attendance record.'));
           } finally {
             setIsDeleting(false);
           }

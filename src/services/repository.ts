@@ -40,6 +40,7 @@ import {
   utcTimestampToLocalDate
 } from '../utils/formatters';
 import { calculateDailyEarnedSalary } from '../utils/calculations';
+import { isSafeExternalUrl, sanitizeDatabaseErrorMessage } from '../utils/authValidation';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { apiOptimization } from './apiClient';
 
@@ -385,7 +386,7 @@ function formatDebtMutationError(err: unknown, fallbackMessage: string): Error {
       : err instanceof Error
         ? err.message
         : '';
-  return new Error(msg || fallbackMessage);
+  return new Error(sanitizeDatabaseErrorMessage(msg, fallbackMessage));
 }
 
 /**
@@ -412,7 +413,7 @@ async function getAuthUser() {
   if (!isBackendActive()) return null;
   const { data, error } = await getClient().auth.getSession();
   if (error) {
-    throw new Error(error.message || 'Could not verify authentication session.');
+    throw new Error(sanitizeDatabaseErrorMessage(error, 'Could not verify authentication session.'));
   }
   return data?.session?.user || null;
 }
@@ -1021,14 +1022,14 @@ export const repository = {
       if (res.status === 'rejected') {
         partialErrors.push({
           table,
-          message: res.reason instanceof Error ? res.reason.message : 'Request failed'
+          message: sanitizeDatabaseErrorMessage(res.reason, 'Request failed')
         });
         return { ok: false, data: null };
       }
       if (res.value.error) {
         partialErrors.push({
           table,
-          message: res.value.error.message || 'Database query error'
+          message: sanitizeDatabaseErrorMessage(res.value.error, 'Database query error')
         });
         return { ok: false, data: null };
       }
@@ -1141,7 +1142,7 @@ export const repository = {
         } catch (err) {
           partialErrors.push({
             table: 'goals',
-            message: err instanceof Error ? err.message : 'Skipped invalid goal record'
+            message: sanitizeDatabaseErrorMessage(err, 'Skipped invalid goal record')
           });
         }
       }
@@ -1218,7 +1219,7 @@ export const repository = {
           profile: {
             ...nextSettings.profile,
             name: profileRes.data.display_name ?? defaultSettings.profile.name,
-            avatarUrl: profileRes.data.avatar_url || undefined
+            avatarUrl: isSafeExternalUrl(profileRes.data.avatar_url)
           }
         };
       }
@@ -1259,8 +1260,8 @@ export const repository = {
 
     memoryState.settings = nextSettings;
     memoryState.fetchErrors = partialErrors;
-    if (partialErrors.length > 0) {
-      console.warn('Partial errors during fetchAllUserData:', partialErrors);
+    if (partialErrors.length > 0 && import.meta.env?.DEV) {
+      console.warn('Partial errors during fetchAllUserData:', partialErrors.map(e => e.table));
     }
 
     notifyListeners();
@@ -1423,7 +1424,7 @@ export const repository = {
           failedSections.push({
             section: 'user_settings',
             label: 'Regional & Category Preferences',
-            message: settingsError?.message || 'Could not save user settings'
+            message: sanitizeDatabaseErrorMessage(settingsError, 'Could not save user settings')
           });
         } else {
           succeededSections.push('user_settings');
@@ -1445,7 +1446,7 @@ export const repository = {
         failedSections.push({
           section: 'user_settings',
           label: 'Regional & Category Preferences',
-          message: err instanceof Error ? err.message : 'Unexpected error saving user settings'
+          message: sanitizeDatabaseErrorMessage(err, 'Unexpected error saving user settings')
         });
       }
 
@@ -1475,7 +1476,7 @@ export const repository = {
             failedSections.push({
               section: 'salary_configs',
               label: 'Salary Configuration',
-              message: salaryError?.message || 'Could not save salary configuration'
+              message: sanitizeDatabaseErrorMessage(salaryError, 'Could not save salary configuration')
             });
           } else {
             succeededSections.push('salary_configs');
@@ -1488,7 +1489,7 @@ export const repository = {
           failedSections.push({
             section: 'salary_configs',
             label: 'Salary Configuration',
-            message: err instanceof Error ? err.message : 'Unexpected error saving salary configuration'
+            message: sanitizeDatabaseErrorMessage(err, 'Unexpected error saving salary configuration')
           });
         }
       } else {
@@ -1516,7 +1517,7 @@ export const repository = {
             failedSections.push({
               section: 'profiles',
               label: 'Profile Display Name',
-              message: profError.message || 'Could not update profile display name'
+              message: sanitizeDatabaseErrorMessage(profError, 'Could not update profile display name')
             });
           } else {
             succeededSections.push('profiles');
@@ -1535,7 +1536,7 @@ export const repository = {
           failedSections.push({
             section: 'profiles',
             label: 'Profile Display Name',
-            message: err instanceof Error ? err.message : 'Unexpected error updating profile display name'
+            message: sanitizeDatabaseErrorMessage(err, 'Unexpected error updating profile display name')
           });
         }
       }
@@ -1631,7 +1632,7 @@ export const repository = {
           .single();
 
         if (error || !data) {
-          throw new Error(error?.message || 'Database error: Could not save salary configuration.');
+          throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not save salary configuration.'));
         }
 
         memoryState.settings = {
@@ -1696,7 +1697,7 @@ export const repository = {
       });
 
       if (rpcError) {
-        throw new Error(rpcError.message || 'Database error: Could not create goal with connected savings.');
+        throw new Error(sanitizeDatabaseErrorMessage(rpcError, 'Database error: Could not create goal with connected savings.'));
       }
 
       const { goalId, savingsGoalId } = extractCreatedGoalIds(rpcData);
@@ -1725,10 +1726,10 @@ export const repository = {
       ]);
 
       if (goalRes.error || !goalRes.data) {
-        throw new Error(goalRes.error?.message || 'Goal created, but the created goal record could not be retrieved.');
+        throw new Error(sanitizeDatabaseErrorMessage(goalRes.error, 'Goal created, but the created goal record could not be retrieved.'));
       }
       if (sgRes.error || !sgRes.data) {
-        throw new Error(sgRes.error?.message || 'Goal created, but the connected savings account could not be retrieved.');
+        throw new Error(sanitizeDatabaseErrorMessage(sgRes.error, 'Goal created, but the connected savings account could not be retrieved.'));
       }
 
       const confirmedGoal = mapGoalRow(goalRes.data);
@@ -1846,7 +1847,7 @@ export const repository = {
         .single();
 
       if (error || !data) {
-        throw new Error(error?.message || 'Database error: Could not update goal.');
+        throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not update goal.'));
       }
 
       const confirmed = mapGoalRow(data);
@@ -1969,7 +1970,7 @@ export const repository = {
         });
 
         if (rpcError) {
-          throw new Error(rpcError.message || 'Database error: Could not archive goal.');
+          throw new Error(sanitizeDatabaseErrorMessage(rpcError, 'Database error: Could not archive goal.'));
         }
 
         validateArchiveGoalRpcResponse(rpcData);
@@ -2045,7 +2046,7 @@ export const repository = {
         .single();
 
       if (error || !data) {
-        throw new Error(error?.message || 'Database error: Could not save expense.');
+        throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not save expense.'));
       }
 
       const confirmedExpense = mapExpenseRow(data);
@@ -2147,7 +2148,7 @@ export const repository = {
         .single();
 
       if (error || !data) {
-        throw new Error(error?.message || 'Database error: Could not update expense.');
+        throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not update expense.'));
       }
 
       const confirmed = mapExpenseRow(data);
@@ -2172,7 +2173,7 @@ export const repository = {
         .select('id');
 
       if (error) {
-        throw new Error(error.message || 'Database error: Could not delete expense.');
+        throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not delete expense.'));
       }
       if (!data || data.length === 0) {
         throw new Error('Expense record not found or could not be deleted.');
@@ -2222,7 +2223,7 @@ export const repository = {
         .single();
 
       if (error || !data) {
-        throw new Error(error?.message || 'Database error: Could not save income.');
+        throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not save income.'));
       }
 
       const confirmedIncome = mapIncomeRow(data);
@@ -2285,7 +2286,7 @@ export const repository = {
         .single();
 
       if (error || !data) {
-        throw new Error(error?.message || 'Database error: Could not update income.');
+        throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not update income.'));
       }
 
       const confirmed = mapIncomeRow(data);
@@ -2318,7 +2319,7 @@ export const repository = {
         .select('id');
 
       if (error) {
-        throw new Error(error.message || 'Database error: Could not delete income.');
+        throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not delete income.'));
       }
       if (!data || data.length === 0) {
         throw new Error('Income record not found or could not be deleted.');
@@ -2530,7 +2531,7 @@ export const repository = {
               `Database rejected attendance date ${record.date} because the Supabase trigger/constraint enforces UTC CURRENT_DATE while the app uses IST (${istTodayStr}).`
             );
           }
-          throw new Error(msg || 'Database error: Could not save attendance record.');
+          throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not save attendance record.'));
         }
 
         const confirmed = mapAttendanceRow(data);
@@ -2584,7 +2585,7 @@ export const repository = {
         .select('id');
 
       if (error) {
-        throw new Error(error.message || 'Database error: Could not delete attendance record.');
+        throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not delete attendance record.'));
       }
       if (!data || data.length === 0) {
         throw new Error('Attendance record not found or could not be deleted.');
@@ -2642,7 +2643,7 @@ export const repository = {
         .single();
 
       if (error || !dbGoal) {
-        throw new Error(error?.message || 'Database error: Could not create savings fund.');
+        throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not create savings fund.'));
       }
 
       const confirmedGoal = mapSavingsGoalRow(dbGoal);
@@ -2727,7 +2728,7 @@ export const repository = {
         .single();
 
       if (error || !data) {
-        throw new Error(error?.message || 'Database error: Could not update savings fund.');
+        throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not update savings fund.'));
       }
 
       const confirmed = mapSavingsGoalRow(data);
@@ -2752,7 +2753,7 @@ export const repository = {
         .select('id');
 
       if (error) {
-        throw new Error(error.message || 'Database error: Could not delete savings fund.');
+        throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not delete savings fund.'));
       }
       if (!data || data.length === 0) {
         throw new Error('Savings fund not found or could not be deleted.');
@@ -2808,7 +2809,7 @@ export const repository = {
         .single();
 
       if (error || !dbTx) {
-        throw new Error(error?.message || 'Database error: Could not record savings transaction.');
+        throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not record savings transaction.'));
       }
 
       const confirmedTx = mapSavingsTxRow(dbTx);
@@ -2830,7 +2831,7 @@ export const repository = {
       ]);
 
       if (sgRefresh.error || !sgRefresh.data) {
-        throw new Error(sgRefresh.error?.message || 'Transaction saved, but failed to refresh database-maintained savings balance.');
+        throw new Error(sanitizeDatabaseErrorMessage(sgRefresh.error, 'Transaction saved, but failed to refresh database-maintained savings balance.'));
       }
 
       const mappedGoal = mapSavingsGoalRow(sgRefresh.data);
@@ -2899,7 +2900,7 @@ export const repository = {
         .select('id');
 
       if (error) {
-        throw new Error(error.message || 'Database error: Could not delete savings transaction.');
+        throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not delete savings transaction.'));
       }
       if (!data || data.length === 0) {
         throw new Error('Savings transaction not found or could not be deleted.');
@@ -2922,7 +2923,7 @@ export const repository = {
       ]);
 
       if (sgRefresh.error || !sgRefresh.data) {
-        throw new Error(sgRefresh.error?.message || 'Transaction deleted, but failed to refresh database-maintained savings balance.');
+        throw new Error(sanitizeDatabaseErrorMessage(sgRefresh.error, 'Transaction deleted, but failed to refresh database-maintained savings balance.'));
       }
 
       const mappedGoal = mapSavingsGoalRow(sgRefresh.data);
@@ -3029,7 +3030,7 @@ export const repository = {
         if (rpcError?.code === '23505' || rawMsg.toLowerCase().includes('already exists') || rawMsg.toLowerCase().includes('duplicate')) {
           throw new Error(`A salary payout for period "${periodLabel}" already exists. Enable replace existing or delete the previous payout first.`);
         }
-        throw new Error(rawMsg || 'Database error: Could not record salary payout.');
+        throw new Error(sanitizeDatabaseErrorMessage(rpcError, 'Database error: Could not record salary payout.'));
       }
 
       const confirmedPayout = mapSalaryPayoutRow(rpcResult.payout);
@@ -3097,7 +3098,7 @@ export const repository = {
       });
 
       if (rpcError) {
-        throw new Error(rpcError.message || 'Database error: Could not delete salary payout.');
+        throw new Error(sanitizeDatabaseErrorMessage(rpcError, 'Database error: Could not delete salary payout.'));
       }
     }
 
@@ -3422,7 +3423,7 @@ export const repository = {
         .single();
 
       if (error || !dbRep) {
-        throw new Error(error?.message || 'Database error: Could not record repayment.');
+        throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not record repayment.'));
       }
 
       const confirmedRep = mapDebtRepaymentRow(dbRep);
@@ -3486,7 +3487,7 @@ export const repository = {
         .select('id');
 
       if (error) {
-        throw new Error(error.message || 'Database error: Could not delete repayment.');
+        throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not delete repayment.'));
       }
       if (!deletedRows || deletedRows.length === 0) {
         throw new Error('Repayment record not found or could not be deleted.');
@@ -3590,7 +3591,7 @@ export const repository = {
 
       const { data: rpcData, error: rpcError } = await ctx.client.rpc('xos_reset_user_data');
       if (rpcError) {
-        throw new Error(rpcError.message || 'Database error: Could not reset account data.');
+        throw new Error(sanitizeDatabaseErrorMessage(rpcError, 'Database error: Could not reset account data.'));
       }
 
       validateResetRpcResponse(rpcData);
@@ -3665,7 +3666,9 @@ export const repository = {
 
   importJSON(jsonString: string): boolean {
     if (isBackendActive()) {
-      console.warn('JSON import into memory is disabled while connected to a live Supabase account.');
+      if (import.meta.env?.DEV) {
+        console.warn('JSON import into memory is disabled while connected to a live Supabase account.');
+      }
       return false;
     }
     try {
@@ -3683,7 +3686,9 @@ export const repository = {
       notifyListeners();
       return true;
     } catch (e) {
-      console.error('Failed to parse in-memory JSON payload:', e);
+      if (import.meta.env?.DEV) {
+        console.error('Failed to parse in-memory JSON payload:', e);
+      }
       return false;
     }
   }

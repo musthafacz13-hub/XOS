@@ -20,6 +20,7 @@ import { formatCurrency, formatHumanDate, getTodayString } from '../../utils/for
 import { calculateUnifiedGoalTotals, resolveGoalsWithSavings } from '../../utils/calculations';
 import { EmptyState } from '../common/EmptyState';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
 
 export const GoalsAndSavingsView: React.FC = () => {
   const data = useXOSData();
@@ -181,7 +182,7 @@ export const GoalsAndSavingsView: React.FC = () => {
 
       setIsGoalModalOpen(false);
     } catch (err) {
-      setGoalFormError(err instanceof Error ? err.message : 'Failed to save goal & savings account.');
+      setGoalFormError(sanitizeDatabaseErrorMessage(err, 'Failed to save goal & savings account.'));
     } finally {
       isSubmittingGoalRef.current = false;
       setIsSubmittingGoal(false);
@@ -235,7 +236,7 @@ export const GoalsAndSavingsView: React.FC = () => {
 
       setIsTxModalOpen(false);
     } catch (err) {
-      setTxError(err instanceof Error ? err.message : 'Failed to record transaction.');
+      setTxError(sanitizeDatabaseErrorMessage(err, 'Failed to record transaction.'));
     } finally {
       isSubmittingTxRef.current = false;
       setIsSubmittingTx(false);
@@ -256,7 +257,7 @@ export const GoalsAndSavingsView: React.FC = () => {
       }
       setDeleteTargetId(null);
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Failed to archive goal.');
+      setDeleteError(sanitizeDatabaseErrorMessage(err, 'Failed to archive goal.'));
     } finally {
       isDeletingRef.current = false;
       setIsDeleting(false);

@@ -1,3 +1,9 @@
 User-agent: *
 Allow: /
 Disallow: /auth/
+Disallow: /login
+Disallow: /signup
+Disallow: /magic-link
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /verify-email

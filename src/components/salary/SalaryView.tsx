@@ -22,6 +22,7 @@ import {
 import { formatCurrency, formatHumanDate, getIstTodayString, getMonthString, getTodayString } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
 
 type SalaryTab = 'summary' | 'daily' | 'payments' | 'settings';
 
@@ -299,7 +300,7 @@ export const SalaryView: React.FC = () => {
       setSavedSettingsNotif('Saved');
       setTimeout(() => setSavedSettingsNotif(null), 3000);
     } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : 'Failed to save salary rate settings.');
+      setSettingsError(sanitizeDatabaseErrorMessage(err, 'Failed to save salary rate settings.'));
     } finally {
       isSavingSettingsRef.current = false;
       setIsSavingSettings(false);
@@ -508,7 +509,7 @@ export const SalaryView: React.FC = () => {
       setDailyBannerMessage(`Saved custom salary details for ${formatHumanDate(dailyDate)}.`);
       setTimeout(() => setDailyBannerMessage(null), 4000);
     } catch (err) {
-      setDailyFormError(err instanceof Error ? err.message : 'Failed to save daily salary customization.');
+      setDailyFormError(sanitizeDatabaseErrorMessage(err, 'Failed to save daily salary customization.'));
     } finally {
       isSavingDailyRef.current = false;
       setIsSavingDaily(false);
@@ -559,7 +560,7 @@ export const SalaryView: React.FC = () => {
       setIsPaymentModalOpen(false);
       setActiveTab('payments');
     } catch (err) {
-      setPaymentError(err instanceof Error ? err.message : 'Failed to record salary payment.');
+      setPaymentError(sanitizeDatabaseErrorMessage(err, 'Failed to record salary payment.'));
     } finally {
       isSubmittingPaymentRef.current = false;
       setIsSubmittingPayment(false);
@@ -1766,7 +1767,7 @@ export const SalaryView: React.FC = () => {
             await data.deleteSalaryPayout(deleteTargetId);
             setDeleteTargetId(null);
           } catch (err) {
-            setDeletePayoutError(err instanceof Error ? err.message : 'Failed to delete salary payout.');
+            setDeletePayoutError(sanitizeDatabaseErrorMessage(err, 'Failed to delete salary payout.'));
           } finally {
             setIsDeletingPayout(false);
           }
@@ -1793,7 +1794,7 @@ export const SalaryView: React.FC = () => {
             await data.deleteAttendanceRecord(deleteDailyTargetId);
             setDeleteDailyTargetId(null);
           } catch (err) {
-            setDeleteDailyError(err instanceof Error ? err.message : 'Failed to delete daily entry.');
+            setDeleteDailyError(sanitizeDatabaseErrorMessage(err, 'Failed to delete daily entry.'));
           } finally {
             setIsDeletingDaily(false);
           }

@@ -6,6 +6,7 @@ import { Income, IncomeSource } from '../../types';
 import { formatCurrency, formatHumanDate, getTodayString } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
 
 const BAR_COLORS = ['#87CEEB', '#111111', '#525252', '#737373', '#A3A3A3', '#38BDF8'];
 
@@ -108,8 +109,10 @@ export const IncomeView: React.FC = () => {
       }
       setIsModalOpen(false);
     } catch (err: any) {
-      console.error('Failed to save income:', err);
-      setFormError(err?.message || 'Database error: Could not save income.');
+      if (import.meta.env?.DEV) {
+        console.error('Failed to save income:', err);
+      }
+      setFormError(sanitizeDatabaseErrorMessage(err, 'Database error: Could not save income.'));
     } finally {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
@@ -576,8 +579,10 @@ export const IncomeView: React.FC = () => {
             await data.deleteIncome(deleteTargetId);
             setDeleteTargetId(null);
           } catch (err) {
-            console.error('Delete income failed:', err);
-            setDeleteError(err instanceof Error ? err.message : 'Failed to delete income record.');
+            if (import.meta.env?.DEV) {
+              console.error('Delete income failed:', err);
+            }
+            setDeleteError(sanitizeDatabaseErrorMessage(err, 'Failed to delete income record.'));
           } finally {
             setIsDeleting(false);
           }

@@ -5,7 +5,8 @@ import {
   Loader2,
   ChevronDown,
   X,
-  ShieldCheck
+  ShieldCheck,
+  ExternalLink
 } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
 import { CURRENCIES, formatCurrency } from '../../utils/formatters';
@@ -16,6 +17,7 @@ import { PWAInstallButton } from '../common/PWAInstallButton';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 import { useAuth } from '../../context/AuthContext';
 import { repository, SettingsBundleSaveError, SettingsBundleSection } from '../../services/repository';
+import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
 
 const PDFExportModal = lazy(() =>
   import('../modals/PDFExportModal').then(m => ({ default: m.PDFExportModal }))
@@ -130,6 +132,7 @@ export const SettingsView: React.FC = () => {
   const [isPDFModalOpen, setIsPDFModalOpen] = useState<boolean>(false);
   const [hasOpenedPDFModal, setHasOpenedPDFModal] = useState<boolean>(false);
   const [bannerMessage, setBannerMessage] = useState<string | null>(null);
+  const [activeInfoModal, setActiveInfoModal] = useState<'about' | 'privacy' | 'terms' | 'faq' | null>(null);
   const { isInstallable, isInstalled, isIOS } = usePWAInstall();
 
   // Clear timers on unmount
@@ -273,9 +276,16 @@ export const SettingsView: React.FC = () => {
   const settingsFetchErrors = data.fetchErrors.filter(
     e => e.table === 'user_settings' || e.table === 'profiles' || e.table === 'salary_configs'
   );
+  const SETTINGS_TABLE_LABELS: Record<string, string> = {
+    user_settings: 'Preferences',
+    profiles: 'Profile',
+    salary_configs: 'Salary Settings'
+  };
   const connectionError =
     settingsFetchErrors.length > 0
-      ? settingsFetchErrors.map(e => `${e.table}: ${e.message}`).join(' · ')
+      ? settingsFetchErrors
+          .map(e => `${SETTINGS_TABLE_LABELS[e.table] || 'Settings'}: ${sanitizeDatabaseErrorMessage(e.message, 'Unable to load section.')}`)
+          .join(' · ')
       : null;
 
   const currencySymbol = CURRENCIES[currency]?.symbol || '₹';
@@ -441,14 +451,15 @@ export const SettingsView: React.FC = () => {
       if (successTimerRef.current) clearTimeout(successTimerRef.current);
       successTimerRef.current = setTimeout(() => setSaveSuccessMessage(null), 3500);
     } catch (err) {
-      console.error('Failed to save settings:', err);
+      if (import.meta.env?.DEV) {
+        console.error('Failed to save settings:', err);
+      }
       if (err instanceof SettingsBundleSaveError) {
         failedSectionsRef.current = new Set(err.failedSections.map(f => f.section));
         setSaveErrorMessage(err.message);
       } else {
         failedSectionsRef.current = new Set(['user_settings', 'salary_configs', 'profiles']);
-        const msg = err instanceof Error ? err.message : 'Unable to save settings. Please try again.';
-        setSaveErrorMessage(msg);
+        setSaveErrorMessage(sanitizeDatabaseErrorMessage(err, 'Unable to save settings. Please try again.'));
       }
     } finally {
       isSavingRef.current = false;
@@ -560,8 +571,7 @@ export const SettingsView: React.FC = () => {
       if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
       bannerTimerRef.current = setTimeout(() => setBannerMessage(null), 6000);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to reset app data. Please try again.';
-      setResetError(msg);
+      setResetError(sanitizeDatabaseErrorMessage(err, 'Failed to reset app data. Please try again.'));
     } finally {
       isResettingRef.current = false;
       setIsResetting(false);
@@ -1316,6 +1326,90 @@ export const SettingsView: React.FC = () => {
         </div>
       </section>
 
+      {/* F. About, Legal & Support */}
+      <section aria-labelledby="settings-info-heading" className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-10 py-7 border-t border-neutral-200/80">
+        <div className="md:col-span-4 space-y-1">
+          <h3 id="settings-info-heading" className="text-[15px] font-semibold text-[#111111]">
+            About, Legal &amp; Support
+          </h3>
+          <p className="text-xs text-neutral-500 leading-relaxed">
+            Application information, open-source repository, legal terms, and frequently asked questions.
+          </p>
+        </div>
+
+        <div className="md:col-span-8">
+          <div className="border border-neutral-200/80 rounded-xl divide-y divide-neutral-200/80 bg-white">
+            {/* About XOS */}
+            <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <h4 className="text-sm font-medium text-[#111111]">About XOS</h4>
+                <p className="text-xs text-neutral-500 leading-relaxed max-w-md">
+                  Version, open-source developer information, and GitHub repository.
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveInfoModal('about')}
+                type="button"
+                className="inline-flex items-center justify-center h-9 px-3.5 text-xs font-medium text-neutral-700 hover:text-[#111111] bg-white hover:bg-neutral-50 border border-neutral-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                View About
+              </button>
+            </div>
+
+            {/* Privacy Policy */}
+            <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <h4 className="text-sm font-medium text-[#111111]">Privacy Policy</h4>
+                <p className="text-xs text-neutral-500 leading-relaxed max-w-md">
+                  How your private data, Supabase RLS isolation, and session credentials are handled.
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveInfoModal('privacy')}
+                type="button"
+                className="inline-flex items-center justify-center h-9 px-3.5 text-xs font-medium text-neutral-700 hover:text-[#111111] bg-white hover:bg-neutral-50 border border-neutral-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                View Privacy Policy
+              </button>
+            </div>
+
+            {/* Terms & Conditions */}
+            <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <h4 className="text-sm font-medium text-[#111111]">Terms &amp; Conditions</h4>
+                <p className="text-xs text-neutral-500 leading-relaxed max-w-md">
+                  Open-source software license agreement, user responsibilities, and warranty disclaimers.
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveInfoModal('terms')}
+                type="button"
+                className="inline-flex items-center justify-center h-9 px-3.5 text-xs font-medium text-neutral-700 hover:text-[#111111] bg-white hover:bg-neutral-50 border border-neutral-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                View Terms
+              </button>
+            </div>
+
+            {/* Frequently Asked Questions */}
+            <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <h4 className="text-sm font-medium text-[#111111]">Frequently Asked Questions</h4>
+                <p className="text-xs text-neutral-500 leading-relaxed max-w-md">
+                  Answers about salary calculations, data backups, attendance, and account resets.
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveInfoModal('faq')}
+                type="button"
+                className="inline-flex items-center justify-center h-9 px-3.5 text-xs font-medium text-neutral-700 hover:text-[#111111] bg-white hover:bg-neutral-50 border border-neutral-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                View FAQs
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Confirmation Dialog for Reset All App Data */}
       <ConfirmDialog
         isOpen={isResetModalOpen}
@@ -1358,6 +1452,127 @@ export const SettingsView: React.FC = () => {
             defaultPreset="all"
           />
         </Suspense>
+      )}
+
+      {/* About / Legal / FAQ Modal Dialog */}
+      {activeInfoModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
+              <h3 className="text-base font-semibold text-[#111111]">
+                {activeInfoModal === 'about' && 'About XOS'}
+                {activeInfoModal === 'privacy' && 'Privacy Policy'}
+                {activeInfoModal === 'terms' && 'Terms & Conditions'}
+                {activeInfoModal === 'faq' && 'Frequently Asked Questions'}
+              </h3>
+              <button
+                onClick={() => setActiveInfoModal(null)}
+                type="button"
+                className="p-1 rounded-lg text-neutral-400 hover:text-[#111111] hover:bg-neutral-100 transition-colors cursor-pointer"
+                aria-label="Close dialog"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="text-xs sm:text-sm text-neutral-600 leading-relaxed space-y-4">
+              {activeInfoModal === 'about' && (
+                <>
+                  <p>
+                    <strong>XOS</strong> is a private Personal Life Operating System designed to help you manage everyday finances, work records, salary calculations, savings reserves, and milestone goals in a unified workspace.
+                  </p>
+                  <p>
+                    Developed by Musthafa CZ. Built with React 19, TypeScript, Vite, and Supabase with Row-Level Security.
+                  </p>
+                  <div className="pt-2">
+                    <a
+                      href="https://github.com/musthafacz13-hub/XOS"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 h-10 px-4 text-xs font-semibold text-[#111111] bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors"
+                    >
+                      <span>View GitHub Repository</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                </>
+              )}
+
+              {activeInfoModal === 'privacy' && (
+                <>
+                  <h4 className="font-semibold text-[#111111]">1. Information We Process</h4>
+                  <p>
+                    XOS operates entirely within your private user account secured by Supabase Authentication. We process only the financial records, attendance entries, goals, savings, and settings you explicitly enter.
+                  </p>
+                  <h4 className="font-semibold text-[#111111]">2. Data Storage &amp; Security</h4>
+                  <p>
+                    All application data is stored securely in your private Supabase database instance protected by PostgreSQL Row-Level Security (RLS), ensuring that only authenticated owners can access their records.
+                  </p>
+                  <h4 className="font-semibold text-[#111111]">3. Cookies &amp; Sessions</h4>
+                  <p>
+                    We use standard session tokens solely for authentication and keeping you signed in. We do not use third-party advertising cookies or trackers.
+                  </p>
+                  <h4 className="font-semibold text-[#111111]">4. Data Export &amp; Deletion</h4>
+                  <p>
+                    You retain full ownership of your data. You can export complete multi-page PDF reports or JSON backups at any time from Settings, or permanently reset your transactional data using the account reset utility.
+                  </p>
+                </>
+              )}
+
+              {activeInfoModal === 'terms' && (
+                <>
+                  <h4 className="font-semibold text-[#111111]">1. Acceptance of Terms</h4>
+                  <p>
+                    By accessing or using XOS, you agree to these terms for personal, non-commercial productivity use.
+                  </p>
+                  <h4 className="font-semibold text-[#111111]">2. Open-Source Software</h4>
+                  <p>
+                    XOS is provided as open-source software under standard licensing. It is provided &ldquo;as is&rdquo; without warranty of any kind, express or implied.
+                  </p>
+                  <h4 className="font-semibold text-[#111111]">3. User Responsibility</h4>
+                  <p>
+                    You are solely responsible for maintaining the confidentiality of your account credentials and the accuracy of the financial and attendance data you record.
+                  </p>
+                  <h4 className="font-semibold text-[#111111]">4. Availability</h4>
+                  <p>
+                    While XOS is designed for reliable daily performance, we do not guarantee uninterrupted uptime or permanent offline data retention beyond your browser and database storage state.
+                  </p>
+                </>
+              )}
+
+              {activeInfoModal === 'faq' && (
+                <div className="space-y-4">
+                  <div>
+                    <h5 className="font-semibold text-[#111111]">How does XOS protect my financial and personal data?</h5>
+                    <p className="mt-1">XOS uses Supabase authentication and strict PostgreSQL Row-Level Security (RLS) policies. Your records are isolated to your account and never shared or exposed publicly.</p>
+                  </div>
+                  <div>
+                    <h5 className="font-semibold text-[#111111]">How do I calculate my earned salary?</h5>
+                    <p className="mt-1">Configure your daily base salary, standard working hours, optional add-ons, and overtime rates in Salary Settings. Each attendance entry automatically computes your daily earnings.</p>
+                  </div>
+                  <div>
+                    <h5 className="font-semibold text-[#111111]">Can I export my data or install XOS as an app?</h5>
+                    <p className="mt-1">Yes. You can export comprehensive PDF reports or JSON backups from Settings, and install XOS as a Progressive Web App (PWA) on your desktop or mobile device.</p>
+                  </div>
+                  <div>
+                    <h5 className="font-semibold text-[#111111]">How do I reset my account data if needed?</h5>
+                    <p className="mt-1">You can permanently delete all transactional records (expenses, income, attendance, debts, goals) while preserving your account and settings using the &ldquo;Reset All App Data&rdquo; option in Settings.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setActiveInfoModal(null)}
+                type="button"
+                className="h-10 px-5 text-xs font-medium text-white bg-[#111111] hover:bg-black rounded-xl transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

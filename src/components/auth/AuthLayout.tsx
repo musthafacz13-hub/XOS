@@ -27,7 +27,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
   return (
     <div className="min-h-screen min-h-[100dvh] bg-white text-[#111318] flex flex-col justify-center items-center pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] sm:px-6 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] relative overflow-x-clip">
       {/* Main Container */}
-      <motion.div
+      <motion.main
         variants={pageVariants}
         initial="initial"
         animate="animate"
@@ -57,9 +57,9 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
               </span>
             </div>
 
-            <h2 className="text-2xl font-bold tracking-tight text-[#111318]">
+            <h1 className="text-2xl font-bold tracking-tight text-[#111318]">
               {title}
-            </h2>
+            </h1>
             {subtitle && (
               <p className="text-xs text-[#687482] leading-relaxed font-normal">
                 {subtitle}
@@ -74,10 +74,10 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
         </div>
 
         {/* Quiet Footnote */}
-        <div className="mt-6 text-center text-xs text-[#687482]">
+        <footer className="mt-6 text-center text-xs text-[#687482]">
           <span>Protected by end-to-end user isolation &amp; Supabase Row Level Security.</span>
-        </div>
-      </motion.div>
+        </footer>
+      </motion.main>
     </div>
   );
 };

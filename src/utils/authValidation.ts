@@ -53,6 +53,69 @@ export function validateSignUpInputs(
   return null;
 }
 
+const INTERNAL_ERROR_LEAK_PATTERN =
+  /(?:pg_|sqlstate|pgrst\d*|postgrest|violates row-level security|row-level security policy|permission denied for (?:table|relation|schema|function)|relation\s+"[^"]+"|column\s+"[^"]+"|schema\s+"[^"]+"|constraint\s+"[^"]+"|function\s+public\.|could not find the function|syntax error at or near|postgres(?:ql)?:\/\/|https?:\/\/\S+|econnrefused|enotfound|\n\s+at\s+)/i;
+
+export function isSafeExternalUrl(rawUrl: unknown): string | undefined {
+  if (typeof rawUrl !== 'string') return undefined;
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return undefined;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      return parsed.toString();
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function sanitizeDatabaseErrorMessage(
+  err: unknown,
+  fallbackMessage: string = 'An unexpected error occurred. Please try again.'
+): string {
+  if (!err) return fallbackMessage;
+
+  const name = err instanceof Error ? err.name : '';
+  const msg =
+    typeof err === 'string'
+      ? err.trim()
+      : err instanceof Error
+        ? err.message.trim()
+        : typeof (err as { message?: unknown })?.message === 'string'
+          ? String((err as { message: string }).message).trim()
+          : '';
+
+  if (!msg) return fallbackMessage;
+
+  const lower = msg.toLowerCase();
+
+  if (name === 'TimeoutError' || lower.includes('timed out')) {
+    return 'The request timed out. Please check your connection and try again.';
+  }
+  if (name === 'AbortError' || lower.includes('fetch is aborted')) {
+    return msg;
+  }
+  if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('network request failed')) {
+    return 'Network connection unavailable. Check your internet connection and try again.';
+  }
+  if (lower.includes('violates row-level security') || lower.includes('permission denied for')) {
+    return 'You do not have permission to perform this action.';
+  }
+  if (lower.includes('duplicate key value')) {
+    return 'A matching record already exists.';
+  }
+  if (lower.includes('violates foreign key constraint')) {
+    return 'This record is linked to another item and cannot be modified or removed directly.';
+  }
+  if (INTERNAL_ERROR_LEAK_PATTERN.test(msg) || msg.length > 260) {
+    return fallbackMessage;
+  }
+
+  return msg;
+}
+
 export function sanitizeAuthErrorMessage(err: unknown): string {
   if (!err) return '';
 
@@ -98,7 +161,11 @@ export function sanitizeAuthErrorMessage(err: unknown): string {
     return 'Too many attempts. Please wait a moment before trying again.';
   }
 
-  return msg || 'An unexpected error occurred. Please try again.';
+  if (!msg || INTERNAL_ERROR_LEAK_PATTERN.test(msg) || msg.length > 220) {
+    return 'An unexpected authentication error occurred. Please try again.';
+  }
+
+  return msg;
 }
 
 /**

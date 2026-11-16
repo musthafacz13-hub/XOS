@@ -13,6 +13,7 @@ import {
 } from '../../utils/formatters';
 import { resolveGoalsWithSavings } from '../../utils/calculations';
 import { modalBackdropVariants, modalContentVariants, MOTION_SPRINGS } from '../../utils/motion';
+import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
 
 interface QuickActionModalProps {
   isOpen: boolean;
@@ -196,8 +197,10 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       });
       onClose();
     } catch (err: any) {
-      console.error('Failed to add expense:', err);
-      setActionError(err?.message || 'Database error: Could not save expense.');
+      if (import.meta.env?.DEV) {
+        console.error('Failed to add expense:', err);
+      }
+      setActionError(sanitizeDatabaseErrorMessage(err, 'Database error: Could not save expense.'));
     } finally {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
@@ -233,8 +236,10 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       });
       onClose();
     } catch (err: any) {
-      console.error('Failed to add income:', err);
-      setActionError(err?.message || 'Database error: Could not save income.');
+      if (import.meta.env?.DEV) {
+        console.error('Failed to add income:', err);
+      }
+      setActionError(sanitizeDatabaseErrorMessage(err, 'Database error: Could not save income.'));
     } finally {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
@@ -284,7 +289,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       });
       onClose();
     } catch (err: any) {
-      setActionError(err?.message || 'Database error: Could not log attendance.');
+      setActionError(sanitizeDatabaseErrorMessage(err, 'Database error: Could not log attendance.'));
     } finally {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
@@ -317,7 +322,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       });
       onClose();
     } catch (err: any) {
-      setActionError(err?.message || 'Database error: Could not save goal.');
+      setActionError(sanitizeDatabaseErrorMessage(err, 'Database error: Could not save goal.'));
     } finally {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
@@ -353,7 +358,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       });
       onClose();
     } catch (err: any) {
-      setActionError(err?.message || 'Database error: Could not save savings transaction.');
+      setActionError(sanitizeDatabaseErrorMessage(err, 'Database error: Could not save savings transaction.'));
     } finally {
       isSubmittingRef.current = false;
       setIsSubmitting(false);

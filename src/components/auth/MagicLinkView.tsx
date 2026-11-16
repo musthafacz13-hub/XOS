@@ -197,6 +197,13 @@ export const MagicLinkView: React.FC<MagicLinkViewProps> = ({ onNavigate }) => {
             )}
           </motion.button>
 
+          {/* Free Plan Magic Link Notice */}
+          <div className="text-[11px] text-neutral-500 leading-relaxed space-y-1 px-3 py-2.5 bg-neutral-50/60 rounded-xl border border-neutral-200/60 text-left">
+            <span className="font-semibold text-neutral-800 block">Free Plan Notice</span>
+            <p>On the free plan, you can request up to 2 magic links per hour. This limit helps prevent abuse and maintain reliable service.</p>
+            <p>Please wait until your hourly limit resets before requesting another magic link.</p>
+          </div>
+
           <div className="pt-2 text-center text-xs text-neutral-500 border-t border-black/[0.04]">
             <span>Prefer to use a password? </span>
             <button

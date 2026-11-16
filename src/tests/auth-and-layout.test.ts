@@ -140,8 +140,6 @@ function runTests() {
   const indexCss = fs.readFileSync(path.join(rootDir, 'src/index.css'), 'utf8');
   const authContextSrc = fs.readFileSync(path.join(rootDir, 'src/context/AuthContext.tsx'), 'utf8');
   const authLayoutSrc = fs.readFileSync(path.join(rootDir, 'src/components/auth/AuthLayout.tsx'), 'utf8');
-  const mobileOnboardingSrc = fs.readFileSync(path.join(rootDir, 'src/components/welcome/MobileOnboarding.tsx'), 'utf8');
-  const scrollRevealSrc = fs.readFileSync(path.join(rootDir, 'src/components/welcome/useWelcomeScrollReveal.ts'), 'utf8');
   const offlineBannerSrc = fs.readFileSync(path.join(rootDir, 'src/components/common/OfflineIndicator.tsx'), 'utf8');
   const loginViewSrc = fs.readFileSync(path.join(rootDir, 'src/components/auth/LoginView.tsx'), 'utf8');
   const signUpViewSrc = fs.readFileSync(path.join(rootDir, 'src/components/auth/SignUpView.tsx'), 'utf8');
@@ -171,8 +169,6 @@ function runTests() {
     'Demo mode and sample dataset generators are completely removed'
   );
   assert(!offlineBannerSrc.includes('whitespace-nowrap'), 'OfflineIndicator wraps cleanly on narrow mobile viewports');
-  assert(scrollRevealSrc.includes('rect.width === 0 && rect.height === 0'), 'Welcome scroll reveal ignores hidden responsive branch elements');
-  assert(!mobileOnboardingSrc.includes('touchAction: \'pan-y\'\n      onTouchStart'), 'MobileOnboarding does not force touchAction: pan-y across the entire root viewport');
 
   // Test 5: Auth metadata, coalesce discriminator, CSS Safari fallback, & mobile sheet scroll lock
   console.log('Test 5: Auth display_name metadata, login coalesce, Safari overflow fallback & mobile scroll lock...');

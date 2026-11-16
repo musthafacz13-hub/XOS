@@ -57,11 +57,7 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
       if (!isSupabaseConfigured) {
         clearAuthUrlParams();
         if (active) {
-          if (isRecovery) {
-            onPasswordRecovery();
-          } else {
-            onSuccess();
-          }
+          onNavigateLogin();
         }
         return;
       }
@@ -79,7 +75,7 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
             return;
           }
 
-          if (isRecovery) {
+          if (isRecovery && data.session) {
             onPasswordRecovery();
           } else if (data.session) {
             onSuccess();
@@ -107,7 +103,7 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
           return;
         }
 
-        if (isRecovery) {
+        if (isRecovery && session) {
           clearAuthUrlParams();
           onPasswordRecovery();
         } else if (session) {
@@ -115,14 +111,23 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
           onSuccess();
         } else {
           // Wait briefly for onAuthStateChange / implicit hash parsing before routing to login
-          fallbackTimer = setTimeout(() => {
+          fallbackTimer = setTimeout(async () => {
             if (!active) return;
-            const stillRecovery = window.location.hash.includes('type=recovery');
-            clearAuthUrlParams();
-            if (stillRecovery) {
-              onPasswordRecovery();
-            } else {
-              onNavigateLogin();
+            try {
+              const { data: { session: delayedSession } } = await supabase.auth.getSession();
+              if (!active) return;
+              const stillRecovery = isRecovery || window.location.hash.includes('type=recovery');
+              clearAuthUrlParams();
+              if (delayedSession && stillRecovery) {
+                onPasswordRecovery();
+              } else if (delayedSession) {
+                onSuccess();
+              } else {
+                onNavigateLogin();
+              }
+            } catch {
+              clearAuthUrlParams();
+              if (active) onNavigateLogin();
             }
           }, 1200);
         }

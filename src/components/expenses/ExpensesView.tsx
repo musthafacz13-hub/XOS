@@ -6,6 +6,7 @@ import { Expense, ExpenseCategory, PaymentMethod, RecurrenceFrequency } from '..
 import { formatCurrency, formatHumanDate, getTodayString } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
 
 const CHART_COLORS = ['#87CEEB', '#111111', '#525252', '#737373', '#A3A3A3', '#D4D4D4', '#38BDF8'];
 
@@ -123,8 +124,10 @@ export const ExpensesView: React.FC = () => {
       }
       setIsModalOpen(false);
     } catch (err: any) {
-      console.error('Failed to save expense:', err);
-      setFormError(err?.message || 'Database error: Could not save expense.');
+      if (import.meta.env?.DEV) {
+        console.error('Failed to save expense:', err);
+      }
+      setFormError(sanitizeDatabaseErrorMessage(err, 'Database error: Could not save expense.'));
     } finally {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
@@ -645,8 +648,10 @@ export const ExpensesView: React.FC = () => {
             await data.deleteExpense(deleteTargetId);
             setDeleteTargetId(null);
           } catch (err) {
-            console.error('Delete expense failed:', err);
-            setDeleteError(err instanceof Error ? err.message : 'Failed to delete expense record.');
+            if (import.meta.env?.DEV) {
+              console.error('Delete expense failed:', err);
+            }
+            setDeleteError(sanitizeDatabaseErrorMessage(err, 'Failed to delete expense record.'));
           } finally {
             setIsDeleting(false);
           }

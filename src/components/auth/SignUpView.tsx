@@ -12,7 +12,7 @@ import { tapScale } from '../../utils/motion';
 import { validateSignUpInputs, normalizeAuthEmail } from '../../utils/authValidation';
 
 interface SignUpViewProps {
-  onNavigate: (view: 'welcome' | 'login' | 'verify-email') => void;
+  onNavigate: (view: 'welcome' | 'login' | 'verify-email' | 'magic-link') => void;
   onSuccess: () => void;
   onSetRegisteredEmail: (email: string) => void;
 }
@@ -262,6 +262,25 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
             </>
           )}
         </motion.button>
+
+        {/* Alternative Magic Link Option & Notice */}
+        <div className="space-y-2 pt-1">
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => onNavigate('magic-link')}
+            className="w-full min-h-[44px] flex items-center justify-center gap-2 py-2.5 bg-neutral-50 hover:bg-neutral-100 text-neutral-700 text-xs font-semibold rounded-xl border border-neutral-200 transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <span>Or sign in with Magic Link</span>
+          </button>
+
+          {/* Free Plan Magic Link Notice */}
+          <div className="text-[11px] text-neutral-500 leading-relaxed space-y-1 px-3 py-2.5 bg-neutral-50/60 rounded-xl border border-neutral-200/60 text-left">
+            <span className="font-semibold text-neutral-800 block">Free Plan Notice</span>
+            <p>On the free plan, you can request up to 2 magic links per hour. This limit helps prevent abuse and maintain reliable service.</p>
+            <p>Please wait until your hourly limit resets before requesting another magic link.</p>
+          </div>
+        </div>
 
         {/* Route to Login */}
         <div className="pt-3 text-center text-xs text-neutral-500 border-t border-black/[0.04]">

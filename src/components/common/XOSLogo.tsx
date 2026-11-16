@@ -6,6 +6,7 @@ interface XOSLogoProps {
   size?: XOSLogoSize;
   className?: string;
   alt?: string;
+  priority?: boolean;
 }
 
 const SIZE_CLASSES: Record<XOSLogoSize, { box: string; px: number }> = {
@@ -18,7 +19,8 @@ const SIZE_CLASSES: Record<XOSLogoSize, { box: string; px: number }> = {
 export const XOSLogo: React.FC<XOSLogoProps> = ({
   size = 'md',
   className = '',
-  alt = 'XOS Logo'
+  alt = 'XOS Logo',
+  priority = false
 }) => {
   const { box, px } = SIZE_CLASSES[size];
 
@@ -31,6 +33,8 @@ export const XOSLogo: React.FC<XOSLogoProps> = ({
         alt={alt}
         width={px}
         height={px}
+        loading={priority ? 'eager' : undefined}
+        fetchPriority={priority ? 'high' : undefined}
         decoding="async"
         draggable={false}
         className="w-full h-full object-contain select-none"

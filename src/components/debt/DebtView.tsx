@@ -17,6 +17,7 @@ import { Debt, DebtDirection, PaymentMethod } from '../../types';
 import { calculateDebtOutstanding, calculateSeparateDebtTotals } from '../../utils/calculations';
 import { formatCurrency, formatHumanDate, getTodayString } from '../../utils/formatters';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
 
 export const DebtView: React.FC = () => {
   const data = useXOSData();
@@ -201,7 +202,7 @@ export const DebtView: React.FC = () => {
       }
     } catch (err) {
       if (isMountedRef.current) {
-        setRepayError(err instanceof Error ? err.message : 'Database error: Could not record repayment.');
+        setRepayError(sanitizeDatabaseErrorMessage(err, 'Database error: Could not record repayment.'));
       }
     } finally {
       isSubmittingRepayRef.current = false;
@@ -273,7 +274,7 @@ export const DebtView: React.FC = () => {
         ) {
           setDebtFormError(err.message);
         } else {
-          setDebtFormError(err instanceof Error ? err.message : 'Database error: Could not save debt record.');
+          setDebtFormError(sanitizeDatabaseErrorMessage(err, 'Database error: Could not save debt record.'));
         }
       }
     } finally {
@@ -943,7 +944,7 @@ export const DebtView: React.FC = () => {
             await data.deleteDebt(deleteTargetId);
             setDeleteTargetId(null);
           } catch (err) {
-            setDeleteDebtError(err instanceof Error ? err.message : 'Database error: Could not delete debt.');
+            setDeleteDebtError(sanitizeDatabaseErrorMessage(err, 'Database error: Could not delete debt.'));
           } finally {
             setIsDeletingDebt(false);
           }
@@ -970,7 +971,7 @@ export const DebtView: React.FC = () => {
             await data.deleteDebtRepayment(deleteRepaymentId);
             setDeleteRepaymentId(null);
           } catch (err) {
-            setDeleteRepaymentError(err instanceof Error ? err.message : 'Database error: Could not delete repayment.');
+            setDeleteRepaymentError(sanitizeDatabaseErrorMessage(err, 'Database error: Could not delete repayment.'));
           } finally {
             setIsDeletingRepayment(false);
           }

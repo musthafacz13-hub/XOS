@@ -434,7 +434,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await supabase.auth.signOut();
       }
     } catch (err) {
-      console.warn('Sign out caught:', err);
+      if (import.meta.env?.DEV) {
+        console.warn('Sign out caught:', err);
+      }
     } finally {
       completedUserIdRef.current = null;
       inFlightHydrationRef.current = null;

@@ -11,6 +11,15 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { useXOSData } from './hooks/useXOSData';
 import { DateRangeFilter } from './types';
 import { clearAuthUrlParams } from './utils/authValidation';
+import {
+  applySeoConfig,
+  getPathForAuthRoute,
+  getPublicOrAuthSeoConfig,
+  getWorkspaceSeoConfig,
+  normalizePathname,
+  PublicOrAuthRoute,
+  resolveAuthRouteFromLocation
+} from './utils/seo';
 
 // Lazy-loaded Workspace Views
 const DashboardView = lazy(() =>
@@ -67,16 +76,11 @@ const AuthCallbackView = lazy(() =>
 const QuickActionModal = lazy(() =>
   import('./components/modals/QuickActionModal').then(m => ({ default: m.QuickActionModal }))
 );
+const NotFoundView = lazy(() =>
+  import('./components/common/NotFoundView').then(m => ({ default: m.NotFoundView }))
+);
 
-export type AuthRoute = 
-  | 'welcome' 
-  | 'login' 
-  | 'signup' 
-  | 'magic-link' 
-  | 'forgot-password' 
-  | 'reset-password' 
-  | 'verify-email' 
-  | 'callback';
+export type AuthRoute = PublicOrAuthRoute;
 
 const AuthRouteFallback: React.FC = () => (
   <div className="min-h-screen min-h-[100dvh] bg-white flex items-center justify-center p-4" aria-busy="true">
@@ -100,63 +104,32 @@ const WorkspaceViewFallback: React.FC = () => (
 
 const TAB_TRANSITION = { duration: 0.14, ease: [0.16, 1, 0.3, 1] as const };
 
-function setRobotsMeta(content: 'index, follow' | 'noindex, nofollow') {
-  if (typeof document === 'undefined') return;
-  let meta = document.querySelector('meta[name="robots"]') as HTMLMetaElement | null;
-  if (!meta) {
-    meta = document.createElement('meta');
-    meta.name = 'robots';
-    document.head.appendChild(meta);
-  }
-  if (meta.content !== content) {
-    meta.content = content;
-  }
-}
-
-function getAuthRouteTitle(route: AuthRoute): string {
-  switch (route) {
-    case 'welcome':
-      return 'XOS — Personal Life Operating System';
-    case 'login':
-      return 'Sign In — XOS';
-    case 'signup':
-      return 'Create Account — XOS';
-    case 'magic-link':
-      return 'Magic Link Sign In — XOS';
-    case 'forgot-password':
-      return 'Reset Password — XOS';
-    case 'reset-password':
-      return 'Set New Password — XOS';
-    case 'verify-email':
-      return 'Verify Email — XOS';
-    case 'callback':
-      return 'Signing In — XOS';
-  }
-}
-
 function XOSApplication() {
   const data = useXOSData();
   const { user, loading, initError, retryInitialization, dismissInitError, isPasswordRecovery } = useAuth();
 
-  // Authentication Navigation State
+  // Authentication & Public Navigation State
   const [authRoute, setAuthRoute] = useState<AuthRoute>(() => {
     if (typeof window === 'undefined') return 'welcome';
-    const hash = window.location.hash;
-    const search = window.location.search;
-    const pathname = window.location.pathname;
-
-    if (hash.includes('type=recovery') || search.includes('type=recovery')) {
-      return 'reset-password';
-    }
-    if (search.includes('code=') || hash.includes('access_token=') || pathname === '/auth/callback') {
-      return 'callback';
-    }
-    if (hash === '#login') return 'login';
-    if (hash === '#signup') return 'signup';
-    if (hash === '#magic-link') return 'magic-link';
-    if (hash === '#forgot-password') return 'forgot-password';
-    return 'welcome';
+    return resolveAuthRouteFromLocation(window.location);
   });
+
+  // Normalize /index.html or trailing slash duplicate URLs and sync browser Back/Forward
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const rawPath = window.location.pathname || '/';
+    const normalized = normalizePathname(rawPath);
+    if (rawPath === '/index.html' || (rawPath.length > 1 && rawPath.endsWith('/'))) {
+      const targetUrl = `${normalized}${window.location.search}${window.location.hash}` || '/';
+      window.history.replaceState(null, '', targetUrl);
+    }
+
+    const handlePopState = () => {
+      setAuthRoute(resolveAuthRouteFromLocation(window.location));
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const [registeredEmail, setRegisteredEmail] = useState<string>('');
 
@@ -190,11 +163,36 @@ function XOSApplication() {
   const isAuthenticated = Boolean(user);
   const showingAuthScreen = !isAuthenticated || authRoute === 'callback' || authRoute === 'reset-password';
 
+  const navigateAuthRoute = useCallback((nextRoute: Exclude<AuthRoute, 'not-found'>) => {
+    setAuthRoute(nextRoute);
+    if (typeof window !== 'undefined' && typeof window.history?.pushState === 'function') {
+      const targetPath = getPathForAuthRoute(nextRoute);
+      const currentNormalized = normalizePathname(window.location.pathname);
+      if (currentNormalized !== targetPath || window.location.hash) {
+        try {
+          window.history.pushState(null, '', targetPath);
+        } catch {
+          // Ignore history API restrictions in embedded contexts
+        }
+      }
+    }
+  }, []);
+
   // Clean auth URL parameters/hashes once authenticated in workspace,
   // and ensure signing out resets stale callback/verify routes back to welcome.
   useEffect(() => {
     if (isAuthenticated && !showingAuthScreen) {
       clearAuthUrlParams();
+      if (typeof window !== 'undefined' && typeof window.history?.replaceState === 'function') {
+        const currentPath = normalizePathname(window.location.pathname);
+        if (currentPath !== '/') {
+          try {
+            window.history.replaceState(null, '', `/${window.location.search}${window.location.hash}`);
+          } catch {
+            // Ignore history restrictions
+          }
+        }
+      }
       if (authRoute !== 'welcome') {
         setAuthRoute('welcome');
       }
@@ -203,34 +201,32 @@ function XOSApplication() {
 
   const navigateWelcome = useCallback(() => {
     clearAuthUrlParams();
-    setAuthRoute('welcome');
-  }, []);
+    navigateAuthRoute('welcome');
+  }, [navigateAuthRoute]);
 
   const navigateLogin = useCallback(() => {
-    setAuthRoute('login');
-  }, []);
+    navigateAuthRoute('login');
+  }, [navigateAuthRoute]);
 
   const navigateResetPassword = useCallback(() => {
-    setAuthRoute('reset-password');
-  }, []);
+    navigateAuthRoute('reset-password');
+  }, [navigateAuthRoute]);
 
-  // Route-accurate SEO title & robots indexability (never expose private user info)
+  // Route-accurate SEO title, description, canonical & robots indexability (never expose private user info)
   useEffect(() => {
     if (loading) {
-      document.title = 'XOS — Personal Life Operating System';
+      applySeoConfig(getPublicOrAuthSeoConfig(authRoute));
       return;
     }
     if (showingAuthScreen) {
-      document.title = getAuthRouteTitle(authRoute);
-      setRobotsMeta(authRoute === 'welcome' ? 'index, follow' : 'noindex, nofollow');
+      applySeoConfig(getPublicOrAuthSeoConfig(authRoute));
       return;
     }
     const navLabel =
       activeTab === 'savings'
         ? 'Goals & Savings'
         : NAV_ITEMS.find(item => item.id === activeTab)?.label || 'Dashboard';
-    document.title = `${navLabel} — XOS`;
-    setRobotsMeta('noindex, nofollow');
+    applySeoConfig(getWorkspaceSeoConfig(navLabel));
   }, [loading, showingAuthScreen, authRoute, activeTab]);
 
   // 1. Initial Session Loading & Error Recovery Splash Screen
@@ -257,14 +253,14 @@ function XOSApplication() {
           {authRoute === 'welcome' && (
             <WelcomeView 
               key="welcome" 
-              onNavigate={(route) => setAuthRoute(route)} 
+              onNavigate={(route) => navigateAuthRoute(route)} 
             />
           )}
 
           {authRoute === 'login' && (
             <LoginView
               key="login"
-              onNavigate={setAuthRoute}
+              onNavigate={navigateAuthRoute}
               onSuccess={navigateWelcome}
             />
           )}
@@ -272,7 +268,7 @@ function XOSApplication() {
           {authRoute === 'signup' && (
             <SignUpView
               key="signup"
-              onNavigate={setAuthRoute}
+              onNavigate={navigateAuthRoute}
               onSuccess={navigateWelcome}
               onSetRegisteredEmail={setRegisteredEmail}
             />
@@ -281,14 +277,14 @@ function XOSApplication() {
           {authRoute === 'magic-link' && (
             <MagicLinkView
               key="magic-link"
-              onNavigate={setAuthRoute}
+              onNavigate={navigateAuthRoute}
             />
           )}
 
           {authRoute === 'forgot-password' && (
             <ForgotPasswordView
               key="forgot-password"
-              onNavigate={setAuthRoute}
+              onNavigate={navigateAuthRoute}
             />
           )}
 
@@ -313,6 +309,14 @@ function XOSApplication() {
               key="callback"
               onSuccess={navigateWelcome}
               onPasswordRecovery={navigateResetPassword}
+              onNavigateLogin={navigateLogin}
+            />
+          )}
+
+          {authRoute === 'not-found' && (
+            <NotFoundView
+              key="not-found"
+              onNavigateHome={navigateWelcome}
               onNavigateLogin={navigateLogin}
             />
           )}

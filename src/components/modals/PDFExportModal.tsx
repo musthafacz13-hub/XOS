@@ -22,6 +22,7 @@ import { modalBackdropVariants, modalContentVariants } from '../../utils/motion'
 import { DateFilterPreset } from '../../types';
 import { getTodayString } from '../../utils/formatters';
 import { resolveGoalsWithSavings } from '../../utils/calculations';
+import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
 
 interface PDFExportModalProps {
   isOpen: boolean;
@@ -144,8 +145,10 @@ export const PDFExportModal: React.FC<PDFExportModalProps> = ({
         onClose();
       }, 1600);
     } catch (err) {
-      console.error('PDF export failed:', err);
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to generate PDF. Please try again.');
+      if (import.meta.env?.DEV) {
+        console.error('PDF export failed:', err);
+      }
+      setErrorMessage(sanitizeDatabaseErrorMessage(err, 'Failed to generate PDF. Please try again.'));
     } finally {
       setIsGenerating(false);
     }
