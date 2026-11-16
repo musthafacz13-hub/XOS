@@ -1,6 +1,6 @@
 /**
  * Authentication Context & Provider for XOS
- * Manages Supabase session, user state, authentication flows, and demo bypass mode.
+ * Manages Supabase session, user state, and authentication flows.
  */
 import React, { createContext, useContext, useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
@@ -19,7 +19,6 @@ export interface AuthContextType {
   loading: boolean;
   initError: string | null;
   isConfigured: boolean;
-  isDemoUser: boolean;
   isPasswordRecovery: boolean;
   loginWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
   signUpWithEmail: (email: string, password: string, fullName: string) => Promise<{ error: string | null; needsEmailVerification?: boolean }>;
@@ -28,8 +27,6 @@ export interface AuthContextType {
   requestPasswordReset: (email: string) => Promise<{ error: string | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
-  enterDemoMode: () => void;
-  exitDemoMode: () => void;
   clearPasswordRecoveryFlag: () => void;
   retryInitialization: () => Promise<void>;
   dismissInitError: () => void;
@@ -37,35 +34,22 @@ export interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const DEMO_USER_KEY = 'xos_demo_guest_active';
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [initError, setInitError] = useState<string | null>(null);
-  const [isDemoUser, setIsDemoUser] = useState<boolean>(() => {
-    try {
-      return sessionStorage.getItem(DEMO_USER_KEY) === 'true';
-    } catch {
-      return false;
-    }
-  });
   const [isPasswordRecovery, setIsPasswordRecovery] = useState<boolean>(false);
 
   const inFlightHydrationRef = useRef<{ userId: string; promise: Promise<void> } | null>(null);
   const completedUserIdRef = useRef<string | null>(null);
   const mountedRef = useRef<boolean>(true);
-  const isDemoUserRef = useRef<boolean>(isDemoUser);
-
-  useEffect(() => {
-    isDemoUserRef.current = isDemoUser;
-  }, [isDemoUser]);
 
   // Apply auth email & fallback display name AFTER DB hydration without overwriting persisted profile
   const applyAuthProfileFallback = useCallback((u: User) => {
     const currentSettings = repository.getSettings();
-    const fallbackName = u.user_metadata?.full_name || u.email?.split('@')[0] || 'XOS User';
+    const fallbackName =
+      u.user_metadata?.display_name || u.user_metadata?.full_name || u.email?.split('@')[0] || 'XOS User';
     const email = u.email || '';
     const nextName = currentSettings.profile.name || fallbackName;
 
@@ -126,9 +110,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const initializeSession = useCallback(async () => {
     if (!isSupabaseConfigured) {
-      if (isDemoUserRef.current) {
-        repository.loadDemoData();
-      }
       if (mountedRef.current) {
         setInitError(null);
         setLoading(false);
@@ -158,14 +139,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (initialSession?.user) {
         setSession(initialSession);
         setUser(initialSession.user);
-        setIsDemoUser(false);
-        isDemoUserRef.current = false;
-        try {
-          sessionStorage.removeItem(DEMO_USER_KEY);
-        } catch {}
         await ensureUserHydrated(initialSession.user);
-      } else if (isDemoUserRef.current) {
-        repository.loadDemoData();
       }
 
       if (mountedRef.current) {
@@ -189,9 +163,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (!isSupabaseConfigured) {
-      if (isDemoUserRef.current) {
-        repository.loadDemoData();
-      }
       setLoading(false);
       return () => {
         mountedRef.current = false;
@@ -219,12 +190,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setSession(currentSession);
       setUser(currentSession.user);
-      setIsDemoUser(false);
-      isDemoUserRef.current = false;
       setInitError(null);
-      try {
-        sessionStorage.removeItem(DEMO_USER_KEY);
-      } catch {}
     });
 
     initializeSession();
@@ -248,8 +214,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
     const cleanEmail = normalizeAuthEmail(email);
-    // Coalesce duplicate in-flight login requests (e.g. double-click submit)
-    return apiOptimization.coalesce(`auth:login:${cleanEmail}`, async () => {
+    let credentialDigest = 5381;
+    const rawCredential = `${cleanEmail}\0${password}`;
+    for (let i = 0; i < rawCredential.length; i++) {
+      credentialDigest = ((credentialDigest << 5) + credentialDigest) ^ rawCredential.charCodeAt(i);
+    }
+    // Coalesce duplicate in-flight login requests with the same credentials while isolating different passwords
+    return apiOptimization.coalesce(`auth:login:${cleanEmail}:${credentialDigest >>> 0}`, async () => {
       try {
         const { data, error } = await supabase.auth.signInWithPassword({
           email: cleanEmail,
@@ -266,9 +237,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         setSession(data.session);
         setUser(data.user);
-        setIsDemoUser(false);
-        isDemoUserRef.current = false;
-        try { sessionStorage.removeItem(DEMO_USER_KEY); } catch {}
         apiOptimization.invalidateCache();
         await ensureUserHydrated(data.user);
 
@@ -295,6 +263,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           password,
           options: {
             data: {
+              display_name: fullName.trim(),
               full_name: fullName.trim()
             },
             emailRedirectTo: redirectUrl
@@ -317,9 +286,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (data.session && data.user) {
           setSession(data.session);
           setUser(data.user);
-          setIsDemoUser(false);
-          isDemoUserRef.current = false;
-          try { sessionStorage.removeItem(DEMO_USER_KEY); } catch {}
           apiOptimization.invalidateCache();
           await ensureUserHydrated(data.user);
         }
@@ -474,39 +440,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       inFlightHydrationRef.current = null;
       setUser(null);
       setSession(null);
-      setIsDemoUser(false);
-      isDemoUserRef.current = false;
       setIsPasswordRecovery(false);
       apiOptimization.invalidateCache();
       repository.clearUserData();
       clearAuthUrlParams();
-      try {
-        sessionStorage.removeItem(DEMO_USER_KEY);
-      } catch {}
     }
-  }, []);
-
-  const enterDemoMode = useCallback(() => {
-    completedUserIdRef.current = null;
-    inFlightHydrationRef.current = null;
-    repository.clearUserData();
-    repository.loadDemoData();
-    isDemoUserRef.current = true;
-    setIsDemoUser(true);
-    try {
-      sessionStorage.setItem(DEMO_USER_KEY, 'true');
-    } catch {}
-  }, []);
-
-  const exitDemoMode = useCallback(() => {
-    completedUserIdRef.current = null;
-    inFlightHydrationRef.current = null;
-    isDemoUserRef.current = false;
-    setIsDemoUser(false);
-    repository.clearUserData();
-    try {
-      sessionStorage.removeItem(DEMO_USER_KEY);
-    } catch {}
   }, []);
 
   const clearPasswordRecoveryFlag = useCallback(() => {
@@ -528,7 +466,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loading,
     initError,
     isConfigured: isSupabaseConfigured,
-    isDemoUser,
     isPasswordRecovery,
     loginWithPassword,
     signUpWithEmail,
@@ -537,8 +474,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     requestPasswordReset,
     updatePassword,
     signOut,
-    enterDemoMode,
-    exitDemoMode,
     clearPasswordRecoveryFlag,
     retryInitialization,
     dismissInitError
@@ -547,7 +482,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     session,
     loading,
     initError,
-    isDemoUser,
     isPasswordRecovery,
     loginWithPassword,
     signUpWithEmail,
@@ -556,8 +490,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     requestPasswordReset,
     updatePassword,
     signOut,
-    enterDemoMode,
-    exitDemoMode,
     clearPasswordRecoveryFlag,
     retryInitialization,
     dismissInitError

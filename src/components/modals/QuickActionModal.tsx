@@ -3,7 +3,14 @@ import { X, CreditCard, TrendingUp, CalendarCheck, Target, PiggyBank } from 'luc
 import { AnimatePresence, motion } from 'motion/react';
 import { useXOSData } from '../../hooks/useXOSData';
 import { AttendanceStatus, ExpenseCategory, IncomeSource, PaymentMethod } from '../../types';
-import { getTodayString, formatCurrency } from '../../utils/formatters';
+import {
+  getIstTodayString,
+  getTodayString,
+  formatCurrency,
+  calculateWorkingHours,
+  getShiftSpanMinutes,
+  isOvernightShift
+} from '../../utils/formatters';
 import { resolveGoalsWithSavings } from '../../utils/calculations';
 import { modalBackdropVariants, modalContentVariants, MOTION_SPRINGS } from '../../utils/motion';
 
@@ -61,11 +68,11 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   const [incomeNotes, setIncomeNotes] = useState('');
 
   // Attendance State
-  const [attDate, setAttDate] = useState(getTodayString());
+  const [attDate, setAttDate] = useState(getIstTodayString());
   const [attStatus, setAttStatus] = useState<AttendanceStatus>('Present');
-  const [attIn, setAttIn] = useState('09:00');
-  const [attOut, setAttOut] = useState('17:00');
-  const [attBreak, setAttBreak] = useState('30');
+  const [attIn, setAttIn] = useState('');
+  const [attOut, setAttOut] = useState('');
+  const [attBreak, setAttBreak] = useState('');
   const [attNotes, setAttNotes] = useState('');
 
   // Goal State
@@ -95,13 +102,13 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
     }
     const archivedIds = new Set(
       data.goals
-        .filter(g => (g.status === 'Archived' || g.status === 'Paused') && g.savingsGoalId)
+        .filter(g => g.status === 'Archived' && g.savingsGoalId)
         .map(g => g.savingsGoalId as string)
     );
     return Array.from(
       new Map(
         data.savingsGoals
-          .filter(sg => sg && sg.id && !archivedIds.has(sg.id))
+          .filter(sg => sg && sg.id && !sg.isArchived && !archivedIds.has(sg.id))
           .map(sg => [sg.id, sg])
       ).values()
     );
@@ -139,7 +146,11 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       setIncomeDate(nowToday);
       setIncomeTime(nowTime);
       setIncomeNotes('');
-      setAttDate(nowToday);
+      setAttDate(getIstTodayString());
+      setAttStatus('Present');
+      setAttIn('');
+      setAttOut('');
+      setAttBreak('');
       setAttNotes('');
       setGoalTitle('');
       setGoalTargetAmount('');
@@ -230,16 +241,33 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
     }
   };
 
+  const istTodayStr = getIstTodayString();
+
   const handleSaveAttendance = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmittingRef.current || isSubmitting) return;
-    const parsedBreak = attStatus === 'Present' ? Math.max(0, parseInt(attBreak, 10) || 0) : 0;
-    let hours = 8;
-    if (attIn && attOut) {
-      const [inH, inM] = attIn.split(':').map(Number);
-      const [outH, outM] = attOut.split(':').map(Number);
-      const totalMins = (outH * 60 + outM) - (inH * 60 + inM) - parsedBreak;
-      hours = Math.max(0, Number((totalMins / 60).toFixed(2)));
+    if (attDate > getIstTodayString()) {
+      setActionError('Attendance cannot be logged for future dates.');
+      return;
+    }
+    const rawBreak = attBreak.trim();
+    const parsedBreak = attStatus === 'Present' ? (rawBreak === '' ? 0 : Number(rawBreak)) : 0;
+    let hours = 0;
+    if (attStatus === 'Present') {
+      if (!attIn || !attOut) {
+        setActionError('Please enter both In Time and Out Time.');
+        return;
+      }
+      if (!Number.isFinite(parsedBreak) || parsedBreak < 0) {
+        setActionError('Break duration must be zero or a positive number.');
+        return;
+      }
+      const shiftMins = getShiftSpanMinutes(attIn, attOut);
+      if (parsedBreak >= shiftMins) {
+        setActionError('Break duration must be shorter than total shift duration.');
+        return;
+      }
+      hours = calculateWorkingHours(attIn, attOut, parsedBreak);
     }
     isSubmittingRef.current = true;
     setActionError(null);
@@ -599,7 +627,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
                   <label className="block text-xs font-semibold text-neutral-700 mb-1">Date</label>
                   <input
                     type="date"
-                    max={getTodayString()}
+                    max={istTodayStr}
                     value={attDate}
                     onChange={(e) => setAttDate(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
@@ -621,34 +649,45 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
               </div>
 
               {attStatus === 'Present' && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                  <div className="min-w-0">
-                    <label className="block text-[11px] font-semibold text-neutral-700 mb-1">In Time</label>
-                    <input
-                      type="time"
-                      value={attIn}
-                      onChange={(e) => setAttIn(e.target.value)}
-                      className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
-                    />
+                <div className="space-y-2 p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div className="min-w-0">
+                      <label className="block text-[11px] font-semibold text-neutral-700 mb-1">In Time</label>
+                      <input
+                        type="time"
+                        value={attIn}
+                        onChange={(e) => setAttIn(e.target.value)}
+                        className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Out Time</label>
+                      <input
+                        type="time"
+                        value={attOut}
+                        onChange={(e) => setAttOut(e.target.value)}
+                        className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Break (m)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={attBreak}
+                        onChange={(e) => setAttBreak(e.target.value)}
+                        className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
+                      />
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Out Time</label>
-                    <input
-                      type="time"
-                      value={attOut}
-                      onChange={(e) => setAttOut(e.target.value)}
-                      className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Break (m)</label>
-                    <input
-                      type="number"
-                      value={attBreak}
-                      onChange={(e) => setAttBreak(e.target.value)}
-                      className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
-                    />
-                  </div>
+                  <p className="text-[11px] text-neutral-500">
+                    {!attIn || !attOut
+                      ? 'Enter in and out times to calculate hours'
+                      : isOvernightShift(attIn, attOut)
+                        ? `Overnight shift (+1 day) · Net: ${calculateWorkingHours(attIn, attOut, Math.max(0, parseInt(attBreak, 10) || 0))}h`
+                        : `Net working hours: ${calculateWorkingHours(attIn, attOut, Math.max(0, parseInt(attBreak, 10) || 0))}h`}
+                  </p>
                 </div>
               )}
 

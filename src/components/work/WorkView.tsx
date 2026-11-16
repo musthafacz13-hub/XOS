@@ -3,16 +3,22 @@ import { CalendarCheck, Plus, ChevronLeft, ChevronRight, CheckCircle2, Trash2, E
 import { useXOSData } from '../../hooks/useXOSData';
 import { AttendanceRecord, AttendanceStatus } from '../../types';
 import { calculateAttendanceStats } from '../../utils/calculations';
-import { formatHumanDate, getTodayString, calculateWorkingHours } from '../../utils/formatters';
+import {
+  formatHumanDate,
+  getIstTodayString,
+  calculateWorkingHours,
+  getShiftSpanMinutes,
+  isOvernightShift
+} from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 
 export const WorkView: React.FC = () => {
   const data = useXOSData();
 
-  const todayStr = getTodayString();
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
-  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
+  const todayStr = getIstTodayString();
+  const [currentYear, setCurrentYear] = useState(() => Number(todayStr.slice(0, 4)));
+  const [currentMonth, setCurrentMonth] = useState(() => Number(todayStr.slice(5, 7)) - 1);
 
   // Confirmation dialog state
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -30,9 +36,9 @@ export const WorkView: React.FC = () => {
   // Form Fields
   const [date, setDate] = useState(todayStr);
   const [status, setStatus] = useState<AttendanceStatus>('Present');
-  const [checkInTime, setCheckInTime] = useState('09:00');
-  const [checkOutTime, setCheckOutTime] = useState('17:30');
-  const [breakDurationMinutes, setBreakDurationMinutes] = useState('30');
+  const [checkInTime, setCheckInTime] = useState('');
+  const [checkOutTime, setCheckOutTime] = useState('');
+  const [breakDurationMinutes, setBreakDurationMinutes] = useState('');
   const [notes, setNotes] = useState('');
 
   // Escape key handler for modal
@@ -70,7 +76,8 @@ export const WorkView: React.FC = () => {
   );
 
   const openLogModalForDate = (dStr: string) => {
-    if (dStr > todayStr) {
+    const currentIstToday = getIstTodayString();
+    if (dStr > currentIstToday) {
       setPageError('Attendance cannot be logged for future dates.');
       return;
     }
@@ -82,19 +89,19 @@ export const WorkView: React.FC = () => {
       setEditingRecord(existing);
       setDate(existing.date);
       setStatus(existing.status);
-      setCheckInTime(existing.checkInTime || '09:00');
-      setCheckOutTime(existing.checkOutTime || '17:30');
+      setCheckInTime(existing.checkInTime || '');
+      setCheckOutTime(existing.checkOutTime || '');
       setBreakDurationMinutes(
-        String(typeof existing.breakDurationMinutes === 'number' ? existing.breakDurationMinutes : 30)
+        typeof existing.breakDurationMinutes === 'number' ? String(existing.breakDurationMinutes) : ''
       );
       setNotes(existing.notes || '');
     } else {
       setEditingRecord(null);
       setDate(dStr);
       setStatus('Present');
-      setCheckInTime('09:00');
-      setCheckOutTime('17:30');
-      setBreakDurationMinutes('30');
+      setCheckInTime('');
+      setCheckOutTime('');
+      setBreakDurationMinutes('');
       setNotes('');
     }
     setIsModalOpen(true);
@@ -121,11 +128,26 @@ export const WorkView: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmittingRef.current || isSubmitting) return;
+    const currentIstToday = getIstTodayString();
+    if (date > currentIstToday) {
+      setFormError('Attendance cannot be logged for future dates.');
+      return;
+    }
     let hours = 0;
-    const parsedBreak = status === 'Present' ? parseInt(breakDurationMinutes, 10) || 0 : 0;
+    const rawBreak = breakDurationMinutes.trim();
+    const parsedBreak = status === 'Present' ? (rawBreak === '' ? 0 : Number(rawBreak)) : 0;
     if (status === 'Present') {
-      if (parsedBreak < 0) {
-        setFormError('Break duration cannot be negative.');
+      if (!checkInTime || !checkOutTime) {
+        setFormError('Please enter both Check-In and Check-Out times.');
+        return;
+      }
+      if (!Number.isFinite(parsedBreak) || parsedBreak < 0) {
+        setFormError('Break duration must be zero or a positive number.');
+        return;
+      }
+      const shiftMins = getShiftSpanMinutes(checkInTime, checkOutTime);
+      if (parsedBreak >= shiftMins) {
+        setFormError('Break duration must be shorter than total shift duration.');
         return;
       }
       hours = calculateWorkingHours(checkInTime, checkOutTime, parsedBreak);
@@ -567,12 +589,20 @@ export const WorkView: React.FC = () => {
                       setEditingRecord(existingForDate);
                       if (existingForDate) {
                         setStatus(existingForDate.status);
-                        setCheckInTime(existingForDate.checkInTime || '09:00');
-                        setCheckOutTime(existingForDate.checkOutTime || '17:30');
+                        setCheckInTime(existingForDate.checkInTime || '');
+                        setCheckOutTime(existingForDate.checkOutTime || '');
                         setBreakDurationMinutes(
-                          String(typeof existingForDate.breakDurationMinutes === 'number' ? existingForDate.breakDurationMinutes : 30)
+                          typeof existingForDate.breakDurationMinutes === 'number'
+                            ? String(existingForDate.breakDurationMinutes)
+                            : ''
                         );
                         setNotes(existingForDate.notes || '');
+                      } else {
+                        setStatus('Present');
+                        setCheckInTime('');
+                        setCheckOutTime('');
+                        setBreakDurationMinutes('');
+                        setNotes('');
                       }
                     }}
                     className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
@@ -594,33 +624,49 @@ export const WorkView: React.FC = () => {
               </div>
 
               {status === 'Present' && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                  <div className="min-w-0">
-                    <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Check-In</label>
-                    <input
-                      type="time"
-                      value={checkInTime}
-                      onChange={(e) => setCheckInTime(e.target.value)}
-                      className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
-                    />
+                <div className="space-y-2 p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div className="min-w-0">
+                      <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Check-In</label>
+                      <input
+                        type="time"
+                        value={checkInTime}
+                        onChange={(e) => setCheckInTime(e.target.value)}
+                        className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Check-Out</label>
+                      <input
+                        type="time"
+                        value={checkOutTime}
+                        onChange={(e) => setCheckOutTime(e.target.value)}
+                        className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Break (m)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={breakDurationMinutes}
+                        onChange={(e) => setBreakDurationMinutes(e.target.value)}
+                        className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
+                      />
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Check-Out</label>
-                    <input
-                      type="time"
-                      value={checkOutTime}
-                      onChange={(e) => setCheckOutTime(e.target.value)}
-                      className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Break (m)</label>
-                    <input
-                      type="number"
-                      value={breakDurationMinutes}
-                      onChange={(e) => setBreakDurationMinutes(e.target.value)}
-                      className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
-                    />
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-500 pt-1">
+                    <span>
+                      {!checkInTime || !checkOutTime
+                        ? 'Enter check-in and check-out times to calculate hours'
+                        : isOvernightShift(checkInTime, checkOutTime)
+                          ? `Overnight shift (+1 day) · Net: ${calculateWorkingHours(checkInTime, checkOutTime, Math.max(0, parseInt(breakDurationMinutes, 10) || 0))}h`
+                          : `Net working hours: ${calculateWorkingHours(checkInTime, checkOutTime, Math.max(0, parseInt(breakDurationMinutes, 10) || 0))}h`}
+                    </span>
+                    {editingRecord?.extraHours !== undefined && (
+                      <span>Saved extra hours stay preserved unless hours change</span>
+                    )}
                   </div>
                 </div>
               )}

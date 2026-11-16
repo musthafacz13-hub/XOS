@@ -14,13 +14,22 @@ import {
   calculateAttendanceStats, 
   calculateDailyEarnedSalary,
   calculateMonthlySalarySummary,
+  calculatePeriodSalarySummary,
   calculateEstimatedSalary,
+  calculateFinancialTotals,
   calculateDebtSummary,
   calculateDebtOutstanding,
   calculateSeparateDebtTotals
 } from '../utils/calculations';
-import { formatCurrency } from '../utils/formatters';
+import {
+  formatCurrency,
+  getIstTodayString,
+  getShiftSpanMinutes,
+  isFutureIstDate,
+  isOvernightShift
+} from '../utils/formatters';
 import { repository } from '../services/repository';
+import { DEFAULT_USER_SETTINGS } from '../data/initialData';
 import { AttendanceRecord, SalaryConfig } from '../types';
 
 function assert(condition: boolean, message: string) {
@@ -49,7 +58,8 @@ async function runTests() {
   const config: Partial<SalaryConfig> = {
     dailyBaseSalary: 500,
     standardWorkingHours: 8,
-    extraHourRate: 100
+    extraHourRate: 100,
+    overtimeEnabled: true
   };
 
   // 8 hours Present -> 500
@@ -94,7 +104,27 @@ async function runTests() {
     futureBlocked = true;
   }
   assert(futureBlocked, 'Repository must reject future attendance dates');
-  console.log('✓ Test 2 passed: Future attendance date successfully blocked.');
+
+  // IST (Asia/Kolkata) boundary matrix (independent of browser timezone & DST)
+  const istMatrix: Array<{ utcIso: string; attDate: string; expectAccept: boolean; label: string }> = [
+    { utcIso: '2026-11-15T19:00:00.000Z', attDate: '2026-11-16', expectAccept: true, label: 'Nov 16 12:30 AM IST -> Nov 16' },
+    { utcIso: '2026-11-15T19:30:00.000Z', attDate: '2026-11-16', expectAccept: true, label: 'Nov 16 01:00 AM IST -> Nov 16' },
+    { utcIso: '2026-11-15T23:59:00.000Z', attDate: '2026-11-16', expectAccept: true, label: 'Nov 16 05:29 AM IST -> Nov 16' },
+    { utcIso: '2026-11-16T00:00:00.000Z', attDate: '2026-11-16', expectAccept: true, label: 'Nov 16 05:30 AM IST -> Nov 16' },
+    { utcIso: '2026-11-16T18:29:00.000Z', attDate: '2026-11-16', expectAccept: true, label: 'Nov 16 11:59 PM IST -> Nov 16' },
+    { utcIso: '2026-11-15T19:30:00.000Z', attDate: '2026-11-17', expectAccept: false, label: 'Nov 16 01:00 AM IST -> Nov 17' },
+    { utcIso: '2026-11-15T19:30:00.000Z', attDate: '2026-11-15', expectAccept: true, label: 'Nov 16 01:00 AM IST -> Nov 15' }
+  ];
+  for (const row of istMatrix) {
+    const now = new Date(row.utcIso);
+    const accepted = !isFutureIstDate(row.attDate, now);
+    assert(accepted === row.expectAccept, `IST matrix failed for ${row.label}`);
+  }
+  // DST-independent checks across US spring-forward and fall-back dates
+  assert(getIstTodayString(new Date('2026-03-08T19:00:00.000Z')) === '2026-03-09', 'DST spring-forward IST date is 2026-03-09');
+  assert(getIstTodayString(new Date('2026-11-01T19:00:00.000Z')) === '2026-11-02', 'DST fall-back IST date is 2026-11-02');
+
+  console.log('✓ Test 2 passed: Future attendance date & IST boundary matrix successfully verified.');
 
   // ==========================================
   // TEST 3: Savings Over-Withdrawal Guard
@@ -478,6 +508,87 @@ async function runTests() {
   assert(zeroHourStats.missingHoursCount === 0, 'Explicit 0h Present day is not treated as missing hours');
 
   console.log('✓ Test 10 passed: Payable exclusion & explicit 0h attendance verified.');
+
+  // ==========================================
+  // TEST 11: Audit Fixes (B-04 Cash Deduction, B-07 Breakdown Reconciliation, B-11 Overpaid, N-09 Overnight Shift)
+  // ==========================================
+  console.log('Test 11: Verifying B-04 cash balance, B-07 salary breakdown reconciliation, B-11 overpaid, and N-09 shift span...');
+  {
+    // B-04: Historical deposit to an archived goal still deducts from Available Money
+    const finTotals = calculateFinancialTotals(
+      [{ id: 'inc_1', title: 'Salary', amount: 5000, source: 'Salary', date: '2026-08-01', createdAt: '2026-08-01' }],
+      [{ id: 'exp_1', title: 'Rent', amount: 1500, category: 'Housing', date: '2026-08-02', paymentMethod: 'Bank Transfer', createdAt: '2026-08-02' }],
+      [{ id: 'sg_active', name: 'Active', targetAmount: 2000, currentAmount: 500, createdAt: '2026-08-01' }],
+      [
+        { id: 'st_active', savingsGoalId: 'sg_active', amount: 500, type: 'deposit', date: '2026-08-03', createdAt: '2026-08-03' },
+        { id: 'st_archived', savingsGoalId: 'sg_archived_goal', amount: 800, type: 'deposit', date: '2026-08-04', createdAt: '2026-08-04' }
+      ]
+    );
+    assertClose(finTotals.availableBalance, 2200, 'B-04: Available balance deducts deposits from archived goals too (5000 - 1500 - 1300 = 2200)');
+
+    // B-07: calculateEstimatedSalary breakdown sums strictly reconcile to grossSalary across snapshots & overrides
+    const mixedCfg: SalaryConfig = {
+      currency: 'INR',
+      dailyBaseSalary: 500,
+      addonSalary: 50,
+      addonEnabled: true,
+      standardWorkingHours: 8,
+      extraHourRate: 100,
+      overtimeEnabled: true
+    };
+    const mixedRecords: AttendanceRecord[] = [
+      { id: 'm1', date: '2026-08-01', status: 'Present', calculatedHours: 10, dailyBaseSalary: 600, addonSalary: 100, addonEnabled: true, extraHourRate: 150, overtimeEnabled: true }, // 600+100+300 = 1000
+      { id: 'm2', date: '2026-08-02', status: 'Present', calculatedHours: 8, salaryOverrideEnabled: true, salaryOverrideAmount: 1250, dailyBaseSalary: 500, addonSalary: 50, addonEnabled: true, extraHourRate: 100, overtimeEnabled: true } // override 1250 vs formula 550 (+700 adj)
+    ];
+    const est = calculateEstimatedSalary(mixedCfg, mixedRecords, '2026-08');
+    assertClose(est.grossSalary, 2250, 'B-07: Mixed snapshot + override grossSalary matches sum of days');
+    assert(est.breakdown.some(line => line.includes('Manual Day Adjustments = +700.00')), 'B-07: Breakdown includes explicit Manual Day Adjustment line to reconcile to grossSalary');
+
+    // B-11: Overpaid amount exposed while remainingSalary stays clamped to 0
+    const overpaidMonth = calculateMonthlySalarySummary(
+      [{ id: 'ov1', date: '2026-08-01', status: 'Present', calculatedHours: 8, dailyEarnedSalary: 500 }],
+      [{ id: 'p_ov', periodStart: '2026-08-01', periodEnd: '2026-08-31', amountPaid: 800, paidAt: '2026-08-31' }],
+      mixedCfg,
+      '2026-08'
+    );
+    assertClose(overpaidMonth.remainingSalary, 0, 'B-11: remainingSalary clamps to 0 when overpaid');
+    assertClose(overpaidMonth.overpaidAmount, 300, 'B-11: overpaidAmount captures excess payout accurately');
+    const overpaidPeriod = calculatePeriodSalarySummary(
+      [{ id: 'ov1', date: '2026-08-01', status: 'Present', calculatedHours: 8, dailyEarnedSalary: 500 }],
+      [{ id: 'p_ov', periodStart: '2026-08-01', periodEnd: '2026-08-31', amountPaid: 800, paidAt: '2026-08-31' }],
+      mixedCfg,
+      'all'
+    );
+    assertClose(overpaidPeriod.overpaidAmount, 300, 'B-11: Period summary captures excess payout accurately');
+
+    // N-09: Overnight shift span detection
+    assert(isOvernightShift('22:00', '06:00') === true, 'N-09: 22:00 -> 06:00 detected as overnight shift');
+    assert(getShiftSpanMinutes('22:00', '06:00') === 480, 'N-09: 22:00 -> 06:00 span equals 480 minutes');
+    assert(isOvernightShift('09:00', '17:30') === false, 'N-09: 09:00 -> 17:30 is not overnight');
+  }
+  console.log('✓ Test 11 passed: Audit math & shift helpers verified.');
+
+  // ==========================================
+  // TEST 12: Clean Initial Unconfigured Salary State
+  // ==========================================
+  console.log('Test 12: Clean initial unconfigured salary calculation yields 0 without sample defaults...');
+  {
+    const unconfiguredDaily = calculateDailyEarnedSalary('Present', 8, {});
+    assert(unconfiguredDaily.extraHours === 0, 'Unconfigured daily calculation produces 0 extraHours');
+    assert(unconfiguredDaily.dailyEarnedSalary === 0, 'Unconfigured daily calculation produces 0 earned salary (no 500/8/100 fallback)');
+
+    const emptyMonth = calculateMonthlySalarySummary([], [], DEFAULT_USER_SETTINGS.salaryConfig, '2026-08');
+    assert(emptyMonth.earnedSalary === 0, 'Empty month unconfigured earnedSalary is 0');
+    assert(emptyMonth.isConfigured === false, 'Empty month reports isConfigured === false');
+
+    const emptyEst = calculateEstimatedSalary(DEFAULT_USER_SETTINGS.salaryConfig, [], '2026-08');
+    assert(emptyEst.isConfigured === false, 'Empty estimate reports isConfigured === false');
+    assert(emptyEst.grossSalary === 0, 'Empty estimate grossSalary is 0');
+    assert(emptyEst.dailyBaseSalary === undefined, 'Empty estimate leaves dailyBaseSalary undefined');
+    assert(emptyEst.standardWorkingHours === undefined, 'Empty estimate leaves standardWorkingHours undefined');
+    assert(emptyEst.extraHourRate === undefined, 'Empty estimate leaves extraHourRate undefined');
+  }
+  console.log('✓ Test 12 passed: Clean initial unconfigured salary state verified.');
 
   console.log('\n======================================================');
   console.log('--- ALL XOS TEST SUITE CASES PASSED SUCCESSFULLY! ---');

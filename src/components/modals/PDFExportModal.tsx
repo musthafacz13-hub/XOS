@@ -95,9 +95,21 @@ export const PDFExportModal: React.FC<PDFExportModalProps> = ({
   };
 
   const handleExportPDF = async () => {
-    setIsGenerating(true);
     setErrorMessage(null);
     setIsSuccess(false);
+
+    if (datePreset === 'custom') {
+      if (!customStartDate && !customEndDate) {
+        setErrorMessage('Please select a start date or end date for the Custom date range.');
+        return;
+      }
+      if (customStartDate && customEndDate && customStartDate > customEndDate) {
+        setErrorMessage('Start date cannot be after end date.');
+        return;
+      }
+    }
+
+    setIsGenerating(true);
 
     try {
       const bounds = getDateBounds();
@@ -145,12 +157,12 @@ export const PDFExportModal: React.FC<PDFExportModalProps> = ({
   const totalAttendanceRecords = data.attendance.length;
   const archivedSavingsIds = new Set(
     data.goals
-      .filter(g => (g.status === 'Archived' || g.status === 'Paused') && g.savingsGoalId)
+      .filter(g => g.status === 'Archived' && g.savingsGoalId)
       .map(g => g.savingsGoalId as string)
   );
   const totalSavingsGoalsCount = new Set(
     data.savingsGoals
-      .filter(sg => sg && sg.id && !archivedSavingsIds.has(sg.id))
+      .filter(sg => sg && sg.id && !sg.isArchived && !archivedSavingsIds.has(sg.id))
       .map(sg => sg.id)
   ).size;
   const totalGoals = resolveGoalsWithSavings(data.goals, data.savingsGoals).length;

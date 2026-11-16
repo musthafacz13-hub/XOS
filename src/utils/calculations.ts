@@ -15,11 +15,12 @@ import { formatDate, getMonthString, parseCalendarDate } from './formatters';
 
 export function filterRecordsByDateRange<T extends { date: string }>(
   records: T[],
-  preset: DateFilterPreset,
+  preset: DateFilterPreset | 'all',
   customStart?: string,
   customEnd?: string,
   referenceDate: Date = new Date()
 ): T[] {
+  if (preset === 'all') return records;
   const today = referenceDate;
   const todayIso = formatDate(today, 'YYYY-MM-DD');
 
@@ -107,13 +108,27 @@ export function calculateAttendanceStats(
   return calculateAttendanceStatsForRecords(monthRecords, expectedDailyHours);
 }
 
+export function isSalaryConfigured(config?: Partial<SalaryConfig> | null): boolean {
+  if (!config) return false;
+  if (config.isConfigured === false) return false;
+  return (
+    typeof config.dailyBaseSalary === 'number' &&
+    Number.isFinite(config.dailyBaseSalary) &&
+    config.dailyBaseSalary >= 0 &&
+    typeof config.standardWorkingHours === 'number' &&
+    Number.isFinite(config.standardWorkingHours) &&
+    config.standardWorkingHours > 0
+  );
+}
+
 export interface EstimatedSalaryResult {
-  dailyBaseSalary: number;
+  dailyBaseSalary?: number;
   addonSalary: number;
   addonEnabled: boolean;
-  standardWorkingHours: number;
-  extraHourRate: number;
+  standardWorkingHours?: number;
+  extraHourRate?: number;
   overtimeEnabled: boolean;
+  isConfigured: boolean;
   presentDays: number;
   absentDays: number;
   leaveDays: number;
@@ -130,15 +145,27 @@ export function calculateEstimatedSalary(
   attendanceRecords: AttendanceRecord[],
   monthStr: string = getMonthString()
 ): EstimatedSalaryResult {
-  const dailyBaseSalary = typeof config.dailyBaseSalary === 'number' ? config.dailyBaseSalary : 500;
-  const addonSalary = typeof config.addonSalary === 'number' ? config.addonSalary : 0;
+  const configured = isSalaryConfigured(config);
+  const dailyBaseSalary =
+    typeof config.dailyBaseSalary === 'number' && Number.isFinite(config.dailyBaseSalary)
+      ? config.dailyBaseSalary
+      : undefined;
+  const addonSalary =
+    typeof config.addonSalary === 'number' && Number.isFinite(config.addonSalary)
+      ? config.addonSalary
+      : 0;
   const addonEnabled = typeof config.addonEnabled === 'boolean' ? config.addonEnabled : false;
   const standardWorkingHours =
-    typeof config.standardWorkingHours === 'number' && config.standardWorkingHours > 0
+    typeof config.standardWorkingHours === 'number' &&
+    Number.isFinite(config.standardWorkingHours) &&
+    config.standardWorkingHours > 0
       ? config.standardWorkingHours
-      : 8;
-  const extraHourRate = typeof config.extraHourRate === 'number' ? config.extraHourRate : 100;
-  const overtimeEnabled = typeof config.overtimeEnabled === 'boolean' ? config.overtimeEnabled : true;
+      : undefined;
+  const extraHourRate =
+    typeof config.extraHourRate === 'number' && Number.isFinite(config.extraHourRate)
+      ? config.extraHourRate
+      : undefined;
+  const overtimeEnabled = typeof config.overtimeEnabled === 'boolean' ? config.overtimeEnabled : false;
 
   const monthRecords = attendanceRecords.filter(r => r.date && r.date.startsWith(monthStr));
   let presentDays = 0;
@@ -148,24 +175,63 @@ export function calculateEstimatedSalary(
   let totalWorkingHours = 0;
   let overtimeHours = 0;
   let grossSalary = 0;
+  let actualBaseTotal = 0;
+  let actualAddonTotal = 0;
+  let actualOvertimeTotal = 0;
+  let actualOverrideDelta = 0;
+  let usedSnapshotRates = false;
 
   monthRecords.forEach(r => {
     if (r.status === 'Present') {
       presentDays += 1;
       const hours = r.calculatedHours || 0;
+      const dayBase = typeof r.dailyBaseSalary === 'number' ? r.dailyBaseSalary : (dailyBaseSalary ?? 0);
+      const dayAddon = typeof r.addonSalary === 'number' ? r.addonSalary : addonSalary;
+      const dayAddonEnabled = typeof r.addonEnabled === 'boolean' ? r.addonEnabled : addonEnabled;
+      const dayExtraRate = typeof r.extraHourRate === 'number' ? r.extraHourRate : (extraHourRate ?? 0);
+      const dayOvertimeEnabled = typeof r.overtimeEnabled === 'boolean' ? r.overtimeEnabled : overtimeEnabled;
+
+      if (
+        (typeof r.dailyBaseSalary === 'number' &&
+          (dailyBaseSalary === undefined
+            ? r.dailyBaseSalary > 0
+            : Math.abs(r.dailyBaseSalary - dailyBaseSalary) > 0.01)) ||
+        (typeof r.addonEnabled === 'boolean' && r.addonEnabled !== addonEnabled) ||
+        (typeof r.addonSalary === 'number' && Math.abs(r.addonSalary - addonSalary) > 0.01) ||
+        (typeof r.overtimeEnabled === 'boolean' && r.overtimeEnabled !== overtimeEnabled) ||
+        (typeof r.extraHourRate === 'number' &&
+          (extraHourRate === undefined
+            ? r.extraHourRate > 0
+            : Math.abs(r.extraHourRate - extraHourRate) > 0.01))
+      ) {
+        usedSnapshotRates = true;
+      }
+
       const res = calculateDailyEarnedSalary('Present', hours, {
-        dailyBaseSalary: typeof r.dailyBaseSalary === 'number' ? r.dailyBaseSalary : dailyBaseSalary,
-        addonSalary: typeof r.addonSalary === 'number' ? r.addonSalary : addonSalary,
-        addonEnabled: typeof r.addonEnabled === 'boolean' ? r.addonEnabled : addonEnabled,
+        dailyBaseSalary: dayBase,
+        addonSalary: dayAddon,
+        addonEnabled: dayAddonEnabled,
         standardWorkingHours,
-        extraHourRate: typeof r.extraHourRate === 'number' ? r.extraHourRate : extraHourRate,
-        overtimeEnabled: typeof r.overtimeEnabled === 'boolean' ? r.overtimeEnabled : overtimeEnabled,
+        extraHourRate: dayExtraRate,
+        overtimeEnabled: dayOvertimeEnabled,
         salaryOverrideEnabled: Boolean(r.salaryOverrideEnabled),
         salaryOverrideAmount: r.salaryOverrideAmount
       });
+
+      const dayExtra = typeof r.extraHours === 'number' ? r.extraHours : res.extraHours;
+      const dayOtPay = dayOvertimeEnabled ? dayExtra * dayExtraRate : 0;
+      const dayAddonPay = dayAddonEnabled ? dayAddon : 0;
+      const dayFormulaSum = dayBase + dayAddonPay + dayOtPay;
+      const dayEarned = typeof r.dailyEarnedSalary === 'number' ? r.dailyEarnedSalary : res.dailyEarnedSalary;
+
+      actualBaseTotal += dayBase;
+      actualAddonTotal += dayAddonPay;
+      actualOvertimeTotal += dayOtPay;
+      actualOverrideDelta += dayEarned - dayFormulaSum;
+
       totalWorkingHours += hours;
-      overtimeHours += typeof r.extraHours === 'number' ? r.extraHours : res.extraHours;
-      grossSalary += typeof r.dailyEarnedSalary === 'number' ? r.dailyEarnedSalary : res.dailyEarnedSalary;
+      overtimeHours += dayExtra;
+      grossSalary += dayEarned;
     } else if (r.status === 'Absent') {
       absentDays += 1;
     } else if (r.status === 'Leave') {
@@ -177,14 +243,36 @@ export function calculateEstimatedSalary(
 
   const roundedGross = Number(grossSalary.toFixed(2));
   const roundedOvertime = Number(overtimeHours.toFixed(1));
-  const breakdown: string[] = [
-    `Present Days: ${presentDays} × ${dailyBaseSalary.toFixed(2)} = ${(presentDays * dailyBaseSalary).toFixed(2)}`
-  ];
-  if (addonEnabled && addonSalary > 0) {
-    breakdown.push(`Daily Add-on: ${presentDays} × ${addonSalary.toFixed(2)} = ${(presentDays * addonSalary).toFixed(2)}`);
+  const roundedBase = Number(actualBaseTotal.toFixed(2));
+  const roundedAddon = Number(actualAddonTotal.toFixed(2));
+  const roundedOtPay = Number(actualOvertimeTotal.toFixed(2));
+  const roundedOverrideDelta = Number((roundedGross - roundedBase - roundedAddon - roundedOtPay).toFixed(2));
+
+  const breakdown: string[] =
+    !configured && presentDays === 0
+      ? ['Salary configuration not set yet.']
+      : [
+          usedSnapshotRates || dailyBaseSalary === undefined
+            ? `Base Pay (${presentDays} Present days, per-day rates) = ${roundedBase.toFixed(2)}`
+            : `Present Days: ${presentDays} × ${dailyBaseSalary.toFixed(2)} = ${roundedBase.toFixed(2)}`
+        ];
+  if (roundedAddon > 0 || (addonEnabled && addonSalary > 0)) {
+    breakdown.push(
+      usedSnapshotRates
+        ? `Daily Add-on (${presentDays} Present days) = ${roundedAddon.toFixed(2)}`
+        : `Daily Add-on: ${presentDays} × ${addonSalary.toFixed(2)} = ${roundedAddon.toFixed(2)}`
+    );
   }
-  if (overtimeEnabled && roundedOvertime > 0) {
-    breakdown.push(`Extra Hours: ${roundedOvertime.toFixed(1)} hrs × ${extraHourRate.toFixed(2)} = ${(roundedOvertime * extraHourRate).toFixed(2)}`);
+  if (roundedOtPay > 0 || (overtimeEnabled && roundedOvertime > 0)) {
+    breakdown.push(
+      usedSnapshotRates || extraHourRate === undefined
+        ? `Extra Hours (${roundedOvertime.toFixed(1)} hrs, per-day rates) = ${roundedOtPay.toFixed(2)}`
+        : `Extra Hours: ${roundedOvertime.toFixed(1)} hrs × ${extraHourRate.toFixed(2)} = ${roundedOtPay.toFixed(2)}`
+    );
+  }
+  if (Math.abs(roundedOverrideDelta) >= 0.01) {
+    const sign = roundedOverrideDelta > 0 ? '+' : '';
+    breakdown.push(`Manual Day Adjustments = ${sign}${roundedOverrideDelta.toFixed(2)}`);
   }
 
   return {
@@ -194,6 +282,7 @@ export function calculateEstimatedSalary(
     standardWorkingHours,
     extraHourRate,
     overtimeEnabled,
+    isConfigured: configured,
     presentDays,
     absentDays,
     leaveDays,
@@ -264,14 +353,15 @@ export function calculateDailyEarnedSalary(
     };
   }
 
-  const standardHours = typeof config.standardWorkingHours === 'number' && config.standardWorkingHours > 0
-    ? config.standardWorkingHours
-    : 8;
+  const hasStandardHours =
+    typeof config.standardWorkingHours === 'number' &&
+    Number.isFinite(config.standardWorkingHours) &&
+    config.standardWorkingHours > 0;
 
   const dailyBase =
     typeof config.dailyBaseSalary === 'number' && Number.isFinite(config.dailyBaseSalary)
       ? Math.max(0, config.dailyBaseSalary)
-      : 500;
+      : 0;
   const addonSalary =
     typeof config.addonSalary === 'number' && Number.isFinite(config.addonSalary)
       ? Math.max(0, config.addonSalary)
@@ -280,11 +370,13 @@ export function calculateDailyEarnedSalary(
   const extraRate =
     typeof config.extraHourRate === 'number' && Number.isFinite(config.extraHourRate)
       ? Math.max(0, config.extraHourRate)
-      : 100;
-  const overtimeEnabled = typeof config.overtimeEnabled === 'boolean' ? config.overtimeEnabled : true;
+      : 0;
+  const overtimeEnabled = typeof config.overtimeEnabled === 'boolean' ? config.overtimeEnabled : false;
 
   const safeHours = Math.max(0, Number.isFinite(workingHours) ? workingHours : 0);
-  const extraHours = Math.max(0, Number((safeHours - standardHours).toFixed(2)));
+  const extraHours = hasStandardHours
+    ? Math.max(0, Number((safeHours - config.standardWorkingHours!).toFixed(2)))
+    : 0;
   const formulaSalary =
     dailyBase +
     (addonEnabled ? addonSalary : 0) +
@@ -334,7 +426,7 @@ export function calculatePeriodSalarySummary(
   attendanceRecords: AttendanceRecord[],
   payouts: SalaryPayout[],
   config: SalaryConfig,
-  preset: DateFilterPreset = 'this_month',
+  preset: DateFilterPreset | 'all' = 'this_month',
   customStart?: string,
   customEnd?: string,
   referenceDate: Date = new Date()
@@ -384,18 +476,21 @@ export function calculatePeriodSalarySummary(
   );
   const salaryReceived = periodPayouts.reduce((sum, p) => sum + (p.amountPaid || 0), 0);
   const remainingSalary = Math.max(0, Number((totalEarned - salaryReceived).toFixed(2)));
+  const overpaidAmount = Math.max(0, Number((salaryReceived - totalEarned).toFixed(2)));
 
   return {
     earnedSalary: Number(totalEarned.toFixed(2)),
     salaryReceived: Number(salaryReceived.toFixed(2)),
     remainingSalary,
+    overpaidAmount,
     presentDays,
     leaveDays,
     absentDays,
     holidayDays,
     totalWorkingHours: Number(totalWorkingHours.toFixed(1)),
     totalExtraHours: Number(totalExtraHours.toFixed(1)),
-    recordCount: periodRecords.length
+    recordCount: periodRecords.length,
+    isConfigured: isSalaryConfigured(config)
   };
 }
 
@@ -441,13 +536,17 @@ export function calculateMonthlySalarySummary(
       });
       const earnedForDay = typeof r.dailyEarnedSalary === 'number' ? r.dailyEarnedSalary : res.dailyEarnedSalary;
 
+      const cfgBase = typeof config.dailyBaseSalary === 'number' ? config.dailyBaseSalary : undefined;
+      const cfgExtra = typeof config.extraHourRate === 'number' ? config.extraHourRate : undefined;
       if (
         effectiveOverrideEnabled ||
-        (typeof r.dailyBaseSalary === 'number' && Math.abs(r.dailyBaseSalary - config.dailyBaseSalary) > 0.01) ||
-        (typeof r.addonEnabled === 'boolean' && r.addonEnabled !== config.addonEnabled) ||
-        (typeof r.addonSalary === 'number' && Math.abs(r.addonSalary - config.addonSalary) > 0.01) ||
-        (typeof r.overtimeEnabled === 'boolean' && r.overtimeEnabled !== config.overtimeEnabled) ||
-        (typeof r.extraHourRate === 'number' && Math.abs(r.extraHourRate - config.extraHourRate) > 0.01)
+        (typeof r.dailyBaseSalary === 'number' &&
+          (cfgBase === undefined ? r.dailyBaseSalary > 0 : Math.abs(r.dailyBaseSalary - cfgBase) > 0.01)) ||
+        (typeof r.addonEnabled === 'boolean' && r.addonEnabled !== Boolean(config.addonEnabled)) ||
+        (typeof r.addonSalary === 'number' && Math.abs(r.addonSalary - (config.addonSalary ?? 0)) > 0.01) ||
+        (typeof r.overtimeEnabled === 'boolean' && r.overtimeEnabled !== Boolean(config.overtimeEnabled)) ||
+        (typeof r.extraHourRate === 'number' &&
+          (cfgExtra === undefined ? r.extraHourRate > 0 : Math.abs(r.extraHourRate - cfgExtra) > 0.01))
       ) {
         customizedDaysCount += 1;
       }
@@ -467,12 +566,14 @@ export function calculateMonthlySalarySummary(
   const monthPayouts = payouts.filter(p => payoutMatchesMonth(p, monthStr));
   const salaryReceived = monthPayouts.reduce((sum, p) => sum + (p.amountPaid || 0), 0);
   const remainingSalary = Math.max(0, Number((totalEarned - salaryReceived).toFixed(2)));
+  const overpaidAmount = Math.max(0, Number((salaryReceived - totalEarned).toFixed(2)));
 
   return {
     periodMonth: monthStr,
     earnedSalary: Number(totalEarned.toFixed(2)),
     salaryReceived: Number(salaryReceived.toFixed(2)),
     remainingSalary,
+    overpaidAmount,
     presentDays,
     leaveDays,
     absentDays,
@@ -480,7 +581,8 @@ export function calculateMonthlySalarySummary(
     totalWorkingHours: Number(totalWorkingHours.toFixed(1)),
     totalExtraHours: Number(totalExtraHours.toFixed(1)),
     customizedDaysCount,
-    recordCount: monthRecords.length
+    recordCount: monthRecords.length,
+    isConfigured: isSalaryConfigured(config)
   };
 }
 
@@ -513,7 +615,7 @@ export function resolveGoalsWithSavings(
   const resolved: ResolvedGoalItem[] = [];
 
   for (const goal of goals) {
-    if (!goal || goal.status === 'Archived' || goal.status === 'Paused') {
+    if (!goal || goal.status === 'Archived') {
       continue;
     }
 
@@ -527,7 +629,7 @@ export function resolveGoalsWithSavings(
     const rawTarget = goal.targetAmount ?? candidateSg?.targetAmount ?? 0;
     const targetAmount = Math.max(0, Number(rawTarget) || 0);
     const remainingAmount = Math.max(0, Number((targetAmount - savedAmount).toFixed(2)));
-    const isPaused = false;
+    const isPaused = goal.status === 'Paused';
 
     let progressPercentage = 0;
     if (candidateSg && targetAmount > 0) {
@@ -614,7 +716,7 @@ export function calculateGoalStats(goals: Goal[], savingsGoals?: SavingsGoal[]) 
     };
   }
 
-  const visibleGoals = goals.filter(g => g.status !== 'Archived' && g.status !== 'Paused');
+  const visibleGoals = goals.filter(g => g.status !== 'Archived');
   const activeGoals = visibleGoals.filter(g => g.status === 'In Progress' || g.status === 'Not Started');
   const completedGoals = visibleGoals.filter(g => g.status === 'Completed');
   const averageProgress = visibleGoals.length > 0

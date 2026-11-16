@@ -43,7 +43,9 @@ import {
   formatDate,
   formatHumanDate,
   localDateInputToUtcIso,
-  utcTimestampToLocalDate
+  utcTimestampToLocalDate,
+  getIstTodayString,
+  isFutureIstDate
 } from '../utils/formatters';
 import {
   calculateMonthlySalarySummary,
@@ -1167,7 +1169,18 @@ async function runPersistenceTests() {
 
       const dbAttendanceRows: any[] = [];
       const writtenStatuses: string[] = [];
+      const dbSalaryConfig = {
+        user_id: USER_A,
+        daily_base_salary: 500,
+        addon_salary: 0,
+        addon_enabled: false,
+        standard_hours: 8,
+        extra_hour_rate: 100,
+        overtime_enabled: true,
+        currency_code: 'INR'
+      };
       const attClient = createMockSupabase(USER_A, {
+        salary_configs: () => ({ data: dbSalaryConfig, error: null }),
         attendance_records: (ctx) => {
           if (ctx.op === 'upsert') {
             writtenStatuses.push(ctx.payload.status);
@@ -1186,6 +1199,7 @@ async function runPersistenceTests() {
       repository.clearUserData();
       repository.setActiveUserId(USER_A);
       configureRepositoryBackendForTests(attClient, true);
+      await repository.fetchAllUserData(USER_A);
 
       await repository.upsertAttendanceRecord({ date: '2026-05-01', status: 'Present', checkInTime: '09:00', checkOutTime: '18:00', breakDurationMinutes: 0 });
       await repository.upsertAttendanceRecord({ date: '2026-05-02', status: 'Absent' });
@@ -1215,7 +1229,15 @@ async function runPersistenceTests() {
       assert(toDbGoalStatus('In Progress') === 'in_progress', 'In Progress -> in_progress');
       assert(toDbGoalStatus('Completed') === 'completed', 'Completed -> completed');
       assert(toDbGoalStatus('Paused') === 'paused', 'Paused -> paused');
-      assert(fromDbGoalStatus('cancelled') === 'Paused', 'DB cancelled maps safely to Paused');
+      assert(fromDbGoalStatus('cancelled') === 'Archived', 'DB cancelled maps cleanly to Archived');
+      assert(fromDbGoalStatus('paused') === 'Paused', 'DB paused maps cleanly to Paused');
+      let toDbArchivedRejected = false;
+      try {
+        toDbGoalStatus('Archived');
+      } catch {
+        toDbArchivedRejected = true;
+      }
+      assert(toDbArchivedRejected, 'toDbGoalStatus never emits unsupported DB status archived');
       assert(toDbGoalPriority('Low') === 'low' && toDbGoalPriority('Medium') === 'medium' && toDbGoalPriority('High') === 'high', 'Priorities convert to lowercase');
       assert(fromDbGoalPriority('low') === 'Low' && fromDbGoalPriority('medium') === 'Medium' && fromDbGoalPriority('high') === 'High', 'DB priorities hydrate cleanly');
 
@@ -1470,12 +1492,16 @@ async function runPersistenceTests() {
       assert(!repository.getGoals().some(g => g.id === gLow.id), 'Archived goal removed from state');
       assert(!repository.getSavingsGoals().some(sg => sg.id === gLow.savingsGoalId), 'Archived goal connected savings account removed from state');
 
-      // Simulate DB row with cancelled status hydrating cleanly
-      dbGoals.push({ id: 'goal_5', title: 'Cancelled One', description: '', category: 'Life', progress_percentage: 20, priority: 'low', status: 'cancelled', savings_goal_id: 'sg_rpc_2', created_at: '2026-05-01' });
+      // Simulate DB rows with paused & cancelled status hydrating cleanly (cancelled stays excluded as Archived; paused hydrates as Paused)
+      dbGoals.push(
+        { id: 'goal_5', title: 'Cancelled One', description: '', category: 'Life', progress_percentage: 20, priority: 'low', status: 'cancelled', savings_goal_id: 'sg_rpc_2', created_at: '2026-05-01' },
+        { id: 'goal_paused', title: 'Paused One', description: '', category: 'Life', progress_percentage: 20, priority: 'low', status: 'paused', savings_goal_id: 'sg_rpc_2', created_at: '2026-05-01' }
+      );
       repository.clearUserData();
       await repository.fetchAllUserData(USER_A);
       const hydrated = repository.getGoals();
-      assert(hydrated.find(g => g.id === 'goal_5')?.status === 'Paused', 'DB cancelled status hydrates to Paused safely');
+      assert(!hydrated.some(g => g.id === 'goal_5'), 'DB cancelled status is filtered out as Archived on hydrate');
+      assert(hydrated.find(g => g.id === 'goal_paused')?.status === 'Paused', 'DB paused status hydrates to Paused safely');
       assert(hydrated.find(g => g.id === gHigh.id)?.savingsGoalId === 'sg_rpc_3', 'Hydrated Goal preserves required savingsGoalId');
     }
     console.log('✓ Test 18 passed.');
@@ -1638,8 +1664,9 @@ async function runPersistenceTests() {
       repository.setActiveUserId(USER_A);
       configureRepositoryBackendForTests(partialSaveClient, true);
 
-      // Baseline defaults: INR, Monday, dailyBaseSalary = 500
-      assert(repository.getSettings().salaryConfig.dailyBaseSalary === 500, 'Initial dailyBaseSalary is 500');
+      // Clean initial state: INR, Monday, salaryConfig unconfigured (undefined rates, isConfigured=false)
+      assert(repository.getSettings().salaryConfig.dailyBaseSalary === undefined, 'Initial dailyBaseSalary is undefined');
+      assert(repository.getSettings().salaryConfig.isConfigured === false, 'Initial salaryConfig isConfigured is false');
 
       let partialErr: any = null;
       try {
@@ -1651,7 +1678,7 @@ async function runPersistenceTests() {
           customExpenseCategories: ['Food'],
           customIncomeSources: ['Salary'],
           widgets: [{ id: 'w1', name: 'Balance', visible: true, order: 1 }],
-          salaryConfig: { dailyBaseSalary: 999, addonSalary: 0, addonEnabled: false, standardWorkingHours: 9, extraHourRate: 250, overtimeEnabled: true, currency: 'EUR' }
+          salaryConfig: { dailyBaseSalary: 999, addonSalary: 0, addonEnabled: false, standardWorkingHours: 9, extraHourRate: 250, overtimeEnabled: true, currency: 'EUR', isConfigured: true }
         });
       } catch (err) {
         partialErr = err;
@@ -1662,11 +1689,12 @@ async function runPersistenceTests() {
       assert(partialErr.failedSections.some((f: any) => f.section === 'salary_configs'), 'Reports salary_configs failed');
       assert(partialErr.message.includes('Partial save') && partialErr.message.includes('Salary Configuration'), 'Error message explains succeeded vs failed sections');
 
-      // Succeeded sections ARE reconciled into memoryState, while failed salary_configs MUST stay at 500!
+      // Succeeded sections ARE reconciled into memoryState, while failed salary_configs MUST stay unconfigured!
       assert(repository.getSettings().currency === 'EUR', 'Reconciled succeeded user_settings currency EUR');
       assert(repository.getSettings().weekStartDay === 'Sunday', 'Reconciled succeeded user_settings Sunday (0)');
       assert(repository.getSettings().profile.name === 'Updated Name', 'Reconciled succeeded profiles displayName');
-      assert(repository.getSettings().salaryConfig.dailyBaseSalary === 500, 'Failed salary_configs MUST NOT overwrite memoryState with unsaved 999');
+      assert(repository.getSettings().salaryConfig.dailyBaseSalary === undefined, 'Failed salary_configs MUST NOT overwrite memoryState with unsaved 999');
+      assert(repository.getSettings().salaryConfig.isConfigured === false, 'Failed salary_configs preserves unconfigured state');
 
       // Now flip: user_settings fails while salary_configs succeeds
       failUserSettings = true;
@@ -1788,7 +1816,7 @@ async function runPersistenceTests() {
               if (ctx.op === 'delete') tableDeleteCount++;
               return {
                 data: isResetOnBackend
-                  ? { user_id: USER_A, currency_code: 'INR', daily_base_salary: 500, standard_hours: 8, extra_hour_rate: 100 }
+                  ? { user_id: USER_A, currency_code: 'INR', daily_base_salary: null, standard_hours: null, extra_hour_rate: null, overtime_enabled: false, addon_enabled: false, addon_salary: 0 }
                   : dbState.salary_configs,
                 error: null
               };
@@ -1888,7 +1916,11 @@ async function runPersistenceTests() {
       assert(repository.getSettings().currency === 'INR', 'Settings reset to INR default from backend');
       assert(repository.getSettings().dateFormat === 'YYYY-MM-DD', 'Date format reset to default');
       assert(repository.getSettings().weekStartDay === 'Monday', 'Week start reset to default');
-      assert(repository.getSettings().salaryConfig.dailyBaseSalary === 500, 'Salary config reset to default');
+      assert(repository.getSettings().salaryConfig.dailyBaseSalary === undefined, 'Salary config dailyBaseSalary cleared on reset');
+      assert(repository.getSettings().salaryConfig.standardWorkingHours === undefined, 'Salary config standardWorkingHours cleared on reset');
+      assert(repository.getSettings().salaryConfig.extraHourRate === undefined, 'Salary config extraHourRate cleared on reset');
+      assert(repository.getSettings().salaryConfig.overtimeEnabled === false, 'Salary config overtimeEnabled reset to false');
+      assert(repository.getSettings().salaryConfig.isConfigured === false, 'Salary config marked unconfigured after reset');
       assert(repository.getSettings().profile.name === 'Preserved User', 'Preserved profile display_name hydrated from profiles');
       assert(repository.getSettings().profile.email === 'musthafa@test.local', 'Authenticated profile email preserved');
 
@@ -2566,15 +2598,19 @@ async function runPersistenceTests() {
       });
       assert(retriedAtt.date === '2026-09-04' && repository.getAttendance().some(a => a.date === '2026-09-04'), 'Retry after attendance failure succeeds cleanly');
 
-      // 5. User-specific data isolation & user with NO salary_configs row safely hydrates defaults
+      // 5. User-specific data isolation & user with NO salary_configs row safely hydrates unconfigured state
       switchUser(USER_B);
       await repository.fetchAllUserData(USER_B);
       assert(repository.getAttendance().length === 0, 'USER_B has zero attendance records (no USER_A leakage)');
-      assert(repository.getSettings().salaryConfig.dailyBaseSalary === 500, 'USER_B with no salary_configs row safely uses default dailyBaseSalary=500');
-      assert(repository.getSettings().salaryConfig.addonEnabled === false && repository.getSettings().salaryConfig.overtimeEnabled === true, 'USER_B safe default toggles');
+      assert(repository.getSettings().salaryConfig.dailyBaseSalary === undefined, 'USER_B with no salary_configs row keeps dailyBaseSalary undefined');
+      assert(repository.getSettings().salaryConfig.standardWorkingHours === undefined, 'USER_B with no salary_configs row keeps standardWorkingHours undefined');
+      assert(repository.getSettings().salaryConfig.extraHourRate === undefined, 'USER_B with no salary_configs row keeps extraHourRate undefined');
+      assert(repository.getSettings().salaryConfig.addonEnabled === false && repository.getSettings().salaryConfig.overtimeEnabled === false, 'USER_B safe unconfigured toggles');
+      assert(repository.getSettings().salaryConfig.isConfigured === false, 'USER_B salaryConfig isConfigured is false');
 
-      // USER_B saves their own attendance and config without affecting USER_A
-      await repository.upsertAttendanceRecord({ date: '2026-09-01', status: 'Present', calculatedHours: 8 });
+      // USER_B saves their own attendance cleanly (daily_earned = 0 before configuring salary) without affecting USER_A
+      const userBAtt = await repository.upsertAttendanceRecord({ date: '2026-09-01', status: 'Present', calculatedHours: 8 });
+      assert(userBAtt.dailyEarnedSalary === 0, 'Unconfigured USER_B attendance yields 0 dailyEarnedSalary (no fabricated 500 default)');
       assert(dbAttendanceByUser[USER_B].length === 1 && dbAttendanceByUser[USER_A].length === 4, 'USER_B attendance isolated from USER_A');
       assert(currentAuthUser === USER_B, 'Active user check');
     }
@@ -2652,9 +2688,12 @@ async function runPersistenceTests() {
       assert(afterSettings.weekStartDay === 'Monday', 'Week start restored to default when user_settings deleted');
       assert(afterSettings.customExpenseCategories.includes('Food & Dining') && !afterSettings.customExpenseCategories.includes('CustomCatOnly'), 'Expense categories restored to clean defaults (no stale pre-reset categories)');
       assert(afterSettings.customIncomeSources.includes('Salary') && !afterSettings.customIncomeSources.includes('CustomSourceOnly'), 'Income sources restored to clean defaults');
-      assert(afterSettings.salaryConfig.dailyBaseSalary === 500, 'Salary dailyBaseSalary restored to default 500 when salary_configs deleted');
-      assert(afterSettings.salaryConfig.addonEnabled === false && afterSettings.salaryConfig.addonSalary === 0, 'Salary addon config restored to default');
-      assert(afterSettings.salaryConfig.overtimeEnabled === true && afterSettings.salaryConfig.extraHourRate === 100, 'Salary overtime config restored to default');
+      assert(afterSettings.salaryConfig.dailyBaseSalary === undefined, 'Salary dailyBaseSalary cleared to undefined when salary_configs deleted');
+      assert(afterSettings.salaryConfig.standardWorkingHours === undefined, 'Salary standardWorkingHours cleared to undefined when salary_configs deleted');
+      assert(afterSettings.salaryConfig.extraHourRate === undefined, 'Salary extraHourRate cleared to undefined when salary_configs deleted');
+      assert(afterSettings.salaryConfig.addonEnabled === false && afterSettings.salaryConfig.addonSalary === 0, 'Salary addon config restored to disabled 0');
+      assert(afterSettings.salaryConfig.overtimeEnabled === false, 'Salary overtime config restored to disabled');
+      assert(afterSettings.salaryConfig.isConfigured === false, 'Salary config marked unconfigured on reset');
       assert(afterSettings.profile.name === 'Musthafa', 'Authenticated profile preserved after missing-row reset');
     }
     console.log('✓ Test 28 passed.');
@@ -2707,11 +2746,11 @@ async function runPersistenceTests() {
           savings_goal_id: 'sg_arch_2',
           created_at: '2026-06-01T00:00:00Z'
         },
-        // 4) Cancelled goal -> maps to Paused, MUST NOT be counted/shown as Active Goal on Dashboard or Active filter
+        // 4) Cancelled goal -> DB archived status, MUST NOT appear in Goals or Active Goals on Dashboard
         {
           id: 'g_cancelled',
           user_id: USER_A,
-          title: 'Paused Vacation',
+          title: 'Cancelled Vacation',
           category: 'Travel',
           target_amount: 2000,
           progress_percentage: 10,
@@ -2832,8 +2871,36 @@ async function runPersistenceTests() {
       assert(emergencyItem.savedAmount === 400 && emergencyItem.progressPercentage === 40, `Active goal progress derived from linked savings balance (expected 40%, got ${emergencyItem.progressPercentage}%)`);
       assert(emergencyItem.isActive === true, 'Linked in-progress goal is active');
       assert(dupClaimItem.hasValidSavingsLink === false && dupClaimItem.savedAmount === 0, 'Strict 1:1 link prevents duplicate claim double-counting sg_1 balance');
-      assert(initialGoals.find(g => g.id === 'g_cancelled')?.status === 'Paused', 'Cancelled goal maps safely in repository state');
+      assert(!initialGoals.some(g => g.id === 'g_cancelled'), 'Cancelled DB goal excluded as Archived in repository state');
       assert(cancelledItem === undefined, 'Cancelled/archived goal is excluded from resolved active/goal UI lists');
+
+      // Real Paused goal remains visible with isPaused=true and isActive=false (B-01 distinction)
+      const pausedResolved = resolveGoalsWithSavings(
+        [
+          {
+            id: 'g_real_paused',
+            title: 'Real Paused Goal',
+            description: 'Temporary pause',
+            category: 'Travel',
+            targetAmount: 1000,
+            progressPercentage: 25,
+            priority: 'Medium',
+            status: 'Paused',
+            createdAt: '2026-06-01',
+            savingsGoalId: 'sg_real_paused'
+          }
+        ],
+        [
+          {
+            id: 'sg_real_paused',
+            name: 'Real Paused Goal',
+            targetAmount: 1000,
+            currentAmount: 250,
+            createdAt: '2026-06-01'
+          }
+        ]
+      );
+      assert(pausedResolved.length === 1 && pausedResolved[0].isPaused === true && pausedResolved[0].isActive === false, 'Real Paused goal stays in goal list as Paused (not treated as Archived)');
 
       // Editing the goal syncs name & target_amount to linked savings_goals without breaking savings_goal_id or balance
       await repository.updateGoal('g_active_1', {
@@ -3059,8 +3126,397 @@ async function runPersistenceTests() {
     }
     console.log('✓ Test 30 passed.');
 
+    // ==========================================
+    // TEST 31: Audit Bug Fixes Regression (B-05, N-11, N-10, B-12, B-06, N-02, Reset Validation)
+    // ==========================================
+    console.log('Test 31: Verifying B-05, N-11, N-10, B-12, B-06, N-02 & reset validation regressions...');
+    {
+      const uuidDebt = '77777777-7777-4777-8777-777777777777';
+      const uuidPayout = '88888888-8888-4888-8888-888888888888';
+      const uuidIncomeSynced = '99999999-9999-4999-8999-999999999999';
+      const uuidAtt = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+      const dbDebts: any[] = [
+        {
+          id: uuidDebt,
+          user_id: USER_A,
+          person_name: 'Jordan',
+          original_amount: 1000,
+          remaining_amount: 700,
+          lent_date: '2026-05-01',
+          due_date: '2026-06-01',
+          description: '[RECEIVE] Original memo',
+          status: 'partially_paid',
+          created_at: '2026-05-01T00:00:00Z'
+        }
+      ];
+      const dbDebtRepayments: any[] = [
+        {
+          id: 'rep_existing_1',
+          user_id: USER_A,
+          debt_id: uuidDebt,
+          amount: 300,
+          repayment_date: '2026-05-10',
+          payment_method: 'Bank Transfer',
+          created_at: '2026-05-10T00:00:00Z'
+        }
+      ];
+      const dbPayouts: any[] = [
+        {
+          id: uuidPayout,
+          user_id: USER_A,
+          period_start: '2026-05-01',
+          period_end: '2026-05-31',
+          amount_paid: 5000,
+          paid_at: '2026-05-31T00:00:00Z',
+          notes: 'May salary'
+        }
+      ];
+      const dbIncomes: any[] = [
+        {
+          id: uuidIncomeSynced,
+          user_id: USER_A,
+          title: 'Salary May',
+          amount: 5000,
+          source: 'Salary',
+          income_date: '2026-05-31',
+          salary_payout_id: uuidPayout,
+          created_at: '2026-05-31T00:00:00Z'
+        }
+      ];
+      const dbAttendance: any[] = [
+        {
+          id: uuidAtt,
+          user_id: USER_A,
+          attendance_date: '2026-05-05',
+          status: 'present',
+          check_in: '09:00',
+          check_out: '19:30',
+          break_minutes: 30,
+          hours_worked: 10,
+          extra_hours: 2,
+          daily_base_salary: 500,
+          addon_salary: 0,
+          addon_enabled: false,
+          extra_hour_rate: 100,
+          overtime_enabled: true,
+          calculated_salary: 700
+        }
+      ];
+
+      let lastDebtUpdatePayload: any = null;
+      let lastAttendanceUpdatePayload: any = null;
+      let resetRpcResponse: any = { status: 'unexpected_value' };
+
+      const auditClient = createMockSupabase(
+        USER_A,
+        {
+          debts: (ctx) => {
+            if (ctx.op === 'update') {
+              lastDebtUpdatePayload = { ...ctx.payload };
+              dbDebts[0] = { ...dbDebts[0], ...ctx.payload };
+              return { data: dbDebts[0], error: null };
+            }
+            return { data: dbDebts, error: null };
+          },
+          debt_repayments: () => ({ data: dbDebtRepayments, error: null }),
+          salary_payouts: () => ({ data: dbPayouts, error: null }),
+          incomes: () => ({ data: dbIncomes, error: null }),
+          salary_configs: () => ({
+            data: [{
+              user_id: USER_A,
+              daily_base_salary: 500,
+              addon_salary: 0,
+              addon_enabled: false,
+              standard_hours: 12,
+              extra_hour_rate: 100,
+              overtime_enabled: true,
+              currency_code: 'INR'
+            }],
+            error: null
+          }),
+          attendance_records: (ctx) => {
+            if (ctx.op === 'upsert' || ctx.op === 'update') {
+              lastAttendanceUpdatePayload = { ...ctx.payload };
+              const idx = dbAttendance.findIndex(r => r.attendance_date === ctx.payload.attendance_date);
+              if (idx >= 0) {
+                dbAttendance[idx] = { ...dbAttendance[idx], ...ctx.payload };
+                return { data: dbAttendance[idx], error: null };
+              }
+              const inserted = { id: `att_mock_${dbAttendance.length + 1}`, ...ctx.payload };
+              dbAttendance.push(inserted);
+              return { data: inserted, error: null };
+            }
+            return { data: dbAttendance, error: null };
+          }
+        },
+        async (fn) => {
+          if (fn === 'xos_reset_user_data') {
+            return { data: resetRpcResponse, error: null };
+          }
+          return { data: null, error: null };
+        }
+      );
+
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      configureRepositoryBackendForTests(auditClient, true);
+      await repository.fetchAllUserData(USER_A);
+
+      // B-05: Lowering original_amount below already repaid (300) must reject BEFORE DB update
+      let debtUnderRepaidRejected = false;
+      try {
+        await repository.updateDebt(uuidDebt, { original_amount: 200 });
+      } catch (err) {
+        debtUnderRepaidRejected = err instanceof Error && err.message.includes('cannot be less than total repayments');
+      }
+      assert(debtUnderRepaidRejected, 'B-05: updateDebt rejects original_amount < already repaid');
+
+      // B-05 & N-11: Raising original_amount to 1500 updates remaining_amount to 1200 & status='partially_paid', and clearing due_date & notes sends null/cleared
+      await repository.updateDebt(uuidDebt, {
+        original_amount: 1500,
+        due_date: '',
+        notes: ''
+      });
+      assert(lastDebtUpdatePayload?.remaining_amount === 1200, `B-05: updateDebt recomputes remaining_amount (expected 1200, got ${lastDebtUpdatePayload?.remaining_amount})`);
+      assert(lastDebtUpdatePayload?.status === 'partially_paid', 'B-05: updateDebt keeps partially_paid status when repaid > 0');
+      assert(lastDebtUpdatePayload?.due_date === null, 'N-11: clearing due_date sends null to Supabase');
+      const updatedDebtLocal = repository.getDebts().find(d => d.id === uuidDebt)!;
+      assert(updatedDebtLocal.due_date === undefined && !updatedDebtLocal.notes, 'N-11: cleared due_date & notes reflected in hydrated state');
+
+      // N-10: Directly updating or deleting a payout-synced income must be rejected
+      let syncUpdateBlocked = false;
+      try {
+        await repository.updateIncome(uuidIncomeSynced, { amount: 9999 });
+      } catch (err) {
+        syncUpdateBlocked = err instanceof Error && err.message.includes('Salary');
+      }
+      let syncDeleteBlocked = false;
+      try {
+        await repository.deleteIncome(uuidIncomeSynced);
+      } catch (err) {
+        syncDeleteBlocked = err instanceof Error && err.message.includes('Salary');
+      }
+      assert(syncUpdateBlocked && syncDeleteBlocked, 'N-10: Direct mutation of payout-synced income rejected cleanly');
+
+      // B-12: 0 payout rejected even when syncToIncome is false
+      let zeroPayoutBlocked = false;
+      try {
+        await repository.recordSalaryPayout(
+          { periodStart: '2026-06-01', periodEnd: '2026-06-30', amountPaid: 0, paidAt: '2026-06-30' },
+          false
+        );
+      } catch {
+        zeroPayoutBlocked = true;
+      }
+      assert(zeroPayoutBlocked, 'B-12: Zero salary payout blocked even when syncToIncome=false');
+
+      // B-06: Asia/Kolkata IST attendance date validation & exact YYYY-MM-DD payload preservation
+      const istCases = [
+        { label: 'Nov 16 12:30 AM IST', utcIso: '2026-11-15T19:00:00.000Z', date: '2026-11-16', expectedIst: '2026-11-16', allow: true },
+        { label: 'Nov 16 01:00 AM IST', utcIso: '2026-11-15T19:30:00.000Z', date: '2026-11-16', expectedIst: '2026-11-16', allow: true },
+        { label: 'Nov 16 05:29 AM IST', utcIso: '2026-11-15T23:59:00.000Z', date: '2026-11-16', expectedIst: '2026-11-16', allow: true },
+        { label: 'Nov 16 05:30 AM IST', utcIso: '2026-11-16T00:00:00.000Z', date: '2026-11-16', expectedIst: '2026-11-16', allow: true },
+        { label: 'Nov 16 11:59 PM IST', utcIso: '2026-11-16T18:29:00.000Z', date: '2026-11-16', expectedIst: '2026-11-16', allow: true },
+        { label: 'Nov 16 01:00 AM IST future Nov 17', utcIso: '2026-11-15T19:30:00.000Z', date: '2026-11-17', expectedIst: '2026-11-16', allow: false },
+        { label: 'Nov 16 01:00 AM IST past Nov 15', utcIso: '2026-11-15T19:30:00.000Z', date: '2026-11-15', expectedIst: '2026-11-16', allow: true }
+      ];
+      for (const tc of istCases) {
+        const instant = new Date(tc.utcIso);
+        assert(getIstTodayString(instant) === tc.expectedIst, `B-06: ${tc.label} resolves IST today=${tc.expectedIst}`);
+        assert(!isFutureIstDate(tc.date, instant) === tc.allow, `B-06: ${tc.label} for ${tc.date} allow=${tc.allow}`);
+      }
+
+      // Exercise repository.upsertAttendanceRecord during 01:00 AM IST (19:30 UTC prior day) via mocked Date
+      const RealDate = globalThis.Date;
+      const fixedInstantMs = Date.parse('2026-11-15T19:30:00.000Z'); // 2026-11-16 01:00 AM IST
+      class MockIstDate extends RealDate {
+        constructor(...args: any[]) {
+          if (args.length === 0) {
+            super(fixedInstantMs);
+          } else {
+            super(...(args as [any]));
+          }
+        }
+        static now() {
+          return fixedInstantMs;
+        }
+      }
+      (globalThis as any).Date = MockIstDate;
+      try {
+        // 1. Nov 16 01:00 AM IST -> Nov 16 must pass frontend validation & send exact '2026-11-16'
+        const savedIstToday = await repository.upsertAttendanceRecord({
+          date: '2026-11-16',
+          status: 'Present',
+          calculatedHours: 8
+        });
+        assert(lastAttendanceUpdatePayload?.attendance_date === '2026-11-16', 'B-06: Sends exact YYYY-MM-DD 2026-11-16 without UTC shift');
+        assert(savedIstToday.date === '2026-11-16', 'B-06: Accepts Nov 16 at 01:00 AM IST');
+
+        // 2. Nov 16 01:00 AM IST -> Nov 15 (past) must be accepted
+        const savedIstPast = await repository.upsertAttendanceRecord({
+          date: '2026-11-15',
+          status: 'Present',
+          calculatedHours: 8
+        });
+        assert(lastAttendanceUpdatePayload?.attendance_date === '2026-11-15', 'B-06: Accepts past date Nov 15 at 01:00 AM IST');
+        assert(savedIstPast.date === '2026-11-15', 'B-06: Hydrated past date preserves 2026-11-15');
+
+        // 3. Nov 16 01:00 AM IST -> Nov 17 (future IST) must be rejected before DB write
+        let futureIstBlocked = false;
+        try {
+          await repository.upsertAttendanceRecord({
+            date: '2026-11-17',
+            status: 'Present',
+            calculatedHours: 8
+          });
+        } catch {
+          futureIstBlocked = true;
+        }
+        assert(futureIstBlocked, 'B-06: Future IST date 2026-11-17 rejected cleanly before DB write');
+      } finally {
+        (globalThis as any).Date = RealDate;
+      }
+
+      // Restore dbAttendance[0] cleanly before N-02 unchanged-hours test
+      dbAttendance[0] = {
+        id: uuidAtt,
+        user_id: USER_A,
+        attendance_date: '2026-05-05',
+        status: 'present',
+        check_in: '09:00',
+        check_out: '19:30',
+        break_minutes: 30,
+        hours_worked: 10,
+        extra_hours: 2,
+        daily_base_salary: 500,
+        addon_salary: 0,
+        addon_enabled: false,
+        extra_hour_rate: 100,
+        overtime_enabled: true,
+        calculated_salary: 700
+      };
+
+      // N-02: Editing notes without changing Present working hours preserves existing extraHours (2h)
+      await repository.upsertAttendanceRecord({
+        id: uuidAtt,
+        date: '2026-05-05',
+        status: 'Present',
+        checkInTime: '09:00',
+        checkOutTime: '19:30',
+        breakDurationMinutes: 30,
+        calculatedHours: 10,
+        notes: 'Updated memo only'
+      });
+      assert(lastAttendanceUpdatePayload?.extra_hours === 2, `N-02: Unchanged hours edit preserves extra_hours=2 (got ${lastAttendanceUpdatePayload?.extra_hours})`);
+
+      // Info: Unrecognized reset RPC object payload must be rejected (not treated as success)
+      resetRpcResponse = { unexpected: true };
+      let badResetRejected = false;
+      try {
+        await repository.resetUserData();
+      } catch {
+        badResetRejected = true;
+      }
+      assert(badResetRejected, 'validateResetRpcResponse rejects unrecognized non-empty payload objects');
+    }
+    console.log('✓ Test 31 passed.');
+
+    // ==========================================
+    // TEST 32: New User Clean-State Hydration, Unconfigured Settings Save, Explicit Config & Existing User Preservation
+    // ==========================================
+    console.log('Test 32: New user clean-state hydration, unconfigured preferences save, explicit salary config & existing user preservation...');
+    {
+      let persistedSalaryRow: any = null;
+      let salaryUpserts = 0;
+      let userSettingsRow: any = null;
+      let profileRow: any = { id: USER_A, display_name: 'New User', avatar_url: null };
+
+      const cleanClient = createMockSupabase(USER_A, {
+        user_settings: (ctx) => {
+          if (ctx.op === 'upsert') {
+            userSettingsRow = { ...ctx.payload };
+            return { data: userSettingsRow, error: null };
+          }
+          return { data: userSettingsRow, error: null };
+        },
+        salary_configs: (ctx) => {
+          if (ctx.op === 'upsert') {
+            salaryUpserts += 1;
+            persistedSalaryRow = { ...ctx.payload };
+            return { data: persistedSalaryRow, error: null };
+          }
+          return { data: persistedSalaryRow, error: null };
+        },
+        profiles: (ctx) => {
+          if (ctx.op === 'update') {
+            profileRow = { ...profileRow, ...ctx.payload };
+            return { data: profileRow, error: null };
+          }
+          return { data: profileRow, error: null };
+        }
+      });
+
+      // 1) New user with completely empty DB rows
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      configureRepositoryBackendForTests(cleanClient, true);
+      await repository.fetchAllUserData(USER_A);
+
+      assert(repository.getExpenses().length === 0 && repository.getIncomes().length === 0, 'New user has 0 transactions');
+      assert(repository.getDebts().length === 0 && repository.getDebtRepayments().length === 0, 'New user has 0 debts');
+      assert(repository.getGoals().length === 0 && repository.getSavingsGoals().length === 0, 'New user has 0 goals/savings');
+      assert(repository.getAttendance().length === 0 && repository.getSalaryPayouts().length === 0, 'New user has 0 attendance/payouts');
+      const newSettings = repository.getSettings();
+      assert(newSettings.currency === 'INR', 'New user defaults to INR currency');
+      assert(newSettings.salaryConfig.isConfigured === false, 'New user salaryConfig starts unconfigured');
+      assert(newSettings.salaryConfig.dailyBaseSalary === undefined, 'New user dailyBaseSalary is undefined');
+      assert(newSettings.salaryConfig.standardWorkingHours === undefined, 'New user standardWorkingHours is undefined');
+      assert(newSettings.salaryConfig.extraHourRate === undefined, 'New user extraHourRate is undefined');
+      assert(newSettings.salaryConfig.overtimeEnabled === false, 'New user overtimeEnabled is false');
+
+      // 2) Saving profile/currency/categories with unconfigured salary skips salary_configs upsert
+      await repository.persistSettingsBundle({
+        displayName: 'New User Renamed',
+        currency: 'USD',
+        dateFormat: 'DD/MM/YYYY',
+        weekStartDay: 'Sunday',
+        customExpenseCategories: ['Food & Dining', 'Travel'],
+        customIncomeSources: ['Freelance'],
+        widgets: newSettings.widgets,
+        salaryConfig: newSettings.salaryConfig
+      });
+      assert(salaryUpserts === 0, 'Unconfigured settings bundle skips salary_configs upsert');
+      assert(repository.getSettings().currency === 'USD' && repository.getSettings().profile.name === 'New User Renamed', 'Profile & preferences saved without forcing salary inputs');
+      assert(repository.getSettings().salaryConfig.isConfigured === false, 'Salary remains unconfigured after saving preferences');
+
+      // 3) Explicitly configuring salary persists numeric values and flips isConfigured to true
+      await repository.persistSalaryConfig({
+        dailyBaseSalary: 750,
+        addonSalary: 0,
+        addonEnabled: false,
+        standardWorkingHours: 9,
+        extraHourRate: 120,
+        overtimeEnabled: true,
+        currency: 'USD',
+        isConfigured: true
+      });
+      assert(salaryUpserts === 1 && persistedSalaryRow?.daily_base_salary === 750 && persistedSalaryRow?.standard_hours === 9, 'Explicit salary config upserts real numeric values');
+      assert(repository.getSettings().salaryConfig.isConfigured === true, 'Configured salary marks isConfigured=true');
+
+      // 4) Existing user reload preserves configured rates cleanly
+      repository.clearUserData();
+      repository.setActiveUserId(USER_A);
+      await repository.fetchAllUserData(USER_A);
+      const reloaded = repository.getSettings();
+      assert(reloaded.salaryConfig.isConfigured === true, 'Existing user reload preserves isConfigured=true');
+      assert(reloaded.salaryConfig.dailyBaseSalary === 750 && reloaded.salaryConfig.standardWorkingHours === 9 && reloaded.salaryConfig.extraHourRate === 120, 'Existing user reload preserves configured rates');
+      assert(reloaded.currency === 'USD' && reloaded.profile.name === 'New User Renamed', 'Existing user reload preserves settings & profile');
+    }
+    console.log('✓ Test 32 passed.');
+
     console.log('\n======================================================');
-    console.log('--- ALL 30 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
+    console.log('--- ALL 32 PERSISTENCE & LIVE SCHEMA TESTS PASSED! ---');
     console.log('======================================================');
   } finally {
     configureRepositoryBackendForTests(null, null);

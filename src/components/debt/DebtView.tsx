@@ -8,10 +8,12 @@ import {
   Trash2, 
   Edit3, 
   X, 
-  AlertCircle 
+  AlertCircle,
+  Banknote,
+  History
 } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
-import { Debt, DebtDirection } from '../../types';
+import { Debt, DebtDirection, PaymentMethod } from '../../types';
 import { calculateDebtOutstanding, calculateSeparateDebtTotals } from '../../utils/calculations';
 import { formatCurrency, formatHumanDate, getTodayString } from '../../utils/formatters';
 import { ConfirmDialog } from '../common/ConfirmDialog';
@@ -23,6 +25,21 @@ export const DebtView: React.FC = () => {
   const [isDebtModalOpen, setIsDebtModalOpen] = useState(false);
   const [editingDebt, setEditingDebt] = useState<Debt | null>(null);
   const [modalDirection, setModalDirection] = useState<DebtDirection>('receive');
+
+  // Repayment Modal
+  const [repaymentDebtId, setRepaymentDebtId] = useState<string | null>(null);
+  const [repayAmount, setRepayAmount] = useState('');
+  const [repayDate, setRepayDate] = useState(getTodayString());
+  const [repayMethod, setRepayMethod] = useState<PaymentMethod>('Bank Transfer');
+  const [repayNotes, setRepayNotes] = useState('');
+  const [repayError, setRepayError] = useState<string | null>(null);
+  const [isSubmittingRepay, setIsSubmittingRepay] = useState(false);
+  const isSubmittingRepayRef = useRef(false);
+
+  // Repayment delete confirm
+  const [deleteRepaymentId, setDeleteRepaymentId] = useState<string | null>(null);
+  const [isDeletingRepayment, setIsDeletingRepayment] = useState(false);
+  const [deleteRepaymentError, setDeleteRepaymentError] = useState<string | null>(null);
 
   // Deletion targets
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -50,15 +67,20 @@ export const DebtView: React.FC = () => {
 
   // Escape key listener
   useEffect(() => {
-    if (!isDebtModalOpen) return;
+    if (!isDebtModalOpen && !repaymentDebtId) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isSubmittingRef.current && !isSubmittingDebt) {
-        setIsDebtModalOpen(false);
+      if (e.key === 'Escape') {
+        if (isDebtModalOpen && !isSubmittingRef.current && !isSubmittingDebt) {
+          setIsDebtModalOpen(false);
+        }
+        if (repaymentDebtId && !isSubmittingRepayRef.current && !isSubmittingRepay && deleteRepaymentId === null) {
+          setRepaymentDebtId(null);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isDebtModalOpen, isSubmittingDebt]);
+  }, [isDebtModalOpen, isSubmittingDebt, repaymentDebtId, isSubmittingRepay, deleteRepaymentId]);
 
   const allDebts = data.debts;
 
@@ -113,6 +135,82 @@ export const DebtView: React.FC = () => {
     setIsDebtModalOpen(true);
   };
 
+  const activeRepaymentDebt = useMemo(
+    () => (repaymentDebtId ? allDebts.find(d => d.id === repaymentDebtId) || null : null),
+    [allDebts, repaymentDebtId]
+  );
+
+  const activeRepaymentOutstanding = useMemo(
+    () => (activeRepaymentDebt ? calculateDebtOutstanding(activeRepaymentDebt, data.debtRepayments) : 0),
+    [activeRepaymentDebt, data.debtRepayments]
+  );
+
+  const activeDebtRepayments = useMemo(() => {
+    if (!repaymentDebtId) return [];
+    return data.debtRepayments
+      .filter(r => r.debt_id === repaymentDebtId)
+      .slice()
+      .sort((a, b) => (b.repayment_date || '').localeCompare(a.repayment_date || '') || (b.created_at || '').localeCompare(a.created_at || ''));
+  }, [data.debtRepayments, repaymentDebtId]);
+
+  const openRepaymentModal = (debt: Debt) => {
+    const outstanding = calculateDebtOutstanding(debt, data.debtRepayments);
+    setRepaymentDebtId(debt.id);
+    setRepayAmount(outstanding > 0 ? String(outstanding) : '');
+    setRepayDate(getTodayString());
+    setRepayMethod('Bank Transfer');
+    setRepayNotes('');
+    setRepayError(null);
+    isSubmittingRepayRef.current = false;
+    setIsSubmittingRepay(false);
+  };
+
+  const handleSaveRepayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeRepaymentDebt || isSubmittingRepayRef.current || isSubmittingRepay) return;
+
+    const parsedAmount = parseFloat(repayAmount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setRepayError('Repayment amount must be greater than 0.');
+      return;
+    }
+    if (parsedAmount > activeRepaymentOutstanding + 0.001) {
+      setRepayError(`Repayment cannot exceed remaining balance of ${formatCurrency(activeRepaymentOutstanding, data.settings.currency)}.`);
+      return;
+    }
+    if (!repayDate) {
+      setRepayError('Please select a valid repayment date.');
+      return;
+    }
+
+    isSubmittingRepayRef.current = true;
+    setRepayError(null);
+    setIsSubmittingRepay(true);
+    try {
+      await data.addDebtRepayment({
+        debt_id: activeRepaymentDebt.id,
+        amount: parsedAmount,
+        repayment_date: repayDate,
+        payment_method: repayMethod,
+        notes: repayNotes.trim() || undefined
+      });
+      if (isMountedRef.current) {
+        const nextOutstanding = Math.max(0, Number((activeRepaymentOutstanding - parsedAmount).toFixed(2)));
+        setRepayAmount(nextOutstanding > 0 ? String(nextOutstanding) : '');
+        setRepayNotes('');
+      }
+    } catch (err) {
+      if (isMountedRef.current) {
+        setRepayError(err instanceof Error ? err.message : 'Database error: Could not record repayment.');
+      }
+    } finally {
+      isSubmittingRepayRef.current = false;
+      if (isMountedRef.current) {
+        setIsSubmittingRepay(false);
+      }
+    }
+  };
+
   // Handle Save Debt (Add or Edit)
   const handleSaveDebt = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,8 +240,8 @@ export const DebtView: React.FC = () => {
           person_name: personName.trim(),
           original_amount: parsedAmount,
           lent_date: transactionDate,
-          due_date: dueDate.trim() || undefined,
-          notes: notes.trim() || undefined,
+          due_date: dueDate.trim(),
+          notes: notes.trim(),
           direction: modalDirection
         });
       } else {
@@ -233,19 +331,31 @@ export const DebtView: React.FC = () => {
               ) : (
                 receiveDebts.map(debt => {
                   const outstanding = calculateDebtOutstanding(debt, data.debtRepayments);
+                  const repaid = Math.max(0, Number((debt.original_amount - outstanding).toFixed(2)));
+                  const statusLabel = outstanding <= 0.005 ? 'Paid' : repaid > 0 ? 'Partially Paid' : 'Outstanding';
+                  const statusClass =
+                    statusLabel === 'Paid'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : statusLabel === 'Partially Paid'
+                        ? 'bg-sky-100 text-sky-800'
+                        : 'bg-neutral-200 text-neutral-700';
+
                   return (
                     <div 
                       key={debt.id} 
                       className="cv-auto p-3.5 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between gap-3"
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-sm text-[#111111] truncate">
                             {debt.person_name}
                           </span>
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${statusClass}`}>
+                            {statusLabel}
+                          </span>
                         </div>
 
-                        <div className="flex items-center gap-3 text-[11px] text-neutral-500 mt-1 font-mono">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-neutral-500 mt-1 font-mono">
                           <span className="flex items-center gap-1">
                             <Calendar className="w-3 h-3 text-neutral-400" />
                             <span>{formatHumanDate(debt.lent_date)}</span>
@@ -260,6 +370,12 @@ export const DebtView: React.FC = () => {
                           )}
                         </div>
 
+                        {repaid > 0 && (
+                          <div className="text-[11px] font-mono text-neutral-500 mt-0.5">
+                            Repaid {formatCurrency(repaid, data.settings.currency)} / {formatCurrency(debt.original_amount, data.settings.currency)}
+                          </div>
+                        )}
+
                         {debt.notes && (
                           <p className="text-xs text-neutral-600 mt-1 truncate">
                             {debt.notes}
@@ -267,7 +383,7 @@ export const DebtView: React.FC = () => {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-3 shrink-0">
+                      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                         <div className="text-right">
                           <div className="text-xs text-neutral-400">Outstanding</div>
                           <div className="text-sm font-bold font-mono text-[#111111]">
@@ -276,6 +392,15 @@ export const DebtView: React.FC = () => {
                         </div>
 
                         <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openRepaymentModal(debt)}
+                            className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-white border border-neutral-300 text-[#111111] hover:bg-neutral-100 transition-colors cursor-pointer flex items-center gap-1"
+                            title="Repay / History"
+                          >
+                            <Banknote className="w-3 h-3 text-[#87CEEB]" />
+                            <span>{outstanding > 0 ? 'Repay' : 'History'}</span>
+                          </button>
                           <button
                             type="button"
                             onClick={() => openEditModal(debt)}
@@ -337,19 +462,31 @@ export const DebtView: React.FC = () => {
               ) : (
                 payDebts.map(debt => {
                   const outstanding = calculateDebtOutstanding(debt, data.debtRepayments);
+                  const repaid = Math.max(0, Number((debt.original_amount - outstanding).toFixed(2)));
+                  const statusLabel = outstanding <= 0.005 ? 'Paid' : repaid > 0 ? 'Partially Paid' : 'Outstanding';
+                  const statusClass =
+                    statusLabel === 'Paid'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : statusLabel === 'Partially Paid'
+                        ? 'bg-sky-100 text-sky-800'
+                        : 'bg-neutral-200 text-neutral-700';
+
                   return (
                     <div 
                       key={debt.id} 
                       className="cv-auto p-3.5 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between gap-3"
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-sm text-[#111111] truncate">
                             {debt.person_name}
                           </span>
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${statusClass}`}>
+                            {statusLabel}
+                          </span>
                         </div>
 
-                        <div className="flex items-center gap-3 text-[11px] text-neutral-500 mt-1 font-mono">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-neutral-500 mt-1 font-mono">
                           <span className="flex items-center gap-1">
                             <Calendar className="w-3 h-3 text-neutral-400" />
                             <span>{formatHumanDate(debt.lent_date)}</span>
@@ -364,6 +501,12 @@ export const DebtView: React.FC = () => {
                           )}
                         </div>
 
+                        {repaid > 0 && (
+                          <div className="text-[11px] font-mono text-neutral-500 mt-0.5">
+                            Paid {formatCurrency(repaid, data.settings.currency)} / {formatCurrency(debt.original_amount, data.settings.currency)}
+                          </div>
+                        )}
+
                         {debt.notes && (
                           <p className="text-xs text-neutral-600 mt-1 truncate">
                             {debt.notes}
@@ -371,7 +514,7 @@ export const DebtView: React.FC = () => {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-3 shrink-0">
+                      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                         <div className="text-right">
                           <div className="text-xs text-neutral-400">Outstanding</div>
                           <div className="text-sm font-bold font-mono text-[#111111]">
@@ -380,6 +523,15 @@ export const DebtView: React.FC = () => {
                         </div>
 
                         <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openRepaymentModal(debt)}
+                            className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-white border border-neutral-300 text-[#111111] hover:bg-neutral-100 transition-colors cursor-pointer flex items-center gap-1"
+                            title="Repay / History"
+                          >
+                            <Banknote className="w-3 h-3 text-amber-500" />
+                            <span>{outstanding > 0 ? 'Repay' : 'History'}</span>
+                          </button>
                           <button
                             type="button"
                             onClick={() => openEditModal(debt)}
@@ -580,7 +732,202 @@ export const DebtView: React.FC = () => {
         </div>
       )}
 
-      {/* Delete Confirmation */}
+      {/* REPAYMENT & HISTORY MODAL */}
+      {activeRepaymentDebt && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs"
+          onClick={() => {
+            if (!isSubmittingRepayRef.current && !isSubmittingRepay && deleteRepaymentId === null) {
+              setRepaymentDebtId(null);
+            }
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-black/[0.08] p-5 sm:p-6 max-h-[90vh] overflow-y-auto overflow-x-hidden space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-black/[0.06]">
+              <div>
+                <h3 className="font-bold text-base text-[#111111] tracking-tight">
+                  {activeRepaymentDebt.person_name} — Repayments
+                </h3>
+                <p className="text-xs text-neutral-500">
+                  {activeRepaymentDebt.direction === 'pay' ? 'Money I owe' : 'Money owed to me'} · Original:{' '}
+                  {formatCurrency(activeRepaymentDebt.original_amount, data.settings.currency)}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={isSubmittingRepay}
+                onClick={() => setRepaymentDebtId(null)}
+                aria-label="Close modal"
+                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-900 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2.5 p-3 rounded-xl bg-neutral-50 border border-neutral-200 text-center">
+              <div>
+                <span className="text-[10px] font-semibold text-neutral-500 uppercase block">Original</span>
+                <span className="text-xs sm:text-sm font-bold font-mono text-[#111111]">
+                  {formatCurrency(activeRepaymentDebt.original_amount, data.settings.currency)}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] font-semibold text-neutral-500 uppercase block">Repaid</span>
+                <span className="text-xs sm:text-sm font-bold font-mono text-emerald-700">
+                  {formatCurrency(
+                    Math.max(0, activeRepaymentDebt.original_amount - activeRepaymentOutstanding),
+                    data.settings.currency
+                  )}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] font-semibold text-neutral-500 uppercase block">Remaining</span>
+                <span className="text-xs sm:text-sm font-bold font-mono text-[#111111]">
+                  {formatCurrency(activeRepaymentOutstanding, data.settings.currency)}
+                </span>
+              </div>
+            </div>
+
+            {activeRepaymentOutstanding > 0 && (
+              <form onSubmit={handleSaveRepayment} className="space-y-3 p-4 rounded-xl border border-black/[0.08] bg-white">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-[#111111] uppercase tracking-wider">Record Payment</h4>
+                  <button
+                    type="button"
+                    onClick={() => setRepayAmount(String(activeRepaymentOutstanding))}
+                    className="text-[11px] font-semibold text-sky-700 hover:underline cursor-pointer"
+                  >
+                    Fill Full Balance ({formatCurrency(activeRepaymentOutstanding, data.settings.currency)})
+                  </button>
+                </div>
+
+                {repayError && (
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                    <span>{repayError}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-700 mb-1">
+                      Amount ({data.settings.currency}) *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      max={activeRepaymentOutstanding}
+                      required
+                      placeholder="0.00"
+                      value={repayAmount}
+                      onChange={(e) => setRepayAmount(e.target.value)}
+                      className="w-full px-3 py-2 text-sm font-mono bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-700 mb-1">Date *</label>
+                    <input
+                      type="date"
+                      required
+                      value={repayDate}
+                      onChange={(e) => setRepayDate(e.target.value)}
+                      className="w-full px-3 py-2 text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-700 mb-1">Payment Method</label>
+                    <select
+                      value={repayMethod}
+                      onChange={(e) => setRepayMethod(e.target.value as PaymentMethod)}
+                      className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+                    >
+                      <option value="Bank Transfer">Bank Transfer</option>
+                      <option value="Cash">Cash</option>
+                      <option value="Digital Wallet">Digital Wallet</option>
+                      <option value="Debit Card">Debit Card</option>
+                      <option value="Credit Card">Credit Card</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-700 mb-1">Notes (Optional)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Partial settlement"
+                      value={repayNotes}
+                      onChange={(e) => setRepayNotes(e.target.value)}
+                      className="w-full px-3 py-2 text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="submit"
+                    disabled={isSubmittingRepay}
+                    className="px-4 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {isSubmittingRepay ? 'Recording...' : 'Record Repayment'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-[#111111] uppercase tracking-wider flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-[#87CEEB]" />
+                  <span>Repayment History ({activeDebtRepayments.length})</span>
+                </h4>
+              </div>
+
+              {activeDebtRepayments.length === 0 ? (
+                <p className="text-xs text-neutral-400 text-center py-4 bg-neutral-50 rounded-xl border border-neutral-100">
+                  No repayments recorded yet.
+                </p>
+              ) : (
+                <div className="divide-y divide-neutral-100 border border-neutral-200 rounded-xl overflow-hidden">
+                  {activeDebtRepayments.map(rep => (
+                    <div key={rep.id} className="p-3 bg-white flex items-center justify-between gap-3 text-xs">
+                      <div className="min-w-0">
+                        <div className="font-mono font-bold text-[#111111]">
+                          {formatCurrency(rep.amount, data.settings.currency)}
+                        </div>
+                        <div className="text-[11px] text-neutral-500 truncate">
+                          {formatHumanDate(rep.repayment_date)}
+                          {rep.payment_method ? ` · ${rep.payment_method}` : ''}
+                          {rep.notes ? ` · ${rep.notes}` : ''}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteRepaymentError(null);
+                          setDeleteRepaymentId(rep.id);
+                        }}
+                        className="p-1.5 rounded-lg text-neutral-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
+                        title="Delete Repayment"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Debt Confirmation */}
       <ConfirmDialog
         isOpen={deleteTargetId !== null}
         title="Delete Debt Record"
@@ -604,6 +951,33 @@ export const DebtView: React.FC = () => {
         onCancel={() => {
           setDeleteDebtError(null);
           setDeleteTargetId(null);
+        }}
+      />
+
+      {/* Delete Repayment Confirmation */}
+      <ConfirmDialog
+        isOpen={deleteRepaymentId !== null}
+        title="Delete Repayment Entry"
+        message="Are you sure you want to delete this repayment? The remaining debt balance will increase automatically."
+        confirmLabel="Delete Repayment"
+        isLoading={isDeletingRepayment}
+        error={deleteRepaymentError}
+        onConfirm={async () => {
+          if (!deleteRepaymentId || isDeletingRepayment) return;
+          setDeleteRepaymentError(null);
+          setIsDeletingRepayment(true);
+          try {
+            await data.deleteDebtRepayment(deleteRepaymentId);
+            setDeleteRepaymentId(null);
+          } catch (err) {
+            setDeleteRepaymentError(err instanceof Error ? err.message : 'Database error: Could not delete repayment.');
+          } finally {
+            setIsDeletingRepayment(false);
+          }
+        }}
+        onCancel={() => {
+          setDeleteRepaymentError(null);
+          setDeleteRepaymentId(null);
         }}
       />
     </div>

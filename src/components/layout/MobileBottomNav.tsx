@@ -41,7 +41,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = React.memo(({
   activeTab,
   setActiveTab
 }) => {
-  const { isDemoUser, signOut, exitDemoMode } = useAuth();
+  const { signOut } = useAuth();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const [isMoneySheetOpen, setIsMoneySheetOpen] = useState(false);
   const [isSignOutOpen, setIsSignOutOpen] = useState(false);
@@ -61,6 +61,16 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = React.memo(({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // Lock background document scroll when either mobile sheet is open
+  useEffect(() => {
+    if (!isMoreOpen && !isMoneySheetOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isMoreOpen, isMoneySheetOpen]);
 
   const handleSelectTab = (tab: ActiveTab) => {
     setActiveTab(tab);
@@ -374,7 +384,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = React.memo(({
                         </div>
                         <div>
                           <div className="text-xs font-bold leading-snug">
-                            {isDemoUser ? 'Exit Demo Session' : 'Sign Out of Workspace'}
+                            Sign Out of Workspace
                           </div>
                           <div className="text-[11px] text-neutral-400">
                             Securely close your active session
@@ -529,19 +539,12 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = React.memo(({
       {/* Mobile Sign Out Confirmation Dialog */}
       <ConfirmDialog
         isOpen={isSignOutOpen}
-        title={isDemoUser ? "Exit Demo Session?" : "Sign Out of Workspace?"}
-        message={isDemoUser 
-          ? "Are you sure you want to exit the demo session? You will be returned to the Welcome screen."
-          : "Are you sure you want to sign out of your XOS workspace? Your active session will be securely terminated."
-        }
-        confirmLabel={isDemoUser ? "Exit Demo" : "Sign Out"}
+        title="Sign Out of Workspace?"
+        message="Are you sure you want to sign out of your XOS workspace? Your active session will be securely terminated."
+        confirmLabel="Sign Out"
         isDestructive={false}
         onConfirm={() => {
-          if (isDemoUser) {
-            exitDemoMode();
-          } else {
-            signOut();
-          }
+          signOut();
           setIsSignOutOpen(false);
         }}
         onCancel={() => setIsSignOutOpen(false)}

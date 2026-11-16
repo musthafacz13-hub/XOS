@@ -45,6 +45,8 @@ async function runPDFTests() {
   );
   // Ensure no legacy sky-blue (135, 206, 235 -> 0.529 0.808 0.922) or green/red colored fills/text exist
   assert(!emptyPdfText.includes('0.529 0.808 0.922'), 'PDF must not contain decorative sky-blue accents');
+  assert(emptyPdfText.includes('Salary & Working Time Config: Not configured'), 'Empty PDF must show unconfigured salary config');
+  assert(!emptyPdfText.includes('Daily Base USD 500') && !emptyPdfText.includes('Standard 8h'), 'Empty PDF must not fabricate 500/8h salary defaults');
   console.log(`✓ Test 1 passed: Empty PDF generated cleanly as A4 (${emptyBlob.size} bytes).`);
 
   // Case 2: Populated Dataset (Normal Session)
@@ -178,20 +180,26 @@ async function runPDFTests() {
       ],
       savingsGoals: [
         { id: 'sg1', name: 'Active Reserve', targetAmount: 10000, currentAmount: 3500, createdAt: '2026-01-01' },
-        { id: 'sg_arch', name: 'Archived Reserve', targetAmount: 5000, currentAmount: 4200, createdAt: '2026-01-01' }
+        { id: 'sg_arch', name: 'Archived Reserve', targetAmount: 5000, currentAmount: 4200, createdAt: '2026-01-01' },
+        { id: 'sg_paused', name: 'Paused Reserve', targetAmount: 1000, currentAmount: 500, createdAt: '2026-01-01' }
       ],
       goals: [
         { id: 'g1', title: 'Active Goal', description: 'Active goal description', category: 'Career', progressPercentage: 35, targetAmount: 10000, status: 'In Progress', priority: 'High', createdAt: '2026-05-01', savingsGoalId: 'sg1' },
-        { id: 'g_arch', title: 'Archived Goal', description: 'Archived goal description', category: 'Travel', progressPercentage: 84, targetAmount: 5000, status: 'Archived', priority: 'Low', createdAt: '2026-05-01', savingsGoalId: 'sg_arch' }
+        { id: 'g_arch', title: 'Archived Goal', description: 'Archived goal description', category: 'Travel', progressPercentage: 84, targetAmount: 5000, status: 'Archived', priority: 'Low', createdAt: '2026-05-01', savingsGoalId: 'sg_arch' },
+        { id: 'g_paused', title: 'Paused Goal', description: 'Paused goal description', category: 'Life', progressPercentage: 50, targetAmount: 1000, status: 'Paused', priority: 'Medium', createdAt: '2026-05-01', savingsGoalId: 'sg_paused' }
       ]
     },
     { datePreset: 'all' }
   );
   const archivedCheckText = new TextDecoder('latin1').decode(new Uint8Array(await archivedSavingsBlob.arrayBuffer()));
   assert(archivedCheckText.includes('$3,500'), 'PDF must include active savings $3,500');
-  assert(!archivedCheckText.includes('$7,700'), 'PDF Executive Summary must NOT include archived savings ($3,500 + $4,200 = $7,700)');
+  assert(archivedCheckText.includes('$4,000'), 'PDF must include active + real Paused savings ($3,500 + $500 = $4,000)');
+  assert(!archivedCheckText.includes('$7,700') && !archivedCheckText.includes('$8,200'), 'PDF Executive Summary must NOT include archived goal savings ($4,200)');
   assert(archivedCheckText.includes('[To Pay]'), 'Payable debt rows must be clearly labeled with [To Pay]');
-  console.log('✓ Test 5 passed: Archived savings excluded from Executive Summary & payable debt labeled clearly.');
+  assert(archivedCheckText.includes('MONEY TO PAY'), 'PDF Executive Summary must include MONEY TO PAY metric');
+  assert(archivedCheckText.includes('$900'), 'PDF Executive Summary must show $900 payable debt balance');
+  assert(archivedCheckText.includes('Period Earned:'), 'PDF Salary section must include earned/paid/remaining summary');
+  console.log('✓ Test 5 passed: Archived savings excluded, Paused preserved, and Debt/Salary summaries verified.');
 
   console.log('\n--- ALL PDF EXPORT TESTS PASSED SUCCESSFULLY! ---');
 }

@@ -11,7 +11,6 @@ import {
   Settings, 
   ChevronLeft, 
   ChevronRight,
-  Sparkles,
   LucideIcon,
   HandCoins,
   LogOut
@@ -90,7 +89,7 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
   setCollapsed,
   settings
 }) => {
-  const { user, isDemoUser, signOut, exitDemoMode } = useAuth();
+  const { user, signOut } = useAuth();
   const [isSignOutDialogOpen, setIsSignOutDialogOpen] = useState(false);
 
   const userName = settings.profile.name.trim() || 'My Workspace';
@@ -229,13 +228,6 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
 
       {/* Profile & Settings Footer */}
       <div className="p-2.5 border-t border-black/[0.06] space-y-1.5">
-        {settings.isDemoMode && !collapsed && (
-          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-neutral-100/80 text-neutral-700 text-[11px] font-medium border border-black/[0.04]">
-            <Sparkles className="w-3 h-3 text-[#87CEEB] shrink-0" />
-            <span className="truncate">Sample Data Active</span>
-          </div>
-        )}
-
         {/* Profile/Settings Tile with Tactile Press & Ripple */}
         <div className="relative group">
           <WaterRippleContainer
@@ -310,7 +302,7 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
             onClick={() => setIsSignOutDialogOpen(true)}
             className="w-full flex items-center justify-between px-3 py-1.5 text-[11px] text-neutral-400 hover:text-neutral-900 rounded-lg transition-colors cursor-pointer hover:bg-black/[0.03]"
           >
-            <span>{isDemoUser ? 'Exit Demo Session' : 'Sign Out'}</span>
+            <span>Sign Out</span>
             <LogOut className="w-3.5 h-3.5" />
           </button>
         )}
@@ -319,19 +311,12 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
       {/* Sign Out Confirmation Dialog */}
       <ConfirmDialog
         isOpen={isSignOutDialogOpen}
-        title={isDemoUser ? "Exit Demo Session?" : "Sign Out of Workspace?"}
-        message={isDemoUser 
-          ? "Are you sure you want to exit the demo session? You will be returned to the Welcome screen."
-          : "Are you sure you want to sign out of your XOS workspace? Your active session will be securely terminated."
-        }
-        confirmLabel={isDemoUser ? "Exit Demo" : "Sign Out"}
+        title="Sign Out of Workspace?"
+        message="Are you sure you want to sign out of your XOS workspace? Your active session will be securely terminated."
+        confirmLabel="Sign Out"
         isDestructive={false}
         onConfirm={() => {
-          if (isDemoUser) {
-            exitDemoMode();
-          } else {
-            signOut();
-          }
+          signOut();
           setIsSignOutDialogOpen(false);
         }}
         onCancel={() => setIsSignOutDialogOpen(false)}

@@ -161,6 +161,14 @@ export const IncomeView: React.FC = () => {
     return base.length > 0 ? Array.from(new Set(base)) : ['Other'];
   }, [data.settings.customIncomeSources]);
 
+  const filterSourceOptions = useMemo(() => {
+    const merged = new Set(incomeSourceOptions);
+    data.incomes.forEach(inc => {
+      if (inc.source) merged.add(inc.source);
+    });
+    return Array.from(merged);
+  }, [incomeSourceOptions, data.incomes]);
+
   const modalSourceOptions = useMemo(() => {
     if (source && !incomeSourceOptions.includes(source)) {
       return [source, ...incomeSourceOptions];
@@ -275,7 +283,7 @@ export const IncomeView: React.FC = () => {
           className="w-full sm:w-auto min-h-[40px] px-2.5 py-2 text-xs border border-neutral-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
         >
           <option value="all">All Income Sources</option>
-          {incomeSourceOptions.map(s => (
+          {filterSourceOptions.map(s => (
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
@@ -330,20 +338,28 @@ export const IncomeView: React.FC = () => {
                 )}
 
                 <div className="pt-2 border-t border-neutral-100 flex items-center justify-end gap-2 text-xs text-neutral-400">
-                  <button
-                    onClick={() => openEditModal(inc)}
-                    className="p-1 text-neutral-500 hover:text-black cursor-pointer"
-                    title="Edit"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(inc.id)}
-                    className="p-1 text-neutral-500 hover:text-rose-600 cursor-pointer"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {inc.salaryPayoutId && syncedPayoutIds.has(inc.salaryPayoutId) ? (
+                    <span className="text-[11px] font-medium text-neutral-500">
+                      Managed via Salary Payout
+                    </span>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => openEditModal(inc)}
+                        className="p-1 text-neutral-500 hover:text-black cursor-pointer"
+                        title="Edit"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(inc.id)}
+                        className="p-1 text-neutral-500 hover:text-rose-600 cursor-pointer"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
@@ -385,22 +401,31 @@ export const IncomeView: React.FC = () => {
                       +{formatCurrency(inc.amount, data.settings.currency)}
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={() => openEditModal(inc)}
-                          className="p-1 text-neutral-400 hover:text-black cursor-pointer"
-                          title="Edit"
+                      {inc.salaryPayoutId && syncedPayoutIds.has(inc.salaryPayoutId) ? (
+                        <span
+                          className="text-[11px] font-medium text-neutral-400"
+                          title="Manage or delete this payout inside the Salary section"
                         >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(inc.id)}
-                          className="p-1 text-neutral-400 hover:text-rose-600 cursor-pointer"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                          Managed in Salary
+                        </span>
+                      ) : (
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => openEditModal(inc)}
+                            className="p-1 text-neutral-400 hover:text-black cursor-pointer"
+                            title="Edit"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(inc.id)}
+                            className="p-1 text-neutral-400 hover:text-rose-600 cursor-pointer"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

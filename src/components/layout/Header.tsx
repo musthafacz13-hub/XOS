@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Calendar, ShieldCheck, Sparkles } from 'lucide-react';
+import { Plus, Calendar, ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
 import { DateFilterPreset, DateRangeFilter, UserSettings } from '../../types';
 import { ActiveTab, NAV_ITEMS } from './Sidebar';
@@ -29,7 +29,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
   setDateFilter,
   onOpenQuickAction
 }) => {
-  const { user, isDemoUser, isConfigured } = useAuth();
+  const { user, isConfigured } = useAuth();
   const activeNavItem = NAV_ITEMS.find(item => item.id === activeTab);
   const title = activeTab === 'savings' ? 'Goals & Savings' : (activeNavItem ? activeNavItem.label : 'Dashboard');
 
@@ -72,13 +72,6 @@ export const Header: React.FC<HeaderProps> = React.memo(({
               <span className="font-semibold text-neutral-900 truncate max-w-[140px]">{user.email}</span>
               <span className="text-neutral-300">•</span>
               <span className="text-emerald-600 font-medium">Supabase Online</span>
-            </>
-          ) : isDemoUser ? (
-            <>
-              <Sparkles className="w-3.5 h-3.5 text-[#87CEEB]" />
-              <span className="font-semibold text-neutral-900">Demo Guest Session</span>
-              <span className="text-neutral-300">•</span>
-              <span className="text-neutral-500 font-normal">Local Mode</span>
             </>
           ) : (
             <>

@@ -37,7 +37,6 @@ const REPOSITORY_ACTIONS = {
   getPayoutByPeriod: (periodMonth: string) => repository.getPayoutByPeriod(periodMonth),
   deleteSalaryPayout: (id: string) => repository.deleteSalaryPayout(id),
 
-  loadDemoData: () => repository.loadDemoData(),
   clearAllData: () => repository.clearAllData(),
   resetUserData: () => repository.resetUserData(),
   exportJSON: () => repository.exportJSON(),

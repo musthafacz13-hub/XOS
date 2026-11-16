@@ -31,12 +31,13 @@ export interface Deduction {
 export type FixedMonthlyAbsencePolicy = 'no_deduction' | 'deduct_unpaid_absent';
 
 export interface SalaryConfig {
-  dailyBaseSalary: number; // default: 500 -> DB daily_base_salary
+  dailyBaseSalary?: number; // Unconfigured until user explicitly sets -> DB daily_base_salary
   addonSalary: number; // default: 0 -> DB addon_salary
   addonEnabled: boolean; // default: false -> DB addon_enabled
-  standardWorkingHours: number; // default: 8 -> DB standard_hours
-  extraHourRate: number; // default: 100 -> DB extra_hour_rate
-  overtimeEnabled: boolean; // default: true -> DB overtime_enabled
+  standardWorkingHours?: number; // Unconfigured until user explicitly sets -> DB standard_hours
+  extraHourRate?: number; // Unconfigured until user explicitly sets -> DB extra_hour_rate
+  overtimeEnabled: boolean; // default: false -> DB overtime_enabled
+  isConfigured?: boolean; // Explicit frontend flag indicating whether rates have been configured
   currency: CurrencyCode; // DB currency_code
 }
 
@@ -62,7 +63,6 @@ export interface UserSettings {
   widgets: DashboardWidgetConfig[];
   customExpenseCategories: string[];
   customIncomeSources: string[];
-  isDemoMode: boolean;
 }
 
 export type GoalCategory = 'Career' | 'Financial' | 'Health' | 'Travel' | 'Learning' | 'Life' | 'Personal' | string;
@@ -185,6 +185,7 @@ export interface SavingsGoal {
   targetDate?: string; // YYYY-MM-DD
   description?: string; // DB notes
   color?: string; // DB color
+  isArchived?: boolean;
   createdAt: string;
   updatedAt?: string;
 }

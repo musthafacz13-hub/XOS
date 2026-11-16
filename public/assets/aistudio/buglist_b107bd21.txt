@@ -1,0 +1,114 @@
+# XOS Bug List (read-only audit)
+
+Project: XOS-main.zip + Supabase `ufqoimwporqdmjkzpmbh`
+Method: static code inspection + live Supabase metadata and read-only SELECTs.
+Not done: tests were NOT run (no dependencies, no network). No live CRUD, auth, RLS or trigger execution. No source or database changes were made.
+Coverage: NOT 100%. See "Not inspected / unverified" at the end.
+
+Severity: CRITICAL / HIGH / MEDIUM / LOW / INFO
+
+## Confirmed bugs
+
+| ID | Sev | Location | Root cause and impact | Evidence |
+|---|---|---|---|---|
+| B-01 | HIGH | `src/services/repository.ts:494,505-513,1909`; `src/utils/calculations.ts:516,530`; `src/components/dashboard/DashboardView.tsx:68`; `src/services/pdfExport.ts:160`; `src/components/modals/QuickActionModal.tsx:98` | DB archive sets goal status `cancelled`. Frontend maps `cancelled` to `Paused`. Archived goals look like real Paused goals. All Paused goals are dropped from goal totals, dashboard and PDF. | Live `xos_archive_goal` def. `src/tests/persistence.test.ts:1218,1478` assert this mapping (intentional, but conflates the two states). |
+| B-04 | HIGH | `src/utils/calculations.ts:219-231`; `DashboardView.tsx:79-93` | Savings transfers into Paused or archived goals are excluded from the transfer total. Available balance is overstated while the DB still holds the funds. | Static. Live savings transactions = 0, so not observed in data. |
+| B-05 | HIGH | `src/services/repository.ts:3158-3173`; live `xos_prepare_debt_row` | Editing a debt's `original_amount` upward leaves `remaining_amount` stale and flips status to `partially_paid` with no repayment. Lowering it below remaining raises a DB exception. Client only checks against repayments. | Trigger def read live. Not executed (writes forbidden). Live debts are consistent today. |
+| B-06 | HIGH | `repository.ts:2257`; `src/utils/formatters.ts:81-87`; `src/components/salary/SalaryView.tsx:432`; `src/components/work/WorkView.tsx:73,358`; live `xos_calculate_attendance_salary` | Client "future date" check uses the browser local date. DB trigger uses `CURRENT_DATE`, and DB TimeZone is UTC. For India users, 00:00-05:30 IST, today's attendance passes the client and is rejected by the DB. | Code + live metadata (TimeZone = UTC). Not executed. |
+| N-01 | HIGH | `src/hooks/useXOSData.ts:23-24`; `repository.ts:3272,3363`; `src/components/debt/DebtView.tsx` | No repayment UI. `addDebtRepayment` and `deleteDebtRepayment` have zero component callers. DebtView offers only add, edit, delete. Partial and full repayment and repayment history are unusable. | Full DebtView read + grep over `src`. Live `debt_repayments` = 0 rows. |
+| N-10 | MEDIUM | `src/components/income/IncomeView.tsx:333-345,389-400`; `repository.ts:2179-2244` | Salary-synced income can be edited or deleted freely. Payout and income drift apart. SalaryView then shows the payout as Unsynced while it still counts as received. | Code. |
+| N-11 | MEDIUM | `DebtView.tsx:145-146`; `repository.ts:3186-3188` | Edit sends `dueDate.trim() \|\| undefined` and `notes ... \|\| undefined`; `updateDebt` skips undefined fields. Clearing a due date or notes is silently ignored while the modal closes as saved. | Code. |
+| N-02 | MEDIUM | `repository.ts:2347-2363`; `WorkView.tsx:139-155`; `SalaryView.tsx:495-512` | Editing an old day recomputes `extraHours` with the current standard hours. No standard-hours snapshot column exists in the live schema. Historical extra hours change silently. | Code + live schema. |
+| N-03 | MEDIUM | `SalaryView.tsx:553`; payout unique period | Payout is always a full calendar month, one per month. A second or advance payment needs `allowReplace`, which overwrites the earlier payout. | Code + live unique index + RPC. |
+| N-07 | MEDIUM | `pdfExport.ts:359-360,495-522` | PDF debt ledger mixes receivable and payable rows. No direction column, only a `[To Pay]` prefix in a 23 mm column. Summary counts receivables only. | Static. |
+| B-02 | MEDIUM | `supabase/migrations/` | Repo has 1 migration (409 lines, no `xos_*` objects). Live DB has 13. A fresh deploy from the repo lacks the RPCs and triggers. | Verified via `list_migrations`. |
+| B-03 | MEDIUM | `repository.ts:606-632`; `calculations.ts:649,692` | Debt direction is stored as a `[PAY]` / `[RECEIVE]` text prefix in `description`. No `direction` column. Missing prefix defaults to receive. | Live schema. 4 of 4 rows prefixed. Design weakness, not a runtime failure yet. |
+| B-07 | MEDIUM | `calculations.ts:133,181-187` | Salary breakdown uses current config rates, not per-day snapshots or overrides. Lines do not add up to gross when days differ. | Static. |
+| B-15 | MEDIUM | `DashboardView.tsx:300`; `src/components/reports/ReportsView.tsx:273` | Money to Pay is missing from dashboard and reports totals. | Static. |
+| E-01 | MEDIUM | `src/components/expenses/ExpensesView.tsx:39-40,115` | Recurring flag is a label only. No code creates later occurrences. Impact depends on requirements (not stated). | Grep: only types, ExpensesView, repository, initialData mention recurrence. |
+| B-08 | LOW | `src/context/AuthContext.tsx:297-299`; live `xos_handle_new_user` | Sign-up sends `full_name`; trigger reads `display_name`. `profiles.display_name` starts NULL. UI fallback is memory-only. | Code + live function def. Live NULL not checked. |
+| B-09 | LOW | `AuthContext.tsx:252` | Login coalesce key ignores the password. A second attempt with a different password during an in-flight login returns the first result. | Static. |
+| B-11 | LOW | `calculations.ts:386,469` | `remainingSalary` clamped to 0, hiding overpayment. Payouts matched by `periodStart` only. | Static. |
+| B-12 | LOW | `repository.ts:2877` | Client allows a 0 payout when not synced to income. DB and RPC require > 0. | Static. |
+| N-04 | LOW | `SalaryView.tsx:529` | Default payout amount becomes earned salary when remaining is 0, which invites a duplicate payout. | Static. |
+| N-05 | LOW | `SalaryView.tsx:252`; `src/components/settings/SettingsView.tsx:352` | Message says hours must be 0.5-24; code accepts any value > 0. | Static. |
+| N-06 | LOW | `src/components/modals/PDFExportModal.tsx:88-93`; `pdfExport.ts:131` | Custom range with empty dates exports all-time data labeled "Custom". No start <= end check. | Static. |
+| N-08 | LOW | `pdfExport.ts:588-597` | PDF salary section lists payouts only (no earned or remaining). Rates shown are the current config. | Static. |
+| N-09 | LOW | `WorkView.tsx:125-131`; `formatters.ts:105`; live trigger | Break longer than duration gives 0 hours. A Present day still earns full base salary. Check-out earlier than check-in is silently treated as overnight. | Code + trigger def. |
+| N-12 | LOW | `src/components/layout/MobileBottomNav.tsx:53-57` | Escape closes the More sheet only, not the Money sheet. | Code. |
+| N-13 | LOW | `ExpensesView.tsx:142,170`; `IncomeView.tsx:132,159` | Category and source filters list only current settings values. Records with removed categories cannot be filtered. | Code. |
+
+## Potential risks (not confirmed)
+
+| ID | Sev | Where | Risk |
+|---|---|---|---|
+| P-01 | LOW | `repository.ts:464-481,1752` | `toDbGoalStatus` can emit `archived`; DB CHECK rejects it. Reachable only via dead `GoalsView` or demo paths. |
+| P-03 | LOW | DB policies on `salary_payouts`, `incomes` | RLS `ALL` allows bypassing the atomic RPCs. No table CHECK `period_end >= period_start` (RPC checks it). |
+| P-04 | LOW | `repository.ts:1884` | Re-archiving a stale goal shown as Paused would raise "already archived". UI reachability not verified. |
+| P-05 | LOW | `src/index.css` | `overflow-x: clip` unsupported before Safari 16. Possible horizontal scroll on old iOS. Not device-tested. |
+| P-06 | LOW | `MobileBottomNav.tsx` | Sheets do not lock body scroll. Not verified on device. |
+| P-07 | LOW | Supabase Auth config | Leaked-password protection disabled (advisor). Confirmed as a config warning. |
+
+## Informational
+
+- `src/components/goals/GoalsView.tsx` (594 lines) and `src/components/savings/SavingsView.tsx` (753 lines) are never imported.
+- `express`, `@google/genai`, `dotenv` look unused in `src`.
+- Two unused indexes on `salary_payouts` (advisor).
+- `src/index.css`: selector `.font-mono, tabular-nums` targets an element named `tabular-nums` (harmless typo).
+- `validateResetRpcResponse` (`repository.ts:188-255`) treats null and any unrecognized object as success.
+- `fromDbAttendanceStatus` maps unknown values to `Absent`.
+- Account reset needs only one confirm click, no typed confirmation.
+- Welcome reveal elements start at `opacity: 0` and depend on JS.
+- B-13 (empty category list falls back to defaults) is INFO: Settings blocks empty lists.
+- Earlier IDs B-10 and B-14 were folded into P-03 and the dead-code note.
+
+## Supabase findings
+
+- Table, column and RPC names match in all code that was read.
+- `debts` has no `direction` column. `attendance_records` has no standard-hours snapshot.
+- FKs from `goals` and `savings_transactions` to `savings_goals` are RESTRICT. `incomes.salary_payout_id` is SET NULL.
+- DB TimeZone is UTC; frontend uses browser local date.
+- Live data: expenses 0, incomes 0, attendance 0, payouts 0, repayments 0, savings transactions 0, debts 4 (consistent), goals 2. Triggers have not run on real data.
+- 13 live migrations vs 1 in the repo.
+
+## Security
+
+- RLS enabled on all public tables, owner-scoped policies, `anon` has no grants.
+- RPCs are SECURITY INVOKER with pinned `search_path`.
+- No `service_role` key, no key injection in `vite.config.ts`, no `dangerouslySetInnerHTML` in `src`.
+- Leaked-password protection is off (P-07).
+- Client-side cooldowns are UX only.
+- RLS enforcement at runtime: NOT VERIFIED.
+
+## Verified good (static, not run live)
+
+- Expense, income, debt and attendance writes await, use `.select()`, filter by `user_id`, and throw on error. Deletes check the returned row count.
+- Salary formula matches the live trigger. Snapshots are preserved on edit (`repository.ts:2285-2314`).
+- `current_balance` mapping (`repository.ts:735`).
+- Settings reset uses `auth.uid()` server-side, passes no user id from the client, and is guarded by `requirePersistenceContext`. Not executed.
+- Double-submit ref guards on Expenses, Income, Debt, Work, Salary forms, Settings, QuickAction, Goals/Savings. Archive and reset have in-flight maps.
+- `index.css` forces 16 px inputs on touch devices.
+
+## Tests
+
+- 4 custom `console.log` scripts: `persistence` (30 tests, 416 assertions), `salary` (10), `pdf-verification` (5), `auth-and-layout`.
+- No test runner and no `test` script in `package.json`.
+- All use a mocked Supabase client; none exercise live triggers (B-05, B-06 untested).
+- NOT RUN: `tsx src/tests/salary.test.ts` failed with `ERR_MODULE_NOT_FOUND @supabase/supabase-js`. No results claimed.
+
+## Fix priority
+
+- **P0:** none confirmed.
+- **P1:** B-01, B-04, B-05, B-06, N-01, N-10, N-11, B-02
+- **P2:** N-02, N-03, N-07, B-03, B-07, B-15, E-01, P-03
+- **P3:** B-08, B-09, B-11, B-12, N-04, N-05, N-06, N-08, N-09, N-12, N-13, dead code, unused deps and indexes
+
+## Not inspected / unverified
+
+- Not read in full: `SalaryView.tsx` lines 640-1040 and 1135-1700, `SettingsView.tsx` forms (about 1-322, 376-474, 540-1300), `GoalsAndSavingsView`, `QuickActionModal` (mostly), `DashboardView.tsx` 200-516, `ReportsView.tsx` outside 40-130, 8 auth views, welcome views, `Sidebar`, `Header`, common components, `persistence.test.ts` body, `repository.ts` gaps (about 520-600, 940-1040).
+- Not verified live: CRUD, auth flows, RLS enforcement, trigger execution, `profiles.display_name` NULL state, reproduction of B-05 and B-06.
+- Not verified: rendered PDF output, Mobile Safari device behavior, UI reachability of P-01 and P-04, whether recurring expenses are meant to auto-generate (E-01).
+
+## Verdict
+
+Not production-ready. Five HIGH defects are confirmed from code and live metadata (B-01, B-04, B-05, B-06, N-01), plus several MEDIUM ones. None was reproduced live and no tests were run.

@@ -136,7 +136,7 @@ function getAuthRouteTitle(route: AuthRoute): string {
 
 function XOSApplication() {
   const data = useXOSData();
-  const { user, loading, initError, retryInitialization, dismissInitError, isDemoUser, isPasswordRecovery } = useAuth();
+  const { user, loading, initError, retryInitialization, dismissInitError, isPasswordRecovery } = useAuth();
 
   // Authentication Navigation State
   const [authRoute, setAuthRoute] = useState<AuthRoute>(() => {
@@ -187,19 +187,19 @@ function XOSApplication() {
     setIsQuickActionOpen(false);
   }, []);
 
-  const isAuthenticatedOrDemo = Boolean(user || isDemoUser);
-  const showingAuthScreen = !isAuthenticatedOrDemo || authRoute === 'callback' || authRoute === 'reset-password';
+  const isAuthenticated = Boolean(user);
+  const showingAuthScreen = !isAuthenticated || authRoute === 'callback' || authRoute === 'reset-password';
 
   // Clean auth URL parameters/hashes once authenticated in workspace,
   // and ensure signing out resets stale callback/verify routes back to welcome.
   useEffect(() => {
-    if (isAuthenticatedOrDemo && !showingAuthScreen) {
+    if (isAuthenticated && !showingAuthScreen) {
       clearAuthUrlParams();
       if (authRoute !== 'welcome') {
         setAuthRoute('welcome');
       }
     }
-  }, [isAuthenticatedOrDemo, showingAuthScreen, authRoute]);
+  }, [isAuthenticated, showingAuthScreen, authRoute]);
 
   const navigateWelcome = useCallback(() => {
     clearAuthUrlParams();

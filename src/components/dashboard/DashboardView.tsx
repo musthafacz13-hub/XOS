@@ -16,7 +16,9 @@ import {
   calculateFinancialTotals, 
   calculateMonthlySalarySummary, 
   calculateDebtSummary, 
+  calculateSeparateDebtTotals,
   filterRecordsByDateRange,
+  isSalaryConfigured,
   resolveGoalsWithSavings
 } from '../../utils/calculations';
 import { formatCurrency, formatHumanDate, getMonthString } from '../../utils/formatters';
@@ -60,36 +62,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     [data.expenses, dateFilter.preset, dateFilter.startDate, dateFilter.endDate]
   );
 
-  // Exclude savings linked strictly to archived/cancelled goals from Dashboard balances
-  const archivedOrCancelledSavingsIds = useMemo(
+  // Exclude savings linked strictly to archived goals from active reserves display
+  const archivedGoalSavingsIds = useMemo(
     () =>
       new Set(
         data.goals
-          .filter(g => (g.status === 'Archived' || g.status === 'Paused') && g.savingsGoalId)
+          .filter(g => g.status === 'Archived' && g.savingsGoalId)
           .map(g => g.savingsGoalId as string)
       ),
     [data.goals]
   );
 
   const activeSavingsGoals = useMemo(
-    () => data.savingsGoals.filter(sg => !archivedOrCancelledSavingsIds.has(sg.id)),
-    [data.savingsGoals, archivedOrCancelledSavingsIds]
+    () => data.savingsGoals.filter(sg => !sg.isArchived && !archivedGoalSavingsIds.has(sg.id)),
+    [data.savingsGoals, archivedGoalSavingsIds]
   );
 
-  const activeSavingsTransactions = useMemo(
-    () => data.savingsTransactions.filter(tx => !archivedOrCancelledSavingsIds.has(tx.savingsGoalId)),
-    [data.savingsTransactions, archivedOrCancelledSavingsIds]
-  );
-
-  // Financial calculations
+  // Financial calculations (pass all savingsTransactions so historical deposits into archived goals still reduce available cash)
   const financialTotals = useMemo(
-    () => calculateFinancialTotals(filteredIncomes, filteredExpenses, activeSavingsGoals, activeSavingsTransactions),
-    [filteredIncomes, filteredExpenses, activeSavingsGoals, activeSavingsTransactions]
+    () => calculateFinancialTotals(filteredIncomes, filteredExpenses, activeSavingsGoals, data.savingsTransactions),
+    [filteredIncomes, filteredExpenses, activeSavingsGoals, data.savingsTransactions]
   );
 
   const globalTotals = useMemo(
-    () => calculateFinancialTotals(data.incomes, data.expenses, activeSavingsGoals, activeSavingsTransactions),
-    [data.incomes, data.expenses, activeSavingsGoals, activeSavingsTransactions]
+    () => calculateFinancialTotals(data.incomes, data.expenses, activeSavingsGoals, data.savingsTransactions),
+    [data.incomes, data.expenses, activeSavingsGoals, data.savingsTransactions]
   );
 
   // Work, Salary, and Debt calculations
@@ -113,6 +110,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const debtSummary = useMemo(
     () => calculateDebtSummary(data.debts, data.debtRepayments),
+    [data.debts, data.debtRepayments]
+  );
+
+  const { totalToPay } = useMemo(
+    () => calculateSeparateDebtTotals(data.debts, data.debtRepayments),
     [data.debts, data.debtRepayments]
   );
 
@@ -154,6 +156,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   }, [data.expenses, data.incomes]);
 
   const displayName = data.settings.profile.name.trim();
+  const salaryConfigured = isSalaryConfigured(data.settings.salaryConfig);
 
   return (
     <div className="space-y-6">
@@ -280,16 +283,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <TrendingUp className="w-4 h-4 text-sky-600" />
             </div>
             <div>
-              <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">
-                {formatCurrency(monthlySalarySummary.remainingSalary, data.settings.currency)}
-              </div>
-              <p className="text-[11px] text-neutral-500 font-normal mt-1">
-                Earned: {formatCurrency(monthlySalarySummary.earnedSalary, data.settings.currency)}
-              </p>
+              {!salaryConfigured &&
+              monthlySalarySummary.earnedSalary === 0 &&
+              monthlySalarySummary.salaryReceived === 0 ? (
+                <>
+                  <div className="text-lg sm:text-xl font-bold text-neutral-700">Not configured</div>
+                  <button
+                    type="button"
+                    onClick={() => onNavigateTab('salary')}
+                    className="text-[11px] text-[#0284C7] hover:underline font-medium mt-1 cursor-pointer text-left"
+                  >
+                    Set daily base &amp; hours →
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">
+                    {formatCurrency(monthlySalarySummary.remainingSalary, data.settings.currency)}
+                  </div>
+                  <p className="text-[11px] text-neutral-500 font-normal mt-1">
+                    Earned: {formatCurrency(monthlySalarySummary.earnedSalary, data.settings.currency)}
+                  </p>
+                </>
+              )}
             </div>
           </div>
 
-          {/* Metric 5: Money Owed to Me */}
+          {/* Metric 5: Debt Balance (Receivable & To Pay) */}
           <div className="p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-3 shadow-xs">
             <div className="flex items-center justify-between text-neutral-500">
               <span className="text-[11px] font-semibold uppercase tracking-wider">Money Owed to Me</span>
@@ -299,8 +319,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">
                 {formatCurrency(debtSummary.outstandingReceivable, data.settings.currency)}
               </div>
-              <p className="text-[11px] text-neutral-400 font-normal mt-1">
-                Lent receivables
+              <p className="text-[11px] text-neutral-500 font-normal mt-1 font-mono tabular-nums">
+                To Pay: {formatCurrency(totalToPay, data.settings.currency)}
               </p>
             </div>
           </div>
@@ -357,7 +377,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 {attendanceStats.totalHours}h
               </div>
               <p className="text-xs text-neutral-500 pt-1 border-t border-neutral-200 truncate">
-                Daily Base: {formatCurrency(data.settings.salaryConfig.dailyBaseSalary, data.settings.currency)} · {data.settings.salaryConfig.standardWorkingHours}h/day
+                {salaryConfigured
+                  ? `Daily Base: ${formatCurrency(data.settings.salaryConfig.dailyBaseSalary ?? 0, data.settings.currency)} · ${data.settings.salaryConfig.standardWorkingHours}h/day`
+                  : 'Salary & working hours not configured'}
               </p>
             </div>
 

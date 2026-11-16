@@ -15,7 +15,14 @@ import {
   CurrencyCode
 } from '../types';
 import { formatCurrency, formatDate, getTodayString } from '../utils/formatters';
-import { calculateDebtOutstanding, calculateDebtSummary, resolveGoalsWithSavings } from '../utils/calculations';
+import {
+  calculateDebtOutstanding,
+  calculateDebtSummary,
+  calculateSeparateDebtTotals,
+  calculatePeriodSalarySummary,
+  isSalaryConfigured,
+  resolveGoalsWithSavings
+} from '../utils/calculations';
 
 export interface PDFExportOptions {
   datePreset?: DateFilterPreset | 'all';
@@ -151,19 +158,21 @@ export async function generateXOSReportPDF(
   const netCashFlow = totalIncome - totalExpenses;
 
   const debtSummary = calculateDebtSummary(filteredDebts, data.debtRepayments);
+  const debtDirectionTotals = calculateSeparateDebtTotals(filteredDebts, data.debtRepayments);
   const outstandingReceivable = debtSummary.outstandingReceivable;
+  const totalToPay = debtDirectionTotals.totalToPay;
   const totalRepaid = debtSummary.totalRepaid;
 
   const resolvedGoals = resolveGoalsWithSavings(data.goals, data.savingsGoals);
   const archivedSavingsIds = new Set(
     data.goals
-      .filter(g => (g.status === 'Archived' || g.status === 'Paused') && g.savingsGoalId)
+      .filter(g => g.status === 'Archived' && g.savingsGoalId)
       .map(g => g.savingsGoalId as string)
   );
   const uniqueSavingsGoals = Array.from(
     new Map(
       data.savingsGoals
-        .filter(sg => sg && sg.id && !archivedSavingsIds.has(sg.id))
+        .filter(sg => sg && sg.id && !sg.isArchived && !archivedSavingsIds.has(sg.id))
         .map(sg => [sg.id, sg])
     ).values()
   );
@@ -357,8 +366,13 @@ export async function generateXOSReportPDF(
     ],
     [
       { label: 'MONEY LENT (RECEIVABLE)', value: formatPdfCurrency(outstandingReceivable, currencyCode) },
-      { label: 'DEBT RECOVERED', value: formatPdfCurrency(totalRepaid, currencyCode) },
-      { label: 'TOTAL SAVINGS SAVED', value: formatPdfCurrency(totalSavings, currencyCode) }
+      { label: 'MONEY TO PAY', value: formatPdfCurrency(totalToPay, currencyCode) },
+      { label: 'DEBT RECOVERED', value: formatPdfCurrency(totalRepaid, currencyCode) }
+    ],
+    [
+      { label: 'TOTAL SAVINGS SAVED', value: formatPdfCurrency(totalSavings, currencyCode) },
+      { label: 'ACTIVE GOALS', value: `${resolvedGoals.length} active` },
+      { label: 'NET POSITION', value: formatPdfCurrency(netCashFlow + totalSavings + outstandingReceivable - totalToPay, currencyCode) }
     ]
   ];
 
@@ -506,13 +520,14 @@ export async function generateXOSReportPDF(
             ? 'Partially Paid'
             : 'Outstanding';
 
+          const directionLabel = d.direction === 'pay' ? '[To Pay]' : 'To Receive';
           const descText = d.description || d.notes || '-';
-          const formattedDesc = d.direction === 'pay' ? `[To Pay] ${descText}` : descText;
 
           return [
             sanitizePdfText(formatDate(d.lent_date, dateFormat)),
             sanitizePdfText(d.person_name),
-            sanitizePdfText(formattedDesc),
+            directionLabel,
+            sanitizePdfText(descText),
             formatPdfCurrency(d.original_amount, currencyCode),
             formatPdfCurrency(repaid, currencyCode),
             formatPdfCurrency(remaining, currencyCode),
@@ -522,24 +537,25 @@ export async function generateXOSReportPDF(
         })
       : [[{
           content: 'No debt records logged.',
-          colSpan: 8,
+          colSpan: 9,
           styles: { textColor: COLOR_SECONDARY, fontStyle: 'italic' }
         }]];
 
     renderStatementTable({
-      head: ['Date', 'Person', 'Description', 'Original', 'Repaid', 'Balance', 'Due Date', 'Status'],
+      head: ['Date', 'Person', 'Type', 'Description', 'Original', 'Repaid', 'Balance', 'Due Date', 'Status'],
       body: debtRows,
-      fontSize: 7.4,
-      cellPaddingX: 1.5,
+      fontSize: 7.2,
+      cellPaddingX: 1.4,
       columnStyles: {
-        0: { cellWidth: 20, halign: 'left' },
-        1: { cellWidth: 25, halign: 'left' },
-        2: { cellWidth: 23, halign: 'left' },
-        3: { cellWidth: 24, halign: 'right' },
-        4: { cellWidth: 22, halign: 'right' },
-        5: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
-        6: { cellWidth: 20, halign: 'left' },
-        7: { cellWidth: 20, halign: 'left' }
+        0: { cellWidth: 18, halign: 'left' },
+        1: { cellWidth: 22, halign: 'left' },
+        2: { cellWidth: 18, halign: 'left' },
+        3: { cellWidth: 24, halign: 'left' },
+        4: { cellWidth: 20, halign: 'right' },
+        5: { cellWidth: 18, halign: 'right' },
+        6: { cellWidth: 20, halign: 'right', fontStyle: 'bold' },
+        7: { cellWidth: 18, halign: 'left' },
+        8: { cellWidth: 20, halign: 'left' }
       }
     });
   }
@@ -586,9 +602,12 @@ export async function generateXOSReportPDF(
   if (includeSalary) {
     renderedAnySection = true;
     const salaryCfg = data.settings.salaryConfig;
-    const salarySubtitle = salaryCfg
-      ? `Daily Base: ${formatPdfCurrency(salaryCfg.dailyBaseSalary || 0, currencyCode)}  |  Standard Hours: ${salaryCfg.standardWorkingHours || 8}h  |  Extra Rate: ${formatPdfCurrency(salaryCfg.extraHourRate || 0, currencyCode)}/hr`
-      : undefined;
+    const periodSalary = calculatePeriodSalarySummary(filteredAttendance, filteredPayouts, salaryCfg, 'all');
+    const rateLine = isSalaryConfigured(salaryCfg)
+      ? `Current Config: Daily Base ${formatPdfCurrency(salaryCfg.dailyBaseSalary ?? 0, currencyCode)} | Standard ${salaryCfg.standardWorkingHours}h | Extra ${salaryCfg.overtimeEnabled ? `${formatPdfCurrency(salaryCfg.extraHourRate ?? 0, currencyCode)}/hr` : 'Disabled'}`
+      : 'Salary & Working Time Config: Not configured';
+    const totalsLine = `Period Earned: ${formatPdfCurrency(periodSalary.earnedSalary, currencyCode)}  |  Paid: ${formatPdfCurrency(periodSalary.salaryReceived, currencyCode)}  |  Remaining Due: ${formatPdfCurrency(periodSalary.remainingSalary, currencyCode)}`;
+    const salarySubtitle = rateLine ? `${totalsLine}\n${rateLine}` : totalsLine;
 
     drawSectionHeader(
       'Salary Information & Payout Records',

@@ -86,10 +86,61 @@ export function getTodayString(): string {
   return `${year}-${month}-${day}`;
 }
 
+export const BUSINESS_TIMEZONE = 'Asia/Kolkata';
+
+export function getIstTodayString(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: BUSINESS_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(now);
+
+  const year = parts.find(p => p.type === 'year')?.value;
+  const month = parts.find(p => p.type === 'month')?.value;
+  const day = parts.find(p => p.type === 'day')?.value;
+
+  if (!year || !month || !day) {
+    throw new Error('Could not resolve current IST calendar date.');
+  }
+  return `${year}-${month}-${day}`;
+}
+
+export function isValidCalendarDateString(dateStr: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+  const parsed = parseCalendarDate(dateStr);
+  return !isNaN(parsed.getTime());
+}
+
+export function isFutureIstDate(dateStr: string, now: Date = new Date()): boolean {
+  return dateStr > getIstTodayString(now);
+}
+
 export function getMonthString(d: Date = new Date()): string {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
   return `${year}-${month}`;
+}
+
+export function isOvernightShift(checkIn?: string, checkOut?: string): boolean {
+  if (!checkIn || !checkOut) return false;
+  const [inH, inM] = checkIn.split(':').map(Number);
+  const [outH, outM] = checkOut.split(':').map(Number);
+  if (isNaN(inH) || isNaN(inM) || isNaN(outH) || isNaN(outM)) return false;
+  return outH * 60 + outM < inH * 60 + inM;
+}
+
+export function getShiftSpanMinutes(checkIn?: string, checkOut?: string): number {
+  if (!checkIn || !checkOut) return 0;
+  const [inH, inM] = checkIn.split(':').map(Number);
+  const [outH, outM] = checkOut.split(':').map(Number);
+  if (isNaN(inH) || isNaN(inM) || isNaN(outH) || isNaN(outM)) return 0;
+  const startMinutes = inH * 60 + inM;
+  let endMinutes = outH * 60 + outM;
+  if (endMinutes < startMinutes) {
+    endMinutes += 24 * 60;
+  }
+  return Math.max(0, endMinutes - startMinutes);
 }
 
 export function calculateWorkingHours(checkIn?: string, checkOut?: string, breakMins: number = 0): number {

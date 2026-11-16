@@ -161,10 +161,26 @@ function runTests() {
   assert(loginViewSrc.includes('isSubmittingRef') && signUpViewSrc.includes('isSubmittingRef'), 'Auth forms guard against rapid duplicate submissions synchronously');
   assert(loginViewSrc.includes('aria-pressed={showPassword}') && signUpViewSrc.includes('aria-pressed={showPassword}'), 'Password toggle buttons expose aria-pressed state');
   assert(authContextSrc.includes('identities.length === 0'), 'AuthContext detects Supabase v2 duplicate-email empty identities signup');
-  assert(authContextSrc.includes('isDemoUserRef'), 'AuthContext keeps session init stable without tearing down on demo toggle');
+  const initialDataSrc = fs.readFileSync(path.join(rootDir, 'src/data/initialData.ts'), 'utf8');
+  assert(
+    !authContextSrc.includes('isDemoUser') &&
+      !authContextSrc.includes('enterDemoMode') &&
+      !authContextSrc.includes('exitDemoMode') &&
+      !authContextSrc.includes('DEMO_USER_KEY') &&
+      !initialDataSrc.includes('generateDemoDataset'),
+    'Demo mode and sample dataset generators are completely removed'
+  );
   assert(!offlineBannerSrc.includes('whitespace-nowrap'), 'OfflineIndicator wraps cleanly on narrow mobile viewports');
   assert(scrollRevealSrc.includes('rect.width === 0 && rect.height === 0'), 'Welcome scroll reveal ignores hidden responsive branch elements');
   assert(!mobileOnboardingSrc.includes('touchAction: \'pan-y\'\n      onTouchStart'), 'MobileOnboarding does not force touchAction: pan-y across the entire root viewport');
+
+  // Test 5: Auth metadata, coalesce discriminator, CSS Safari fallback, & mobile sheet scroll lock
+  console.log('Test 5: Auth display_name metadata, login coalesce, Safari overflow fallback & mobile scroll lock...');
+  const mobileBottomNavSrc = fs.readFileSync(path.join(rootDir, 'src/components/layout/MobileBottomNav.tsx'), 'utf8');
+  assert(authContextSrc.includes('display_name: fullName.trim()'), 'B-08: signUpWithEmail passes display_name alongside full_name');
+  assert(authContextSrc.includes('auth:login:${cleanEmail}:${credentialDigest'), 'B-09: login coalesce isolates concurrent attempts with different passwords');
+  assert(indexCss.includes('overflow-x: hidden;') && indexCss.includes('.font-mono, .tabular-nums'), 'P-05 & CSS fix: overflow-x hidden fallback precedes clip and .tabular-nums has class dot');
+  assert(mobileBottomNavSrc.includes("document.body.style.overflow = 'hidden'"), 'P-06: MobileBottomNav locks body scroll while sheets are open');
 
   console.log('ALL AUTH, WELCOME & GLOBAL ZOOM REGRESSION TESTS PASSED!');
 }

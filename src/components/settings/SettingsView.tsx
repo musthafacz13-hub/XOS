@@ -5,11 +5,11 @@ import {
   Loader2,
   ChevronDown,
   X,
-  RotateCcw,
   ShieldCheck
 } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
 import { CURRENCIES, formatCurrency } from '../../utils/formatters';
+import { isSalaryConfigured } from '../../utils/calculations';
 import { CurrencyCode, DateFormat, WeekStartDay, SalaryConfig } from '../../types';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { PWAInstallButton } from '../common/PWAInstallButton';
@@ -29,9 +29,10 @@ const SELECT_CLASS =
 
 export const SettingsView: React.FC = () => {
   const data = useXOSData();
-  const { user, isDemoUser, signOut, exitDemoMode } = useAuth();
+  const { user, signOut } = useAuth();
 
-  const resolvedProfileName = data.settings.profile.name || user?.user_metadata?.full_name || '';
+  const resolvedProfileName =
+    data.settings.profile.name || user?.user_metadata?.display_name || user?.user_metadata?.full_name || '';
   const resolvedCurrency = (data.settings.currency || 'INR') as CurrencyCode;
   const resolvedDateFormat = (data.settings.dateFormat || 'YYYY-MM-DD') as DateFormat;
   const resolvedWeekStartDay = (data.settings.weekStartDay || 'Monday') as WeekStartDay;
@@ -80,26 +81,26 @@ export const SettingsView: React.FC = () => {
   const [dateFormat, setDateFormat] = useState<DateFormat>(resolvedDateFormat);
   const [weekStartDay, setWeekStartDay] = useState<WeekStartDay>(resolvedWeekStartDay);
 
-  // String numeric inputs prevent mid-typing snap-back when clearing or editing numbers
-  const [dailyBaseSalaryInput, setDailyBaseSalaryInput] = useState<string>(
-    String(resolvedSalaryConfig.dailyBaseSalary ?? 500)
+  // String numeric inputs prevent mid-typing snap-back and remain empty when unconfigured
+  const [dailyBaseSalaryInput, setDailyBaseSalaryInput] = useState<string>(() =>
+    typeof resolvedSalaryConfig.dailyBaseSalary === 'number' ? String(resolvedSalaryConfig.dailyBaseSalary) : ''
   );
-  const [addonSalaryInput, setAddonSalaryInput] = useState<string>(
+  const [addonSalaryInput, setAddonSalaryInput] = useState<string>(() =>
     String(resolvedSalaryConfig.addonSalary ?? 0)
   );
   const [addonEnabled, setAddonEnabled] = useState<boolean>(
     Boolean(resolvedSalaryConfig.addonEnabled)
   );
-  const [standardHoursInput, setStandardHoursInput] = useState<string>(
-    String(resolvedSalaryConfig.standardWorkingHours ?? 8)
+  const [standardHoursInput, setStandardHoursInput] = useState<string>(() =>
+    typeof resolvedSalaryConfig.standardWorkingHours === 'number'
+      ? String(resolvedSalaryConfig.standardWorkingHours)
+      : ''
   );
-  const [extraHourRateInput, setExtraHourRateInput] = useState<string>(
-    String(resolvedSalaryConfig.extraHourRate ?? 100)
+  const [extraHourRateInput, setExtraHourRateInput] = useState<string>(() =>
+    typeof resolvedSalaryConfig.extraHourRate === 'number' ? String(resolvedSalaryConfig.extraHourRate) : ''
   );
   const [overtimeEnabled, setOvertimeEnabled] = useState<boolean>(
-    resolvedSalaryConfig.overtimeEnabled !== undefined
-      ? Boolean(resolvedSalaryConfig.overtimeEnabled)
-      : true
+    Boolean(resolvedSalaryConfig.overtimeEnabled)
   );
 
   const [expenseCategories, setExpenseCategories] = useState<string[]>(resolvedExpenseCategories);
@@ -126,9 +127,6 @@ export const SettingsView: React.FC = () => {
   const [isResetting, setIsResetting] = useState<boolean>(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const isResettingRef = useRef<boolean>(false);
-  const [isSalaryResetModalOpen, setIsSalaryResetModalOpen] = useState<boolean>(false);
-  const [isResettingSalary, setIsResettingSalary] = useState<boolean>(false);
-  const [salaryResetError, setSalaryResetError] = useState<string | null>(null);
   const [isPDFModalOpen, setIsPDFModalOpen] = useState<boolean>(false);
   const [hasOpenedPDFModal, setHasOpenedPDFModal] = useState<boolean>(false);
   const [bannerMessage, setBannerMessage] = useState<string | null>(null);
@@ -159,16 +157,24 @@ export const SettingsView: React.FC = () => {
       setIncomeSources(resolvedIncomeSources);
     }
     if (!failedSectionsRef.current.has('salary_configs')) {
-      setDailyBaseSalaryInput(String(resolvedSalaryConfig.dailyBaseSalary ?? 500));
+      setDailyBaseSalaryInput(
+        typeof resolvedSalaryConfig.dailyBaseSalary === 'number'
+          ? String(resolvedSalaryConfig.dailyBaseSalary)
+          : ''
+      );
       setAddonSalaryInput(String(resolvedSalaryConfig.addonSalary ?? 0));
       setAddonEnabled(Boolean(resolvedSalaryConfig.addonEnabled));
-      setStandardHoursInput(String(resolvedSalaryConfig.standardWorkingHours ?? 8));
-      setExtraHourRateInput(String(resolvedSalaryConfig.extraHourRate ?? 100));
-      setOvertimeEnabled(
-        resolvedSalaryConfig.overtimeEnabled !== undefined
-          ? Boolean(resolvedSalaryConfig.overtimeEnabled)
-          : true
+      setStandardHoursInput(
+        typeof resolvedSalaryConfig.standardWorkingHours === 'number'
+          ? String(resolvedSalaryConfig.standardWorkingHours)
+          : ''
       );
+      setExtraHourRateInput(
+        typeof resolvedSalaryConfig.extraHourRate === 'number'
+          ? String(resolvedSalaryConfig.extraHourRate)
+          : ''
+      );
+      setOvertimeEnabled(Boolean(resolvedSalaryConfig.overtimeEnabled));
     }
   }, [
     isSaving,
@@ -190,33 +196,45 @@ export const SettingsView: React.FC = () => {
   const parsedDailyBase = Number(dailyBaseSalaryInput.trim());
   const parsedAddonSalary =
     addonSalaryInput.trim() === ''
-      ? (resolvedSalaryConfig.addonSalary ?? 0)
+      ? 0
       : Number(addonSalaryInput.trim());
   const parsedStandardHours = Number(standardHoursInput.trim());
   const parsedExtraHourRate =
     extraHourRateInput.trim() === ''
-      ? (resolvedSalaryConfig.extraHourRate ?? 100)
+      ? (typeof resolvedSalaryConfig.extraHourRate === 'number' ? resolvedSalaryConfig.extraHourRate : 0)
       : Number(extraHourRateInput.trim());
 
+  const savedSalaryConfigured = isSalaryConfigured(resolvedSalaryConfig);
+
   const hasUnsavedChanges = useMemo(() => {
+    const salaryChanged = savedSalaryConfigured
+      ? (
+          dailyBaseSalaryInput.trim() === '' ||
+          (addonEnabled && addonSalaryInput.trim() === '') ||
+          standardHoursInput.trim() === '' ||
+          (overtimeEnabled && extraHourRateInput.trim() === '') ||
+          parsedDailyBase !== resolvedSalaryConfig.dailyBaseSalary ||
+          parsedAddonSalary !== (resolvedSalaryConfig.addonSalary ?? 0) ||
+          addonEnabled !== Boolean(resolvedSalaryConfig.addonEnabled) ||
+          parsedStandardHours !== resolvedSalaryConfig.standardWorkingHours ||
+          parsedExtraHourRate !== (resolvedSalaryConfig.extraHourRate ?? 0) ||
+          overtimeEnabled !== Boolean(resolvedSalaryConfig.overtimeEnabled)
+        )
+      : (
+          dailyBaseSalaryInput.trim() !== '' ||
+          standardHoursInput.trim() !== '' ||
+          extraHourRateInput.trim() !== '' ||
+          addonEnabled !== Boolean(resolvedSalaryConfig.addonEnabled) ||
+          overtimeEnabled !== Boolean(resolvedSalaryConfig.overtimeEnabled) ||
+          (addonSalaryInput.trim() !== '' && Number(addonSalaryInput.trim()) !== (resolvedSalaryConfig.addonSalary ?? 0))
+        );
+
     return (
       profileName.trim() !== resolvedProfileName.trim() ||
       currency !== resolvedCurrency ||
       dateFormat !== resolvedDateFormat ||
       weekStartDay !== resolvedWeekStartDay ||
-      dailyBaseSalaryInput.trim() === '' ||
-      (addonEnabled && addonSalaryInput.trim() === '') ||
-      standardHoursInput.trim() === '' ||
-      (overtimeEnabled && extraHourRateInput.trim() === '') ||
-      parsedDailyBase !== resolvedSalaryConfig.dailyBaseSalary ||
-      parsedAddonSalary !== (resolvedSalaryConfig.addonSalary ?? 0) ||
-      addonEnabled !== Boolean(resolvedSalaryConfig.addonEnabled) ||
-      parsedStandardHours !== resolvedSalaryConfig.standardWorkingHours ||
-      parsedExtraHourRate !== resolvedSalaryConfig.extraHourRate ||
-      overtimeEnabled !==
-        (resolvedSalaryConfig.overtimeEnabled !== undefined
-          ? Boolean(resolvedSalaryConfig.overtimeEnabled)
-          : true) ||
+      salaryChanged ||
       JSON.stringify(expenseCategories) !== JSON.stringify(resolvedExpenseCategories) ||
       JSON.stringify(incomeSources) !== JSON.stringify(resolvedIncomeSources)
     );
@@ -229,6 +247,7 @@ export const SettingsView: React.FC = () => {
     resolvedDateFormat,
     weekStartDay,
     resolvedWeekStartDay,
+    savedSalaryConfigured,
     dailyBaseSalaryInput,
     addonSalaryInput,
     addonEnabled,
@@ -271,52 +290,28 @@ export const SettingsView: React.FC = () => {
     setCurrency(resolvedCurrency);
     setDateFormat(resolvedDateFormat);
     setWeekStartDay(resolvedWeekStartDay);
-    setDailyBaseSalaryInput(String(resolvedSalaryConfig.dailyBaseSalary ?? 500));
+    setDailyBaseSalaryInput(
+      typeof resolvedSalaryConfig.dailyBaseSalary === 'number'
+        ? String(resolvedSalaryConfig.dailyBaseSalary)
+        : ''
+    );
     setAddonSalaryInput(String(resolvedSalaryConfig.addonSalary ?? 0));
     setAddonEnabled(Boolean(resolvedSalaryConfig.addonEnabled));
-    setStandardHoursInput(String(resolvedSalaryConfig.standardWorkingHours ?? 8));
-    setExtraHourRateInput(String(resolvedSalaryConfig.extraHourRate ?? 100));
-    setOvertimeEnabled(
-      resolvedSalaryConfig.overtimeEnabled !== undefined
-        ? Boolean(resolvedSalaryConfig.overtimeEnabled)
-        : true
+    setStandardHoursInput(
+      typeof resolvedSalaryConfig.standardWorkingHours === 'number'
+        ? String(resolvedSalaryConfig.standardWorkingHours)
+        : ''
     );
+    setExtraHourRateInput(
+      typeof resolvedSalaryConfig.extraHourRate === 'number'
+        ? String(resolvedSalaryConfig.extraHourRate)
+        : ''
+    );
+    setOvertimeEnabled(Boolean(resolvedSalaryConfig.overtimeEnabled));
     setExpenseCategories(resolvedExpenseCategories);
     setIncomeSources(resolvedIncomeSources);
     setNewCatName('');
     setNewIncName('');
-  };
-
-  const executeResetSalaryDefaults = async () => {
-    if (isResettingSalary || isSaving) return;
-    setSalaryResetError(null);
-    setIsResettingSalary(true);
-    try {
-      const defaultSalaryConfig: SalaryConfig = {
-        dailyBaseSalary: 500,
-        addonSalary: 0,
-        addonEnabled: false,
-        standardWorkingHours: 8,
-        extraHourRate: 100,
-        overtimeEnabled: true,
-        currency
-      };
-      await data.persistSalaryConfig(defaultSalaryConfig);
-      setDailyBaseSalaryInput('500');
-      setAddonSalaryInput('0');
-      setAddonEnabled(false);
-      setStandardHoursInput('8');
-      setExtraHourRateInput('100');
-      setOvertimeEnabled(true);
-      setIsSalaryResetModalOpen(false);
-      setBannerMessage('Salary defaults restored (₹500 base / ₹0 add-on / 8h / ₹100 overtime). Past attendance records were not altered.');
-      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
-      bannerTimerRef.current = setTimeout(() => setBannerMessage(null), 5000);
-    } catch (err) {
-      setSalaryResetError(err instanceof Error ? err.message : 'Could not reset salary defaults.');
-    } finally {
-      setIsResettingSalary(false);
-    }
   };
 
   // Persist to user_settings, salary_configs, and profiles via repository
@@ -327,41 +322,51 @@ export const SettingsView: React.FC = () => {
     setSaveSuccessMessage(null);
     setSaveErrorMessage(null);
 
-    if (
-      dailyBaseSalaryInput.trim() === '' ||
-      !Number.isFinite(parsedDailyBase) ||
-      parsedDailyBase < 0
-    ) {
-      setSaveErrorMessage('Daily base salary must be zero or a positive number.');
-      return;
-    }
+    const hasAnySalaryInput =
+      dailyBaseSalaryInput.trim() !== '' ||
+      standardHoursInput.trim() !== '' ||
+      extraHourRateInput.trim() !== '' ||
+      addonEnabled ||
+      overtimeEnabled ||
+      (addonSalaryInput.trim() !== '' && Number(addonSalaryInput.trim()) > 0);
 
-    if (
-      (addonEnabled && addonSalaryInput.trim() === '') ||
-      !Number.isFinite(parsedAddonSalary) ||
-      parsedAddonSalary < 0
-    ) {
-      setSaveErrorMessage('Add-on salary must be zero or a positive number.');
-      return;
-    }
+    if (hasAnySalaryInput) {
+      if (
+        dailyBaseSalaryInput.trim() === '' ||
+        !Number.isFinite(parsedDailyBase) ||
+        parsedDailyBase < 0
+      ) {
+        setSaveErrorMessage('Daily base salary must be zero or a positive number.');
+        return;
+      }
 
-    if (
-      standardHoursInput.trim() === '' ||
-      !Number.isFinite(parsedStandardHours) ||
-      parsedStandardHours <= 0 ||
-      parsedStandardHours > 24
-    ) {
-      setSaveErrorMessage('Standard working hours must be between 0.5 and 24 hours.');
-      return;
-    }
+      if (
+        (addonEnabled && addonSalaryInput.trim() === '') ||
+        !Number.isFinite(parsedAddonSalary) ||
+        parsedAddonSalary < 0
+      ) {
+        setSaveErrorMessage('Add-on salary must be zero or a positive number.');
+        return;
+      }
 
-    if (
-      (overtimeEnabled && extraHourRateInput.trim() === '') ||
-      !Number.isFinite(parsedExtraHourRate) ||
-      parsedExtraHourRate < 0
-    ) {
-      setSaveErrorMessage('Extra hour rate must be zero or a positive number.');
-      return;
+      if (
+        standardHoursInput.trim() === '' ||
+        !Number.isFinite(parsedStandardHours) ||
+        parsedStandardHours < 0.5 ||
+        parsedStandardHours > 24
+      ) {
+        setSaveErrorMessage('Standard working hours must be between 0.5 and 24 hours.');
+        return;
+      }
+
+      if (
+        (overtimeEnabled && extraHourRateInput.trim() === '') ||
+        !Number.isFinite(parsedExtraHourRate) ||
+        parsedExtraHourRate < 0
+      ) {
+        setSaveErrorMessage('Extra hour rate must be zero or a positive number.');
+        return;
+      }
     }
 
     if (expenseCategories.length === 0) {
@@ -379,15 +384,27 @@ export const SettingsView: React.FC = () => {
     setIsSaving(true);
 
     try {
-      const nextSalaryConfig: SalaryConfig = {
-        dailyBaseSalary: parsedDailyBase,
-        addonSalary: parsedAddonSalary,
-        addonEnabled,
-        standardWorkingHours: parsedStandardHours,
-        extraHourRate: parsedExtraHourRate,
-        overtimeEnabled,
-        currency
-      };
+      const nextSalaryConfig: SalaryConfig = hasAnySalaryInput
+        ? {
+            dailyBaseSalary: parsedDailyBase,
+            addonSalary: parsedAddonSalary,
+            addonEnabled,
+            standardWorkingHours: parsedStandardHours,
+            extraHourRate: parsedExtraHourRate,
+            overtimeEnabled,
+            isConfigured: true,
+            currency
+          }
+        : {
+            dailyBaseSalary: undefined,
+            addonSalary: 0,
+            addonEnabled: false,
+            standardWorkingHours: undefined,
+            extraHourRate: undefined,
+            overtimeEnabled: false,
+            isConfigured: false,
+            currency
+          };
 
       await data.persistSettingsBundle({
         displayName: profileName.trim(),
@@ -401,11 +418,23 @@ export const SettingsView: React.FC = () => {
       });
 
       failedSectionsRef.current.clear();
-      setDailyBaseSalaryInput(String(nextSalaryConfig.dailyBaseSalary));
+      setDailyBaseSalaryInput(
+        typeof nextSalaryConfig.dailyBaseSalary === 'number'
+          ? String(nextSalaryConfig.dailyBaseSalary)
+          : ''
+      );
       setAddonSalaryInput(String(nextSalaryConfig.addonSalary));
       setAddonEnabled(nextSalaryConfig.addonEnabled);
-      setStandardHoursInput(String(nextSalaryConfig.standardWorkingHours));
-      setExtraHourRateInput(String(nextSalaryConfig.extraHourRate));
+      setStandardHoursInput(
+        typeof nextSalaryConfig.standardWorkingHours === 'number'
+          ? String(nextSalaryConfig.standardWorkingHours)
+          : ''
+      );
+      setExtraHourRateInput(
+        typeof nextSalaryConfig.extraHourRate === 'number'
+          ? String(nextSalaryConfig.extraHourRate)
+          : ''
+      );
       setOvertimeEnabled(nextSalaryConfig.overtimeEnabled);
       setSaveSuccessMessage('Settings saved');
 
@@ -470,7 +499,7 @@ export const SettingsView: React.FC = () => {
     setIncomeSources(prev => prev.filter(s => s !== src));
   };
 
-  // Reset all app data via Supabase xos_reset_user_data() RPC (or local demo clear in demo mode)
+  // Reset all app data via Supabase xos_reset_user_data() RPC
   const executeResetAccountData = async () => {
     if (isResettingRef.current || isResetting) return;
 
@@ -481,7 +510,8 @@ export const SettingsView: React.FC = () => {
     try {
       await data.resetUserData();
       const postReset = repository.getSettings();
-      const nextProfileName = postReset.profile.name || user?.user_metadata?.full_name || '';
+      const nextProfileName =
+        postReset.profile.name || user?.user_metadata?.display_name || user?.user_metadata?.full_name || '';
       const nextSalary = postReset.salaryConfig;
 
       failedSectionsRef.current.clear();
@@ -491,14 +521,18 @@ export const SettingsView: React.FC = () => {
       setWeekStartDay((postReset.weekStartDay || 'Monday') as WeekStartDay);
       setExpenseCategories(postReset.customExpenseCategories || []);
       setIncomeSources(postReset.customIncomeSources || []);
-      setDailyBaseSalaryInput(String(nextSalary.dailyBaseSalary ?? 500));
+      setDailyBaseSalaryInput(
+        typeof nextSalary.dailyBaseSalary === 'number' ? String(nextSalary.dailyBaseSalary) : ''
+      );
       setAddonSalaryInput(String(nextSalary.addonSalary ?? 0));
       setAddonEnabled(Boolean(nextSalary.addonEnabled));
-      setStandardHoursInput(String(nextSalary.standardWorkingHours ?? 8));
-      setExtraHourRateInput(String(nextSalary.extraHourRate ?? 100));
-      setOvertimeEnabled(
-        nextSalary.overtimeEnabled !== undefined ? Boolean(nextSalary.overtimeEnabled) : true
+      setStandardHoursInput(
+        typeof nextSalary.standardWorkingHours === 'number' ? String(nextSalary.standardWorkingHours) : ''
       );
+      setExtraHourRateInput(
+        typeof nextSalary.extraHourRate === 'number' ? String(nextSalary.extraHourRate) : ''
+      );
+      setOvertimeEnabled(Boolean(nextSalary.overtimeEnabled));
       lastSyncedKeyRef.current = JSON.stringify({
         name: nextProfileName,
         currency: postReset.currency || 'INR',
@@ -522,11 +556,7 @@ export const SettingsView: React.FC = () => {
       setNewCatName('');
       setNewIncName('');
       setIsResetModalOpen(false);
-      setBannerMessage(
-        isDemoUser
-          ? 'Demo data has been cleared and default settings restored.'
-          : 'All app data has been permanently reset and default settings restored.'
-      );
+      setBannerMessage('All app data has been permanently reset and clean settings restored.');
       if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
       bannerTimerRef.current = setTimeout(() => setBannerMessage(null), 6000);
     } catch (err) {
@@ -650,10 +680,10 @@ export const SettingsView: React.FC = () => {
                   Account Email
                 </label>
                 <div className="h-10 px-3 flex items-center rounded-lg bg-neutral-50 border border-neutral-200/80 text-sm text-neutral-700 truncate">
-                  {user?.email || (isDemoUser ? 'Guest demo session' : 'Not signed in')}
+                  {user?.email || 'Not signed in'}
                 </div>
                 <p className="text-xs text-neutral-500">
-                  {isDemoUser ? 'Changes in demo mode are temporary.' : 'Managed by your sign-in account.'}
+                  Managed by your sign-in account.
                 </p>
               </div>
 
@@ -679,13 +709,9 @@ export const SettingsView: React.FC = () => {
             {/* Sign Out Row */}
             <div className="pt-4 border-t border-neutral-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-[#111111]">
-                  {isDemoUser ? 'Demo session' : 'Sign out'}
-                </p>
+                <p className="text-sm font-medium text-[#111111]">Sign out</p>
                 <p className="text-xs text-neutral-500">
-                  {isDemoUser
-                    ? 'Return to the welcome screen and end this guest preview.'
-                    : 'End your current session on this device.'}
+                  End your current session on this device.
                 </p>
               </div>
               <button
@@ -693,7 +719,7 @@ export const SettingsView: React.FC = () => {
                 onClick={() => setIsSignOutModalOpen(true)}
                 className="inline-flex items-center justify-center h-9 px-3.5 text-xs font-medium text-neutral-700 hover:text-[#111111] bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-neutral-300 rounded-lg transition-colors whitespace-nowrap shrink-0 self-start sm:self-auto cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/15"
               >
-                {isDemoUser ? 'Exit Demo' : 'Sign Out'}
+                Sign Out
               </button>
             </div>
           </div>
@@ -790,20 +816,13 @@ export const SettingsView: React.FC = () => {
               Salary Configuration
             </h3>
             <p className="text-xs text-neutral-500 leading-relaxed">
-              Default daily salary rates and overtime rules applied to new attendance entries.
+              Daily salary rates and overtime rules applied to new attendance entries.
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                setSalaryResetError(null);
-                setIsSalaryResetModalOpen(true);
-              }}
-              disabled={isSaving || isResetting || isResettingSalary}
-              className="inline-flex items-center gap-1.5 h-8 px-2.5 text-xs font-medium text-neutral-600 hover:text-[#111111] bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Reset Defaults</span>
-            </button>
+            {!savedSalaryConfigured && (
+              <span className="inline-block px-2 py-0.5 text-[11px] font-medium text-neutral-600 bg-neutral-100 rounded-md">
+                Not configured yet
+              </span>
+            )}
           </div>
 
           <div className="md:col-span-8 space-y-5">
@@ -823,9 +842,10 @@ export const SettingsView: React.FC = () => {
                     min="0"
                     step="any"
                     inputMode="decimal"
+                    placeholder="Not configured"
                     value={dailyBaseSalaryInput}
                     onChange={(e) => setDailyBaseSalaryInput(e.target.value)}
-                    className={`${INPUT_CLASS} pl-8 font-mono tabular-nums`}
+                    className={`${INPUT_CLASS} pl-8 font-mono tabular-nums placeholder:font-sans`}
                   />
                 </div>
                 <p className="text-xs text-neutral-500">
@@ -859,6 +879,7 @@ export const SettingsView: React.FC = () => {
                     min="0"
                     step="any"
                     inputMode="decimal"
+                    placeholder="0"
                     disabled={!addonEnabled}
                     value={addonSalaryInput}
                     onChange={(e) => setAddonSalaryInput(e.target.value)}
@@ -885,9 +906,10 @@ export const SettingsView: React.FC = () => {
                     max="24"
                     step="0.5"
                     inputMode="decimal"
+                    placeholder="Not configured"
                     value={standardHoursInput}
                     onChange={(e) => setStandardHoursInput(e.target.value)}
-                    className={`${INPUT_CLASS} pr-10 font-mono tabular-nums`}
+                    className={`${INPUT_CLASS} pr-10 font-mono tabular-nums placeholder:font-sans`}
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 pointer-events-none">
                     hrs
@@ -924,10 +946,11 @@ export const SettingsView: React.FC = () => {
                     min="0"
                     step="any"
                     inputMode="decimal"
+                    placeholder="Not configured"
                     disabled={!overtimeEnabled}
                     value={extraHourRateInput}
                     onChange={(e) => setExtraHourRateInput(e.target.value)}
-                    className={`${INPUT_CLASS} pl-8 pr-9 font-mono tabular-nums disabled:bg-neutral-50 disabled:text-neutral-400`}
+                    className={`${INPUT_CLASS} pl-8 pr-9 font-mono tabular-nums placeholder:font-sans disabled:bg-neutral-50 disabled:text-neutral-400`}
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 pointer-events-none">
                     /hr
@@ -968,51 +991,60 @@ export const SettingsView: React.FC = () => {
 
             {/* Live Daily Pay Preview */}
             <div className="p-3.5 rounded-xl bg-neutral-50 border border-neutral-200/80 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold text-[#111111]">Live Daily Pay Preview</span>
-                <span className="text-[11px] font-mono text-neutral-500 tabular-nums">
-                  ≈ {formatCurrency(
-                    Number.isFinite(parsedDailyBase) && Number.isFinite(parsedStandardHours) && parsedStandardHours > 0
-                      ? parsedDailyBase / parsedStandardHours
-                      : 0,
-                    currency
-                  )}/hr base
-                </span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                <div className="p-2.5 rounded-lg bg-white border border-neutral-200/70 flex items-center justify-between">
-                  <span className="text-neutral-600">
-                    Standard ({Number.isFinite(parsedStandardHours) && parsedStandardHours > 0 ? parsedStandardHours : 8}h)
-                  </span>
-                  <span className="font-mono font-semibold text-[#111111] tabular-nums">
-                    {formatCurrency(
-                      (Number.isFinite(parsedDailyBase) && parsedDailyBase >= 0 ? parsedDailyBase : 0) +
-                        (addonEnabled && Number.isFinite(parsedAddonSalary) && parsedAddonSalary >= 0
-                          ? parsedAddonSalary
-                          : 0),
-                      currency
-                    )}
-                  </span>
+              {dailyBaseSalaryInput.trim() !== '' &&
+              standardHoursInput.trim() !== '' &&
+              Number.isFinite(parsedDailyBase) &&
+              parsedDailyBase >= 0 &&
+              Number.isFinite(parsedStandardHours) &&
+              parsedStandardHours > 0 ? (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-[#111111]">Live Daily Pay Preview</span>
+                    <span className="text-[11px] font-mono text-neutral-500 tabular-nums">
+                      ≈ {formatCurrency(parsedDailyBase / parsedStandardHours, currency)}/hr base
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                    <div className="p-2.5 rounded-lg bg-white border border-neutral-200/70 flex items-center justify-between">
+                      <span className="text-neutral-600">
+                        Standard ({parsedStandardHours}h)
+                      </span>
+                      <span className="font-mono font-semibold text-[#111111] tabular-nums">
+                        {formatCurrency(
+                          parsedDailyBase +
+                            (addonEnabled && Number.isFinite(parsedAddonSalary) && parsedAddonSalary >= 0
+                              ? parsedAddonSalary
+                              : 0),
+                          currency
+                        )}
+                      </span>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-white border border-neutral-200/70 flex items-center justify-between">
+                      <span className="text-neutral-600">
+                        +2h Overtime ({parsedStandardHours + 2}h)
+                      </span>
+                      <span className="font-mono font-semibold text-[#111111] tabular-nums">
+                        {formatCurrency(
+                          parsedDailyBase +
+                            (addonEnabled && Number.isFinite(parsedAddonSalary) && parsedAddonSalary >= 0
+                              ? parsedAddonSalary
+                              : 0) +
+                            2 *
+                              (overtimeEnabled && Number.isFinite(parsedExtraHourRate) && parsedExtraHourRate >= 0
+                                ? parsedExtraHourRate
+                                : 0),
+                          currency
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center justify-between gap-2 text-xs text-neutral-500">
+                  <span className="font-semibold text-[#111111]">Live Daily Pay Preview</span>
+                  <span>Not configured — enter daily base salary and standard hours above to preview.</span>
                 </div>
-                <div className="p-2.5 rounded-lg bg-white border border-neutral-200/70 flex items-center justify-between">
-                  <span className="text-neutral-600">
-                    +2h Overtime ({(Number.isFinite(parsedStandardHours) && parsedStandardHours > 0 ? parsedStandardHours : 8) + 2}h)
-                  </span>
-                  <span className="font-mono font-semibold text-[#111111] tabular-nums">
-                    {formatCurrency(
-                      (Number.isFinite(parsedDailyBase) && parsedDailyBase >= 0 ? parsedDailyBase : 0) +
-                        (addonEnabled && Number.isFinite(parsedAddonSalary) && parsedAddonSalary >= 0
-                          ? parsedAddonSalary
-                          : 0) +
-                        2 *
-                          (overtimeEnabled && Number.isFinite(parsedExtraHourRate) && parsedExtraHourRate >= 0
-                            ? parsedExtraHourRate
-                            : 0),
-                      currency
-                    )}
-                  </span>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Historical Protection */}
@@ -1258,9 +1290,7 @@ export const SettingsView: React.FC = () => {
                   Reset All App Data
                 </h4>
                 <p className="text-xs text-neutral-500 leading-relaxed max-w-md">
-                  {isDemoUser
-                    ? 'Clears all temporary demo records in this session and restores default settings.'
-                    : 'Permanently deletes your signed-in XOS records (expenses, income, attendance, debts, goals, savings, and payouts) and restores default settings. Your account, profile, and active sign-in session are preserved.'}
+                  Permanently deletes your signed-in XOS records (expenses, income, attendance, debts, goals, savings, and payouts) and restores clean settings. Your account, profile, and active sign-in session are preserved.
                 </p>
               </div>
               <button
@@ -1286,34 +1316,12 @@ export const SettingsView: React.FC = () => {
         </div>
       </section>
 
-      {/* Confirmation Dialog for Salary Defaults Reset */}
-      <ConfirmDialog
-        isOpen={isSalaryResetModalOpen}
-        title="Reset Salary Defaults?"
-        message="This will restore your default daily salary configuration (500 base, 8 hours duty, 100/hr overtime). Previously recorded attendance and salary entries will retain their saved values."
-        confirmLabel="Restore Defaults"
-        isDestructive={false}
-        isLoading={isResettingSalary}
-        error={salaryResetError}
-        onConfirm={executeResetSalaryDefaults}
-        onCancel={() => {
-          if (!isResettingSalary) {
-            setSalaryResetError(null);
-            setIsSalaryResetModalOpen(false);
-          }
-        }}
-      />
-
       {/* Confirmation Dialog for Reset All App Data */}
       <ConfirmDialog
         isOpen={isResetModalOpen}
-        title={isDemoUser ? 'Reset Demo App Data?' : 'Reset All App Data?'}
-        message={
-          isDemoUser
-            ? 'This will clear all temporary demo records and restore default settings.'
-            : 'This will permanently delete all your XOS application data (expenses, income, attendance, debts, goals, savings, and payouts) and restore default settings. Your account, profile, and active sign-in session will remain preserved.'
-        }
-        confirmLabel={isDemoUser ? 'Reset Demo Data' : 'Reset All App Data'}
+        title="Reset All App Data?"
+        message="This will permanently delete all your XOS application data (expenses, income, attendance, debts, goals, savings, and payouts) and restore clean settings. Your account, profile, and active sign-in session will remain preserved."
+        confirmLabel="Reset All App Data"
         isDestructive={true}
         tone="danger"
         isLoading={isResetting}
@@ -1330,20 +1338,12 @@ export const SettingsView: React.FC = () => {
       {/* Confirmation Dialog for Sign Out */}
       <ConfirmDialog
         isOpen={isSignOutModalOpen}
-        title={isDemoUser ? 'Exit Demo Session?' : 'Sign Out?'}
-        message={
-          isDemoUser
-            ? 'Are you sure you want to exit the demo session? You will return to the welcome screen.'
-            : 'Are you sure you want to sign out of XOS on this device?'
-        }
-        confirmLabel={isDemoUser ? 'Exit Demo' : 'Sign Out'}
+        title="Sign Out?"
+        message="Are you sure you want to sign out of XOS on this device?"
+        confirmLabel="Sign Out"
         isDestructive={false}
         onConfirm={() => {
-          if (isDemoUser) {
-            exitDemoMode();
-          } else {
-            signOut();
-          }
+          signOut();
           setIsSignOutModalOpen(false);
         }}
         onCancel={() => setIsSignOutModalOpen(false)}

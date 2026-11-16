@@ -3,7 +3,15 @@ import { BarChart3, FileText } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts';
 import { useXOSData } from '../../hooks/useXOSData';
 import { DateFilterPreset } from '../../types';
-import { calculateAttendanceStatsForRecords, calculateDebtSummary, calculateFinancialTotals, calculatePeriodSalarySummary, filterRecordsByDateRange } from '../../utils/calculations';
+import {
+  calculateAttendanceStatsForRecords,
+  calculateDebtSummary,
+  calculateSeparateDebtTotals,
+  calculateFinancialTotals,
+  calculatePeriodSalarySummary,
+  filterRecordsByDateRange,
+  isSalaryConfigured
+} from '../../utils/calculations';
 import { formatCurrency, getMonthString } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
 
@@ -43,29 +51,24 @@ export const ReportsView: React.FC = () => {
     [data.attendance, periodPreset, customStart, customEnd]
   );
 
-  const archivedOrCancelledSavingsIds = useMemo(
+  const archivedGoalSavingsIds = useMemo(
     () =>
       new Set(
         data.goals
-          .filter(g => (g.status === 'Archived' || g.status === 'Paused') && g.savingsGoalId)
+          .filter(g => g.status === 'Archived' && g.savingsGoalId)
           .map(g => g.savingsGoalId as string)
       ),
     [data.goals]
   );
 
   const activeSavingsGoals = useMemo(
-    () => data.savingsGoals.filter(sg => !archivedOrCancelledSavingsIds.has(sg.id)),
-    [data.savingsGoals, archivedOrCancelledSavingsIds]
-  );
-
-  const activeSavingsTransactions = useMemo(
-    () => data.savingsTransactions.filter(tx => !archivedOrCancelledSavingsIds.has(tx.savingsGoalId)),
-    [data.savingsTransactions, archivedOrCancelledSavingsIds]
+    () => data.savingsGoals.filter(sg => !sg.isArchived && !archivedGoalSavingsIds.has(sg.id)),
+    [data.savingsGoals, archivedGoalSavingsIds]
   );
 
   const totals = useMemo(
-    () => calculateFinancialTotals(filteredIncomes, filteredExpenses, activeSavingsGoals, activeSavingsTransactions),
-    [filteredIncomes, filteredExpenses, activeSavingsGoals, activeSavingsTransactions]
+    () => calculateFinancialTotals(filteredIncomes, filteredExpenses, activeSavingsGoals, data.savingsTransactions),
+    [filteredIncomes, filteredExpenses, activeSavingsGoals, data.savingsTransactions]
   );
 
   const currentMonth = getMonthString();
@@ -90,6 +93,11 @@ export const ReportsView: React.FC = () => {
 
   const debtSummary = useMemo(
     () => calculateDebtSummary(data.debts, data.debtRepayments),
+    [data.debts, data.debtRepayments]
+  );
+
+  const { totalToPay } = useMemo(
+    () => calculateSeparateDebtTotals(data.debts, data.debtRepayments),
     [data.debts, data.debtRepayments]
   );
 
@@ -137,6 +145,7 @@ export const ReportsView: React.FC = () => {
   );
 
   const hasData = data.incomes.length > 0 || data.expenses.length > 0 || data.attendance.length > 0;
+  const salaryConfigured = isSalaryConfigured(data.settings.salaryConfig);
 
   return (
     <div className="space-y-6">
@@ -264,14 +273,29 @@ export const ReportsView: React.FC = () => {
 
               <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs">
                 <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Remaining Salary</span>
-                <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(periodSalary.remainingSalary, data.settings.currency)}</div>
-                <span className="text-[11px] text-neutral-400">Earned: {formatCurrency(periodSalary.earnedSalary, data.settings.currency)}</span>
+                {!salaryConfigured && periodSalary.earnedSalary === 0 && periodSalary.salaryReceived === 0 ? (
+                  <>
+                    <div className="text-xl font-bold text-neutral-700">Not configured</div>
+                    <span className="text-[11px] text-neutral-400">Configure in Salary Settings</span>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(periodSalary.remainingSalary, data.settings.currency)}</div>
+                    <span className="text-[11px] text-neutral-400">Earned: {formatCurrency(periodSalary.earnedSalary, data.settings.currency)}</span>
+                  </>
+                )}
               </div>
 
-              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs sm:col-span-2 lg:col-span-1">
+              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs">
                 <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Money Owed to Me</span>
                 <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(debtSummary.outstandingReceivable, data.settings.currency)}</div>
                 <span className="text-[11px] text-neutral-400">Outstanding Receivables</span>
+              </div>
+
+              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs">
+                <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Money to Pay</span>
+                <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(totalToPay, data.settings.currency)}</div>
+                <span className="text-[11px] text-neutral-400">Outstanding Payables</span>
               </div>
             </div>
           </div>
@@ -343,7 +367,9 @@ export const ReportsView: React.FC = () => {
                   Attendance Breakdown ({periodPreset === 'this_month' ? currentMonth : periodPreset.replace('_', ' ')})
                 </h3>
                 <span className="text-xs text-neutral-500 font-mono">
-                  Est Salary: {formatCurrency(periodSalary.earnedSalary, data.settings.currency)}
+                  {!salaryConfigured && periodSalary.earnedSalary === 0
+                    ? 'Salary: Not configured'
+                    : `Est Salary: ${formatCurrency(periodSalary.earnedSalary, data.settings.currency)}`}
                 </span>
               </div>
 

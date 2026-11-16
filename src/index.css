@@ -4,6 +4,7 @@
   html {
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    overflow-x: hidden;
     overflow-x: clip;
   }
 
@@ -11,6 +12,7 @@
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     background-color: #ffffff;
     color: #111318;
+    overflow-x: hidden;
     overflow-x: clip;
   }
 
@@ -23,7 +25,7 @@
     touch-action: manipulation;
   }
 
-  .font-mono, tabular-nums {
+  .font-mono, .tabular-nums {
     font-family: 'JetBrains Mono', monospace;
     font-variant-numeric: tabular-nums;
   }
