@@ -46,6 +46,9 @@ const SalaryView = lazy(() =>
 const ReportsView = lazy(() =>
   import('./components/reports/ReportsView').then(m => ({ default: m.ReportsView }))
 );
+const AiAgentView = lazy(() =>
+  import('./components/ai/AiAgentView').then(m => ({ default: m.AiAgentView }))
+);
 const SettingsView = lazy(() =>
   import('./components/settings/SettingsView').then(m => ({ default: m.SettingsView }))
 );
@@ -375,6 +378,7 @@ function XOSApplication() {
               {activeTab === 'attendance' && <WorkView />}
               {activeTab === 'salary' && <SalaryView />}
               {activeTab === 'reports' && <ReportsView />}
+              {activeTab === 'ai-agent' && <AiAgentView />}
               {activeTab === 'settings' && <SettingsView />}
             </motion.div>
           </Suspense>

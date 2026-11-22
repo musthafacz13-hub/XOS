@@ -189,6 +189,7 @@ let fetchSequence = 0;
 let resetInFlightPromise: Promise<void> | null = null;
 const archiveGoalInFlightPromises = new Map<string, Promise<void>>();
 const debtRepaymentQueues = new Map<string, Promise<unknown>>();
+const legacyNoteLinkedExpenseIds = new Set<string>();
 
 function enqueueDebtRepaymentOp<T>(debtId: string, task: () => Promise<T>): Promise<T> {
   const previous = debtRepaymentQueues.get(debtId) || Promise.resolve();
@@ -656,7 +657,22 @@ export function buildDebtRepaymentExpenseNotes(
 }
 
 function mapExpenseRow(e: any): Expense {
-  const { debtRepaymentId, notes } = deserializeExpenseRepaymentNotes(e.notes, e.debt_repayment_id);
+  const authoritativeFkId =
+    typeof e.debt_repayment_id === 'string' && e.debt_repayment_id.trim()
+      ? e.debt_repayment_id.trim()
+      : undefined;
+  const { debtRepaymentId: legacyTagId, notes } = deserializeExpenseRepaymentNotes(
+    e.notes,
+    authoritativeFkId
+  );
+  const resolvedLinkId = authoritativeFkId || legacyTagId;
+  if (e.id) {
+    if (!authoritativeFkId && legacyTagId) {
+      legacyNoteLinkedExpenseIds.add(e.id);
+    } else {
+      legacyNoteLinkedExpenseIds.delete(e.id);
+    }
+  }
   return {
     id: e.id,
     title: e.title,
@@ -669,7 +685,7 @@ function mapExpenseRow(e: any): Expense {
     isRecurring: Boolean(e.is_recurring),
     recurringFrequency: fromDbRecurrenceFrequency(e.is_recurring, e.recurrence_frequency),
     recurrenceEndDate: e.recurrence_end_date || undefined,
-    debtRepaymentId,
+    debtRepaymentId: resolvedLinkId,
     createdAt: e.created_at
   };
 }
@@ -1115,6 +1131,7 @@ export const repository = {
 
     const expensesRes = readResult(0);
     if (expensesRes.ok && Array.isArray(expensesRes.data)) {
+      legacyNoteLinkedExpenseIds.clear();
       memoryState.expenses = expensesRes.data.map(mapExpenseRow);
     }
 
@@ -1351,6 +1368,7 @@ export const repository = {
   clearUserData() {
     fetchSequence += 1;
     activeUserId = null;
+    legacyNoteLinkedExpenseIds.clear();
     memoryState.expenses = [];
     memoryState.incomes = [];
     memoryState.attendance = [];
@@ -3433,8 +3451,13 @@ export const repository = {
     const repaymentIds = new Set(
       memoryState.debtRepayments.filter(r => r.debt_id === id).map(r => r.id)
     );
-    const linkedExpenseIds = memoryState.expenses
-      .filter(e => e.debtRepaymentId && repaymentIds.has(e.debtRepaymentId))
+    const linkedExpenses = memoryState.expenses.filter(
+      e => e.debtRepaymentId && repaymentIds.has(e.debtRepaymentId)
+    );
+    // Expenses with database FK debt_repayment_id are deleted automatically via ON DELETE CASCADE.
+    // Only legacy note-marker expenses (where debt_repayment_id IS NULL) require explicit cleanup.
+    const legacyLinkedExpenseIds = linkedExpenses
+      .filter(e => legacyNoteLinkedExpenseIds.has(e.id))
       .map(e => e.id);
 
     if (ctx.mode === 'supabase') {
@@ -3460,9 +3483,8 @@ export const repository = {
         throw new Error('Loan record not found or could not be deleted.');
       }
 
-      // Debt & cascaded debt_repayments are now deleted; remove any linked Debt Repayment expenses
-      const deletedExpenseIds = new Set<string>();
-      for (const expId of linkedExpenseIds) {
+      const deletedLegacyExpenseIds = new Set<string>();
+      for (const expId of legacyLinkedExpenseIds) {
         const { error: expDelError } = await ctx.client
           .from('expenses')
           .delete()
@@ -3472,24 +3494,26 @@ export const repository = {
         if (expDelError) {
           memoryState.debts = memoryState.debts.filter(d => d.id !== id);
           memoryState.debtRepayments = memoryState.debtRepayments.filter(r => r.debt_id !== id);
-          if (deletedExpenseIds.size > 0) {
-            memoryState.expenses = memoryState.expenses.filter(e => !deletedExpenseIds.has(e.id));
+          if (deletedLegacyExpenseIds.size > 0) {
+            memoryState.expenses = memoryState.expenses.filter(e => !deletedLegacyExpenseIds.has(e.id));
+            deletedLegacyExpenseIds.forEach(eid => legacyNoteLinkedExpenseIds.delete(eid));
           }
           notifyListeners();
           throw new Error(
             sanitizeDatabaseErrorMessage(
               expDelError,
-              'Debt was deleted, but a linked Debt Repayment expense could not be removed cleanly.'
+              'Debt was deleted, but a legacy Debt Repayment expense could not be removed cleanly.'
             )
           );
         }
-        deletedExpenseIds.add(expId);
+        deletedLegacyExpenseIds.add(expId);
       }
     }
 
     memoryState.debts = memoryState.debts.filter(d => d.id !== id);
     memoryState.debtRepayments = memoryState.debtRepayments.filter(r => r.debt_id !== id);
     if (repaymentIds.size > 0) {
+      linkedExpenses.forEach(e => legacyNoteLinkedExpenseIds.delete(e.id));
       memoryState.expenses = memoryState.expenses.filter(
         e => !e.debtRepaymentId || !repaymentIds.has(e.debtRepaymentId)
       );
@@ -3620,13 +3644,14 @@ export const repository = {
               const formattedTime = normalizeDbTime(currentTime);
               const expenseInsertPayload = {
                 user_id: ctx.user.id,
+                debt_repayment_id: confirmedRep.id,
                 title: expenseTitle,
                 amount: confirmedRep.amount,
                 category: 'Debt Repayment',
                 expense_date: confirmedRep.repayment_date,
                 expense_time: formattedTime,
                 payment_method: confirmedRep.payment_method || normalizedMethod,
-                notes: serializeExpenseRepaymentNotes(humanNotes, confirmedRep.id),
+                notes: humanNotes || null,
                 is_recurring: false,
                 recurrence_frequency: null,
                 recurrence_end_date: null
@@ -3646,22 +3671,42 @@ export const repository = {
                 expError = thrown;
               }
 
-              if ((expError || !expData) && ['abort', 'timeout'].includes(classifyFetchError(expError))) {
+              const expErrKind = classifyFetchError(expError);
+              const isUniqueViolation =
+                (expError as any)?.code === '23505' ||
+                /duplicate key|unique constraint/i.test(String((expError as any)?.message || ''));
+
+              if ((expError || !expData) && (expErrKind === 'abort' || expErrKind === 'timeout' || isUniqueViolation)) {
                 try {
-                  const { data: recentExps, error: checkExpErr } = await ctx.client
+                  // 1) Check authoritative composite FK (debt_repayment_id, user_id) first
+                  const { data: fkMatchedExp, error: fkCheckErr } = await ctx.client
                     .from('expenses')
                     .select('*')
+                    .eq('debt_repayment_id', confirmedRep.id)
                     .eq('user_id', ctx.user.id)
-                    .eq('expense_date', confirmedRep.repayment_date)
-                    .order('created_at', { ascending: false });
-                  if (!checkExpErr && Array.isArray(recentExps)) {
-                    const matchedExp = recentExps.find((row: any) => {
-                      const decoded = deserializeExpenseRepaymentNotes(row?.notes, row?.debt_repayment_id);
-                      return decoded.debtRepaymentId === confirmedRep.id;
-                    });
-                    if (matchedExp) {
-                      expData = matchedExp;
-                      expError = null;
+                    .maybeSingle();
+
+                  if (!fkCheckErr && fkMatchedExp) {
+                    expData = fkMatchedExp;
+                    expError = null;
+                  } else if (expErrKind === 'abort' || expErrKind === 'timeout') {
+                    // 2) Fallback for legacy [xos-repayment:<id>] note-marker rows
+                    const { data: recentExps, error: checkExpErr } = await ctx.client
+                      .from('expenses')
+                      .select('*')
+                      .eq('user_id', ctx.user.id)
+                      .eq('expense_date', confirmedRep.repayment_date)
+                      .order('created_at', { ascending: false });
+                    if (!checkExpErr && Array.isArray(recentExps)) {
+                      const matchedExp = recentExps.find((row: any) => {
+                        if (row?.debt_repayment_id === confirmedRep.id) return true;
+                        const decoded = deserializeExpenseRepaymentNotes(row?.notes, row?.debt_repayment_id);
+                        return decoded.debtRepaymentId === confirmedRep.id;
+                      });
+                      if (matchedExp) {
+                        expData = matchedExp;
+                        expError = null;
+                      }
                     }
                   }
                 } catch {
@@ -3695,6 +3740,7 @@ export const repository = {
               if (!confirmedExpense.debtRepaymentId) {
                 confirmedExpense.debtRepaymentId = confirmedRep.id;
               }
+              legacyNoteLinkedExpenseIds.delete(confirmedExpense.id);
             }
           }
 
@@ -3780,6 +3826,9 @@ export const repository = {
     }
 
     const linkedExpenses = memoryState.expenses.filter(e => e.debtRepaymentId === id);
+    // FK-linked expenses (expenses.debt_repayment_id) are deleted via ON DELETE CASCADE.
+    // Only legacy note-marker-only expenses require explicit cleanup.
+    const legacyLinkedExpenses = linkedExpenses.filter(e => legacyNoteLinkedExpenseIds.has(e.id));
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
@@ -3830,9 +3879,9 @@ export const repository = {
         }
       }
 
-      // Clean up linked Debt Repayment expense(s) in Supabase
-      const deletedExpenseIds = new Set<string>();
-      for (const linkedExp of linkedExpenses) {
+      // Clean up any legacy note-marker-only expense rows (ignoring already-deleted/cascaded 0-row results)
+      const deletedLegacyExpenseIds = new Set<string>();
+      for (const linkedExp of legacyLinkedExpenses) {
         const { error: expDelErr } = await ctx.client
           .from('expenses')
           .delete()
@@ -3841,26 +3890,29 @@ export const repository = {
           .select('id');
 
         if (expDelErr) {
-          if (deletedExpenseIds.size > 0) {
-            memoryState.expenses = memoryState.expenses.filter(e => !deletedExpenseIds.has(e.id));
+          if (deletedLegacyExpenseIds.size > 0) {
+            memoryState.expenses = memoryState.expenses.filter(e => !deletedLegacyExpenseIds.has(e.id));
+            deletedLegacyExpenseIds.forEach(eid => legacyNoteLinkedExpenseIds.delete(eid));
           }
           notifyListeners();
           throw new Error(
             sanitizeDatabaseErrorMessage(
               expDelErr,
-              'Repayment was deleted, but its linked Debt Repayment expense could not be removed.'
+              'Repayment was deleted, but its legacy Debt Repayment expense could not be removed.'
             )
           );
         }
-        deletedExpenseIds.add(linkedExp.id);
+        deletedLegacyExpenseIds.add(linkedExp.id);
       }
 
+      linkedExpenses.forEach(e => legacyNoteLinkedExpenseIds.delete(e.id));
       memoryState.expenses = memoryState.expenses.filter(e => e.debtRepaymentId !== id);
       notifyListeners();
       return;
     }
 
     memoryState.debtRepayments = memoryState.debtRepayments.filter(r => r.id !== id);
+    linkedExpenses.forEach(e => legacyNoteLinkedExpenseIds.delete(e.id));
     memoryState.expenses = memoryState.expenses.filter(e => e.debtRepaymentId !== id);
 
     const targetDebt = memoryState.debts.find(d => d.id === targetRepayment.debt_id);
@@ -3888,6 +3940,7 @@ export const repository = {
 
   clearAllData() {
     fetchSequence += 1;
+    legacyNoteLinkedExpenseIds.clear();
     memoryState.goals = [];
     memoryState.expenses = [];
     memoryState.incomes = [];
@@ -3937,6 +3990,7 @@ export const repository = {
       // Only after confirmed RPC success: clear caches and in-memory state
       apiOptimization.invalidateCache();
       fetchSequence += 1;
+      legacyNoteLinkedExpenseIds.clear();
       memoryState.goals = [];
       memoryState.expenses = [];
       memoryState.incomes = [];

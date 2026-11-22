@@ -13,7 +13,8 @@ import {
   ChevronRight,
   LucideIcon,
   HandCoins,
-  LogOut
+  LogOut,
+  AudioLines
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { UserSettings } from '../../types';
@@ -33,6 +34,7 @@ export type ActiveTab =
   | 'salary' 
   | 'savings' 
   | 'reports' 
+  | 'ai-agent'
   | 'settings';
 
 interface SidebarProps {
@@ -47,7 +49,7 @@ export interface NavItemConfig {
   id: ActiveTab;
   label: string;
   icon: LucideIcon;
-  category: 'core' | 'finance' | 'work' | 'settings';
+  category: 'core' | 'finance' | 'work' | 'assistant' | 'settings';
 }
 
 export const NAV_ITEMS: NavItemConfig[] = [
@@ -59,6 +61,7 @@ export const NAV_ITEMS: NavItemConfig[] = [
   { id: 'salary', label: 'Salary Management', icon: Banknote, category: 'finance' },
   { id: 'attendance', label: 'Work Attendance', icon: CalendarCheck, category: 'work' },
   { id: 'reports', label: 'Reports & Analytics', icon: BarChart3, category: 'work' },
+  { id: 'ai-agent', label: 'AI Agent', icon: AudioLines, category: 'assistant' },
   { id: 'settings', label: 'Settings', icon: Settings, category: 'settings' }
 ];
 
@@ -79,6 +82,10 @@ const NAV_GROUPS: NavGroup[] = [
   {
     name: 'Work & Insights',
     items: NAV_ITEMS.filter(item => item.category === 'work')
+  },
+  {
+    name: 'More Modules',
+    items: NAV_ITEMS.filter(item => item.category === 'assistant')
   }
 ];
 

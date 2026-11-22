@@ -3522,9 +3522,9 @@ async function runPersistenceTests() {
     console.log('✓ Test 32 passed.');
 
     // ==========================================
-    // TEST 33: Debt Repayment -> Expense Sync (Money to Pay vs Receive, Multi-Month, Hydration, Protection)
+    // TEST 33: Debt Repayment -> Expense Sync (FK-based, Money to Pay vs Receive, Multi-Month, Hydration, Protection)
     // ==========================================
-    console.log('Test 33: Money to Pay repayment-to-expense integration, multi-month totals, reload hydration & edit protection...');
+    console.log('Test 33: Money to Pay repayment-to-expense FK integration, multi-month totals, reload hydration & edit protection...');
     {
       const dbDebts: any[] = [];
       const dbRepayments: any[] = [];
@@ -3586,9 +3586,22 @@ async function runPersistenceTests() {
         expenses: (ctx) => {
           const idFilter = ctx.filters.find(f => f.col === 'id')?.val;
           if (ctx.op === 'insert') {
+            // Enforce UNIQUE + composite FK (debt_repayment_id, user_id) -> debt_repayments(id, user_id)
+            if (ctx.payload.debt_repayment_id) {
+              const parentRep = dbRepayments.find(
+                r => r.id === ctx.payload.debt_repayment_id && r.user_id === ctx.payload.user_id
+              );
+              if (!parentRep) {
+                return { data: null, error: { code: '23503', message: 'violates foreign key constraint "expenses_debt_repayment_user_fk"' } };
+              }
+              if (dbExpenses.some(e => e.debt_repayment_id === ctx.payload.debt_repayment_id)) {
+                return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "expenses_debt_repayment_id_key"' } };
+              }
+            }
             expSeq += 1;
             const row = {
               id: `exp_33_${expSeq}`,
+              debt_repayment_id: null,
               ...ctx.payload,
               created_at: '2026-10-15T10:00:00Z'
             };
@@ -3648,7 +3661,7 @@ async function runPersistenceTests() {
       const receiveAfter = repository.getDebts().find(d => d.id === receiveDebt.id)!;
       assert(receiveAfter.remaining_amount === 3500 && receiveAfter.status === 'partially_paid', 'Money to Receive updates remaining_amount and status cleanly');
 
-      // 3) Partial repayments across different months on Money to Pay create 1 linked expense each
+      // 3) Partial repayments across different months on Money to Pay create 1 linked expense each via debt_repayment_id FK
       const rep1 = await repository.addDebtRepayment({
         debt_id: payDebt.id,
         amount: 3500,
@@ -3662,10 +3675,11 @@ async function runPersistenceTests() {
       assert(exp1.date === '2026-10-15', 'Linked expense date matches repayment_date');
       assert(exp1.category === 'Debt Repayment', 'Linked expense category is Debt Repayment');
       assert(exp1.title.includes('HDFC Credit Line'), 'Linked expense title identifies the debt counterparty');
-      assert(!exp1.notes?.includes('[xos-repayment:'), 'Linked expense UI notes strip internal marker tag');
+      assert(!exp1.notes?.includes('[xos-repayment:'), 'Linked expense UI notes have no internal marker tag');
       assert(Boolean(exp1.notes?.includes('October installment')), 'Linked expense preserves repayment note context');
       assert(exp1.debtRepaymentId === rep1.id, 'Linked expense retains debtRepaymentId reference');
-      assert(String(dbExpenses[0].notes).includes(`[xos-repayment:${rep1.id}]`), 'DB notes stores deterministic repayment marker tag');
+      assert(dbExpenses[0].debt_repayment_id === rep1.id, 'DB row populates authoritative debt_repayment_id column');
+      assert(!String(dbExpenses[0].notes || '').includes('[xos-repayment:'), 'New DB notes must NOT append legacy [xos-repayment:] note marker');
 
       let payState = repository.getDebts().find(d => d.id === payDebt.id)!;
       assert(payState.remaining_amount === 6500 && payState.status === 'partially_paid', 'Partial repayment sets status to partially_paid');
@@ -3688,6 +3702,7 @@ async function runPersistenceTests() {
 
       assert(repository.getDebtRepayments().filter(r => r.debt_id === payDebt.id).length === 3, 'All 3 repayments recorded');
       assert(repository.getExpenses().length === 3 && dbExpenses.length === 3, 'Exactly 1 linked expense per Money to Pay repayment (no extra on paid status)');
+      assert(dbExpenses.every(row => Boolean(row.debt_repayment_id) && !String(row.notes || '').includes('[xos-repayment:')), 'All newly created linked DB expenses use FK column without note markers');
       payState = repository.getDebts().find(d => d.id === payDebt.id)!;
       assert(payState.remaining_amount === 0 && payState.status === 'paid', 'Final repayment marks Money to Pay debt as paid with 0 remaining');
 
@@ -3707,13 +3722,35 @@ async function runPersistenceTests() {
       const recvSummary = calculateDebtSummary(repository.getDebts(), repository.getDebtRepayments());
       assert(recvSummary.outstandingReceivable === 3500, 'Receivables summary remains accurate');
 
-      // 5) Reload hydration preserves debtRepaymentId links & edit/delete protection
+      // 5) Reload hydration preserves authoritative debt_repayment_id links, overrides legacy tag if both exist, & enforces edit/delete protection
+      dbExpenses.push({
+        id: 'exp_33_legacy',
+        user_id: USER_A,
+        debt_repayment_id: null,
+        title: 'Debt Repayment — Legacy Loan',
+        amount: 750,
+        category: 'Debt Repayment',
+        expense_date: '2026-08-20',
+        expense_time: '09:00:00',
+        payment_method: 'Cash',
+        notes: serializeExpenseRepaymentNotes('Legacy installment', 'rep_legacy_33'),
+        is_recurring: false,
+        recurrence_frequency: null,
+        recurrence_end_date: null,
+        created_at: '2026-08-20T09:00:00Z'
+      });
+      // Row where both FK and mismatched legacy tag exist -> FK must be authoritative
+      dbExpenses[0] = { ...dbExpenses[0], notes: `${dbExpenses[0].notes} [xos-repayment:stale_tag]` };
+
       repository.clearUserData();
       repository.setActiveUserId(USER_A);
       await repository.fetchAllUserData(USER_A);
       const hydratedExps = repository.getExpenses();
-      assert(hydratedExps.length === 3, 'All 3 linked expenses rehydrate cleanly from Supabase');
-      assert(hydratedExps.some(e => e.debtRepaymentId === rep1.id) && hydratedExps.some(e => e.debtRepaymentId === rep2.id) && hydratedExps.some(e => e.debtRepaymentId === rep3.id), 'Rehydrated expenses preserve debtRepaymentId mapping');
+      assert(hydratedExps.length === 4, 'All 3 FK-linked + 1 legacy note-marker expense rehydrate cleanly');
+      assert(hydratedExps.find(e => e.id === dbExpenses[0].id)?.debtRepaymentId === rep1.id, 'Authoritative debt_repayment_id takes precedence over any legacy tag');
+      assert(hydratedExps.some(e => e.debtRepaymentId === rep2.id) && hydratedExps.some(e => e.debtRepaymentId === rep3.id), 'Rehydrated FK expenses preserve debtRepaymentId mapping');
+      const hydratedLegacy = hydratedExps.find(e => e.id === 'exp_33_legacy')!;
+      assert(hydratedLegacy.debtRepaymentId === 'rep_legacy_33' && hydratedLegacy.notes === 'Legacy installment', 'Legacy note-marker row continues to hydrate cleanly with stripped marker');
       assert(hydratedExps.every(e => !e.notes?.includes('[xos-repayment:')), 'Rehydrated UI notes never expose internal marker');
 
       let blockedUpdate = false;
@@ -3731,14 +3768,14 @@ async function runPersistenceTests() {
         blockedDelete = true;
       }
       assert(blockedDelete, 'Direct deleteExpense on linked Debt Repayment expense is rejected cleanly');
-      assert(dbExpenses.length === 3, 'Rejected expense edits/deletes leave DB untouched');
+      assert(dbExpenses.length === 4, 'Rejected expense edits/deletes leave DB untouched');
     }
     console.log('✓ Test 33 passed.');
 
     // ==========================================
-    // TEST 34: Duplicate Prevention, Concurrency, Over-Repayment Guard, Atomic Rollback & Abort Reconciliation
+    // TEST 34: Duplicate Prevention, DB UNIQUE & Composite FK Enforcement, Rollback & FK-First Reconciliation
     // ==========================================
-    console.log('Test 34: Duplicate prevention, concurrent repayment serialization, atomic rollback & timeout reconciliation...');
+    console.log('Test 34: Duplicate prevention, DB unique/composite-FK constraints, rollback & FK-first timeout reconciliation...');
     {
       const dbDebts: any[] = [
         {
@@ -3755,16 +3792,30 @@ async function runPersistenceTests() {
           created_at: '2026-11-01T09:00:00Z'
         }
       ];
-      const dbRepayments: any[] = [];
+      const dbRepayments: any[] = [
+        // Existing repayment belonging to USER_B to verify cross-user composite FK protection
+        {
+          id: 'rep_user_b_foreign',
+          debt_id: 'debt_user_b',
+          user_id: USER_B,
+          amount: 250,
+          repayment_date: '2026-11-05',
+          payment_method: 'Cash',
+          notes: null,
+          created_at: '2026-11-05T09:00:00Z'
+        }
+      ];
       const dbExpenses: any[] = [];
       let failNextExpenseInsert = false;
       let throwAbortAfterExpenseCommit = false;
+      let throwAbortAfterLegacyExpenseCommit = false;
       let repInserts = 0;
       let expInserts = 0;
       let repRollbacks = 0;
+      const reconciliationLookups: Array<{ usedFkFilter: boolean }> = [];
 
       const recomputeDebt34 = () => {
-        const repaid = dbRepayments.reduce((s, r) => s + Number(r.amount), 0);
+        const repaid = dbRepayments.filter(r => r.debt_id === 'debt_34_pay').reduce((s, r) => s + Number(r.amount), 0);
         const rem = Math.max(0, Number((1000 - repaid).toFixed(2)));
         dbDebts[0] = {
           ...dbDebts[0],
@@ -3775,12 +3826,15 @@ async function runPersistenceTests() {
 
       const concurrencyClient = createMockSupabase(USER_A, {
         debts: (ctx) => {
+          const userFilter = ctx.filters.find(f => f.col === 'user_id')?.val;
           if (ctx.op === 'select') {
-            return { data: ctx.singleMode === 'none' ? [...dbDebts] : dbDebts[0], error: null };
+            const rows = dbDebts.filter(d => !userFilter || d.user_id === userFilter);
+            return { data: ctx.singleMode === 'none' ? rows : rows[0] || null, error: null };
           }
           return { data: [], error: null };
         },
         debt_repayments: (ctx) => {
+          const userFilter = ctx.filters.find(f => f.col === 'user_id')?.val;
           if (ctx.op === 'insert') {
             repInserts += 1;
             const row = {
@@ -3794,7 +3848,7 @@ async function runPersistenceTests() {
           }
           if (ctx.op === 'delete') {
             const idFilter = ctx.filters.find(f => f.col === 'id')?.val;
-            const idx = dbRepayments.findIndex(r => r.id === idFilter);
+            const idx = dbRepayments.findIndex(r => r.id === idFilter && (!userFilter || r.user_id === userFilter));
             if (idx !== -1) {
               repRollbacks += 1;
               dbRepayments.splice(idx, 1);
@@ -3804,11 +3858,14 @@ async function runPersistenceTests() {
             return { data: [], error: null };
           }
           if (ctx.op === 'select') {
-            return { data: [...dbRepayments], error: null };
+            const rows = dbRepayments.filter(r => !userFilter || r.user_id === userFilter);
+            return { data: rows, error: null };
           }
           return { data: [], error: null };
         },
         expenses: async (ctx) => {
+          const userFilter = ctx.filters.find(f => f.col === 'user_id')?.val;
+          const fkFilter = ctx.filters.find(f => f.col === 'debt_repayment_id')?.val;
           if (ctx.op === 'insert') {
             await new Promise(resolve => setTimeout(resolve, 15));
             expInserts += 1;
@@ -3816,11 +3873,35 @@ async function runPersistenceTests() {
               failNextExpenseInsert = false;
               return { data: null, error: { message: 'Simulated expenses insert failure' } };
             }
+            if (ctx.payload.debt_repayment_id) {
+              // Enforce composite FK (debt_repayment_id, user_id) -> debt_repayments(id, user_id)
+              const matchingOwnerRep = dbRepayments.find(
+                r => r.id === ctx.payload.debt_repayment_id && r.user_id === ctx.payload.user_id
+              );
+              if (!matchingOwnerRep) {
+                return { data: null, error: { code: '23503', message: 'insert or update on table "expenses" violates foreign key constraint "expenses_debt_repayment_user_fk"' } };
+              }
+              // Enforce UNIQUE constraint on expenses.debt_repayment_id
+              if (dbExpenses.some(e => e.debt_repayment_id === ctx.payload.debt_repayment_id)) {
+                return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "expenses_debt_repayment_id_key"' } };
+              }
+            }
             const row = {
               id: `exp_34_${expInserts}`,
+              debt_repayment_id: null,
               ...ctx.payload,
               created_at: '2026-11-10T10:00:01Z'
             };
+            if (throwAbortAfterLegacyExpenseCommit) {
+              throwAbortAfterLegacyExpenseCommit = false;
+              const legacyRow = {
+                ...row,
+                debt_repayment_id: null,
+                notes: serializeExpenseRepaymentNotes(row.notes, ctx.payload.debt_repayment_id)
+              };
+              dbExpenses.push(legacyRow);
+              throw new DOMException('Fetch is aborted', 'AbortError');
+            }
             dbExpenses.push(row);
             if (throwAbortAfterExpenseCommit) {
               throwAbortAfterExpenseCommit = false;
@@ -3829,7 +3910,18 @@ async function runPersistenceTests() {
             return { data: row, error: null };
           }
           if (ctx.op === 'select') {
-            return { data: [...dbExpenses], error: null };
+            let rows = dbExpenses.filter(e => !userFilter || e.user_id === userFilter);
+            if (fkFilter !== undefined) {
+              reconciliationLookups.push({ usedFkFilter: true });
+              rows = rows.filter(e => e.debt_repayment_id === fkFilter);
+              return { data: ctx.singleMode === 'none' ? rows : rows[0] || null, error: null };
+            }
+            if (ctx.filters.some(f => f.col === 'expense_date')) {
+              reconciliationLookups.push({ usedFkFilter: false });
+              const dateVal = ctx.filters.find(f => f.col === 'expense_date')?.val;
+              rows = rows.filter(e => e.expense_date === dateVal);
+            }
+            return { data: ctx.singleMode === 'none' ? rows : rows[0] || null, error: null };
           }
           return { data: [], error: null };
         }
@@ -3840,7 +3932,7 @@ async function runPersistenceTests() {
       configureRepositoryBackendForTests(concurrencyClient, true);
       await repository.fetchAllUserData(USER_A);
 
-      // 1) Identical double-click concurrent submit coalesces into 1 DB repayment & 1 expense
+      // 1) Identical double-click concurrent submit coalesces into 1 DB repayment & 1 FK expense
       const payloadSame = {
         debt_id: 'debt_34_pay',
         amount: 400,
@@ -3853,62 +3945,113 @@ async function runPersistenceTests() {
         repository.addDebtRepayment(payloadSame)
       ]);
       assert(dc1.id === dc2.id, 'Concurrent identical double-click returns single coalesced repayment');
-      assert(dbRepayments.length === 1 && dbExpenses.length === 1, 'Double-click writes exactly 1 repayment and 1 expense');
+      assert(dbRepayments.length === 2 && dbExpenses.length === 1, 'Double-click writes exactly 1 new repayment and 1 FK expense');
+      assert(dbExpenses[0].debt_repayment_id === dc1.id, 'Linked expense populates debt_repayment_id FK');
       assert(repository.getDebts()[0].remaining_amount === 600, 'Remaining balance after coalesced 400 repayment is 600');
 
-      // 2) Concurrent differing submissions exceeding remaining balance serialize safely
+      // 2) DB UNIQUE constraint prevents duplicate linked expense for same debt_repayment_id
+      const dupFkAttempt = await concurrencyClient
+        .from('expenses')
+        .insert({
+          user_id: USER_A,
+          debt_repayment_id: dc1.id,
+          title: 'Duplicate Attempt',
+          amount: 400,
+          category: 'Debt Repayment',
+          expense_date: '2026-11-10'
+        })
+        .select()
+        .single();
+      assert(dupFkAttempt.error?.code === '23505', 'UNIQUE constraint on expenses.debt_repayment_id rejects duplicate linked expense');
+      assert(dbExpenses.length === 1, 'Duplicate linked expense was not inserted');
+
+      // 3) Composite FK (debt_repayment_id, user_id) prevents User A from linking User B's repayment
+      const crossUserFkAttempt = await concurrencyClient
+        .from('expenses')
+        .insert({
+          user_id: USER_A,
+          debt_repayment_id: 'rep_user_b_foreign',
+          title: 'Cross-user Attempt',
+          amount: 250,
+          category: 'Debt Repayment',
+          expense_date: '2026-11-05'
+        })
+        .select()
+        .single();
+      assert(crossUserFkAttempt.error?.code === '23503', 'Composite FK (debt_repayment_id, user_id) blocks linking another user repayment');
+      assert(dbExpenses.length === 1, 'Cross-user expense link rejected');
+
+      // 4) Concurrent differing submissions exceeding remaining balance serialize safely
       const resConcurrent = await Promise.allSettled([
         repository.addDebtRepayment({ debt_id: 'debt_34_pay', amount: 400, repayment_date: '2026-11-11', notes: 'Part A' }),
         repository.addDebtRepayment({ debt_id: 'debt_34_pay', amount: 350, repayment_date: '2026-11-11', notes: 'Part B' })
       ]);
       assert(resConcurrent[0].status === 'fulfilled' && resConcurrent[1].status === 'rejected', 'Per-debt queue lets first 400 succeed and blocks second 350 exceeding 200 remaining');
-      assert(dbRepayments.length === 2 && dbExpenses.length === 2, 'Blocked concurrent over-repayment writes neither repayment nor expense');
+      assert(dbRepayments.length === 3 && dbExpenses.length === 2, 'Blocked concurrent over-repayment writes neither repayment nor expense');
 
-      // 3) Invalid date & direct over-repayment reject before DB writes
+      // 5) Invalid date rejects before DB writes
       let badDateRejected = false;
       try {
         await repository.addDebtRepayment({ debt_id: 'debt_34_pay', amount: 50, repayment_date: '2026-02-30' });
       } catch {
         badDateRejected = true;
       }
-      assert(badDateRejected && dbRepayments.length === 2 && dbExpenses.length === 2, 'Invalid calendar date rejected before DB insert');
+      assert(badDateRejected && dbRepayments.length === 3 && dbExpenses.length === 2, 'Invalid calendar date rejected before DB insert');
 
-      // 4) Atomic rollback when expenses insert fails -> retry succeeds cleanly with 1:1
+      // 6) Atomic rollback when expenses insert fails -> retry succeeds cleanly with 1:1
       failNextExpenseInsert = true;
       let rollbackErrThrown = false;
       try {
-        await repository.addDebtRepayment({ debt_id: 'debt_34_pay', amount: 100, repayment_date: '2026-11-12', notes: 'Rollback test' });
+        await repository.addDebtRepayment({ debt_id: 'debt_34_pay', amount: 50, repayment_date: '2026-11-12', notes: 'Rollback test' });
       } catch {
         rollbackErrThrown = true;
       }
       assert(rollbackErrThrown, 'Expense insert failure surfaces error instead of leaving orphaned repayment');
-      assert(repRollbacks === 1 && dbRepayments.length === 2 && dbExpenses.length === 2, 'Failed expense insert rolls back debt_repayments row cleanly');
+      assert(repRollbacks === 1 && dbRepayments.length === 3 && dbExpenses.length === 2, 'Failed expense insert rolls back debt_repayments row cleanly');
       assert(repository.getDebts()[0].remaining_amount === 200, 'Debt remaining balance unchanged after rollback');
 
-      await repository.addDebtRepayment({ debt_id: 'debt_34_pay', amount: 100, repayment_date: '2026-11-12', notes: 'Rollback test' });
-      assert(dbRepayments.length === 3 && dbExpenses.length === 3, 'Retry after rollback succeeds with exact 1:1 repayment & expense');
+      await repository.addDebtRepayment({ debt_id: 'debt_34_pay', amount: 50, repayment_date: '2026-11-12', notes: 'Rollback test' });
+      assert(dbRepayments.length === 4 && dbExpenses.length === 3, 'Retry after rollback succeeds with exact 1:1 repayment & expense');
 
-      // 5) Timeout/abort after expense commit reconciles existing linked expense without duplicate
+      // 7) Timeout/abort reconciliation checks debt_repayment_id FIRST (no expense_date scan needed)
+      reconciliationLookups.length = 0;
       throwAbortAfterExpenseCommit = true;
-      const repReconciled = await repository.addDebtRepayment({
+      const repFkReconciled = await repository.addDebtRepayment({
         debt_id: 'debt_34_pay',
-        amount: 100,
+        amount: 75,
         repayment_date: '2026-11-13',
-        notes: 'Abort reconcile'
+        notes: 'FK Abort reconcile'
       });
-      assert(dbRepayments.length === 4 && dbExpenses.length === 4, 'Abort reconciliation detects already-committed expense without rollback or duplicate');
-      assert(repository.getExpenses().some(e => e.debtRepaymentId === repReconciled.id), 'Reconciled expense registered cleanly in memoryState');
+      assert(reconciliationLookups.length === 1 && reconciliationLookups[0].usedFkFilter === true, 'Timeout/abort reconciliation queries debt_repayment_id first without fallback scan');
+      assert(dbRepayments.length === 5 && dbExpenses.length === 4, 'FK abort reconciliation detects already-committed expense without rollback or duplicate');
+      assert(repository.getExpenses().some(e => e.debtRepaymentId === repFkReconciled.id), 'FK-reconciled expense registered cleanly in memoryState');
+
+      // 8) Timeout/abort reconciliation falls back to legacy marker if FK is null on committed row
+      reconciliationLookups.length = 0;
+      throwAbortAfterLegacyExpenseCommit = true;
+      const repLegacyReconciled = await repository.addDebtRepayment({
+        debt_id: 'debt_34_pay',
+        amount: 75,
+        repayment_date: '2026-11-14',
+        notes: 'Legacy Abort reconcile'
+      });
+      assert(
+        reconciliationLookups.length === 2 &&
+          reconciliationLookups[0].usedFkFilter === true &&
+          reconciliationLookups[1].usedFkFilter === false,
+        'Abort reconciliation checks debt_repayment_id first, then falls back to legacy note-marker scan'
+      );
+      assert(repository.getExpenses().some(e => e.debtRepaymentId === repLegacyReconciled.id), 'Legacy-reconciled expense registered cleanly in memoryState');
       assert(repository.getDebts()[0].status === 'paid' && repository.getDebts()[0].remaining_amount === 0, 'Final reconciled repayment marks debt paid');
     }
     console.log('✓ Test 34 passed.');
 
     // ==========================================
-    // TEST 35: Repayment & Debt Deletion Cascade Cleanup + Historical Non-Mutation
+    // TEST 35: ON DELETE CASCADE (Repayment & Debt), Legacy Note Cleanup & Unrelated Expense Preservation
     // ==========================================
-    console.log('Test 35: Repayment deletion, parent debt deletion cleanup & safe historical handling...');
+    console.log('Test 35: ON DELETE CASCADE for FK-linked expenses, legacy note-marker compatibility & unrelated expense safety...');
     {
-      const linkedNotesOct = serializeExpenseRepaymentNotes('Money to Pay repayment to Bank Loan', 'rep_35_1');
-      const linkedNotesNov = serializeExpenseRepaymentNotes('Money to Pay repayment to Bank Loan', 'rep_35_2');
+      const linkedNotesLegacy = serializeExpenseRepaymentNotes('Legacy pre-FK repayment', 'rep_35_legacy');
       const dbDebts: any[] = [
         {
           id: 'debt_35_pay',
@@ -3924,10 +4067,10 @@ async function runPersistenceTests() {
           created_at: '2026-10-01T08:00:00Z'
         },
         {
-          id: 'debt_35_hist',
+          id: 'debt_35_legacy',
           user_id: USER_A,
           person_name: 'Legacy Lender',
-          description: serializeDebtDescription('pay', 'Historical Pre-Sync'),
+          description: serializeDebtDescription('pay', 'Legacy Loan'),
           original_amount: 500,
           remaining_amount: 300,
           lent_date: '2026-08-01',
@@ -3940,13 +4083,25 @@ async function runPersistenceTests() {
       const dbRepayments: any[] = [
         { id: 'rep_35_1', debt_id: 'debt_35_pay', user_id: USER_A, amount: 600, repayment_date: '2026-10-10', payment_method: 'Bank Transfer', notes: null, created_at: '2026-10-10T08:00:00Z' },
         { id: 'rep_35_2', debt_id: 'debt_35_pay', user_id: USER_A, amount: 400, repayment_date: '2026-11-10', payment_method: 'Bank Transfer', notes: null, created_at: '2026-11-10T08:00:00Z' },
-        { id: 'rep_35_hist', debt_id: 'debt_35_hist', user_id: USER_A, amount: 200, repayment_date: '2026-08-15', payment_method: 'Cash', notes: 'Historical unlinked', created_at: '2026-08-15T08:00:00Z' }
-      ];
+        { id: 'rep_35_legacy', debt_id: 'debt_35_legacy', user_id: USER_A, amount: 200, repayment_date: '2026-08-15', payment_method: 'Cash', notes: 'Legacy marker repayment', created_at: '2026-08-15T08:00:00Z' },
+        { id: 'rep_35_hist_unlinked', debt_id: 'debt_35_legacy', user_id: USER_A, amount: 0, repayment_date: '2026-08-16', payment_method: 'Cash', notes: 'Keep untouched', created_at: '2026-08-16T08:00:00Z' }
+      ].filter(r => r.amount > 0);
       const dbExpenses: any[] = [
-        { id: 'exp_35_regular', user_id: USER_A, title: 'Groceries', amount: 500, category: 'Food & Groceries', expense_date: '2026-10-05', expense_time: '12:00:00', payment_method: 'Card', notes: null, is_recurring: false, recurrence_frequency: null, recurrence_end_date: null, created_at: '2026-10-05T12:00:00Z' },
-        { id: 'exp_35_1', user_id: USER_A, title: 'Debt Repayment — Bank Loan', amount: 600, category: 'Debt Repayment', expense_date: '2026-10-10', expense_time: '08:00:00', payment_method: 'Bank Transfer', notes: linkedNotesOct, is_recurring: false, recurrence_frequency: null, recurrence_end_date: null, created_at: '2026-10-10T08:00:00Z' },
-        { id: 'exp_35_2', user_id: USER_A, title: 'Debt Repayment — Bank Loan', amount: 400, category: 'Debt Repayment', expense_date: '2026-11-10', expense_time: '08:00:00', payment_method: 'Bank Transfer', notes: linkedNotesNov, is_recurring: false, recurrence_frequency: null, recurrence_end_date: null, created_at: '2026-11-10T08:00:00Z' }
+        { id: 'exp_35_regular', user_id: USER_A, debt_repayment_id: null, title: 'Groceries', amount: 500, category: 'Food & Groceries', expense_date: '2026-10-05', expense_time: '12:00:00', payment_method: 'Card', notes: null, is_recurring: false, recurrence_frequency: null, recurrence_end_date: null, created_at: '2026-10-05T12:00:00Z' },
+        { id: 'exp_35_fk_1', user_id: USER_A, debt_repayment_id: 'rep_35_1', title: 'Debt Repayment — Bank Loan', amount: 600, category: 'Debt Repayment', expense_date: '2026-10-10', expense_time: '08:00:00', payment_method: 'Bank Transfer', notes: 'Repayment to Bank Loan', is_recurring: false, recurrence_frequency: null, recurrence_end_date: null, created_at: '2026-10-10T08:00:00Z' },
+        { id: 'exp_35_fk_2', user_id: USER_A, debt_repayment_id: 'rep_35_2', title: 'Debt Repayment — Bank Loan', amount: 400, category: 'Debt Repayment', expense_date: '2026-11-10', expense_time: '08:00:00', payment_method: 'Bank Transfer', notes: 'Repayment to Bank Loan', is_recurring: false, recurrence_frequency: null, recurrence_end_date: null, created_at: '2026-11-10T08:00:00Z' },
+        { id: 'exp_35_legacy', user_id: USER_A, debt_repayment_id: null, title: 'Debt Repayment — Legacy Lender', amount: 200, category: 'Debt Repayment', expense_date: '2026-08-15', expense_time: '08:00:00', payment_method: 'Cash', notes: linkedNotesLegacy, is_recurring: false, recurrence_frequency: null, recurrence_end_date: null, created_at: '2026-08-15T08:00:00Z' }
       ];
+
+      const explicitExpenseDeleteCalls: string[] = [];
+
+      const cascadeExpensesForRepayment = (repId: string, userId: string) => {
+        for (let i = dbExpenses.length - 1; i >= 0; i--) {
+          if (dbExpenses[i].debt_repayment_id === repId && dbExpenses[i].user_id === userId) {
+            dbExpenses.splice(i, 1);
+          }
+        }
+      };
 
       const deleteClient = createMockSupabase(USER_A, {
         debts: (ctx) => {
@@ -3959,9 +4114,12 @@ async function runPersistenceTests() {
             const idx = dbDebts.findIndex(d => d.id === idFilter);
             if (idx === -1) return { data: [], error: null };
             const [removed] = dbDebts.splice(idx, 1);
-            // Simulate DB FK ON DELETE CASCADE on debt_repayments
+            // Simulate PostgreSQL ON DELETE CASCADE: debts -> debt_repayments -> expenses(debt_repayment_id, user_id)
             for (let i = dbRepayments.length - 1; i >= 0; i--) {
-              if (dbRepayments[i].debt_id === idFilter) dbRepayments.splice(i, 1);
+              if (dbRepayments[i].debt_id === idFilter) {
+                const [cascadedRep] = dbRepayments.splice(i, 1);
+                cascadeExpensesForRepayment(cascadedRep.id, cascadedRep.user_id);
+              }
             }
             return { data: [{ id: removed.id }], error: null };
           }
@@ -3974,6 +4132,8 @@ async function runPersistenceTests() {
             const idx = dbRepayments.findIndex(r => r.id === idFilter);
             if (idx === -1) return { data: [], error: null };
             const [removed] = dbRepayments.splice(idx, 1);
+            // Simulate PostgreSQL ON DELETE CASCADE on expenses(debt_repayment_id, user_id)
+            cascadeExpensesForRepayment(removed.id, removed.user_id);
             const dIdx = dbDebts.findIndex(d => d.id === removed.debt_id);
             if (dIdx !== -1) {
               const repaid = dbRepayments.filter(r => r.debt_id === removed.debt_id).reduce((s, r) => s + Number(r.amount), 0);
@@ -3992,6 +4152,7 @@ async function runPersistenceTests() {
           const idFilter = ctx.filters.find(f => f.col === 'id')?.val;
           if (ctx.op === 'select') return { data: [...dbExpenses], error: null };
           if (ctx.op === 'delete') {
+            if (idFilter) explicitExpenseDeleteCalls.push(idFilter);
             const idx = dbExpenses.findIndex(e => e.id === idFilter);
             if (idx === -1) return { data: [], error: null };
             const [removed] = dbExpenses.splice(idx, 1);
@@ -4006,26 +4167,34 @@ async function runPersistenceTests() {
       configureRepositoryBackendForTests(deleteClient, true);
       await repository.fetchAllUserData(USER_A);
 
-      // Verify historical unlinked repayment is NOT silently deleted or auto-backfilled on fetch
-      assert(dbExpenses.length === 3 && repository.getExpenses().length === 3, 'Initial load does not auto-backfill or alter historical unlinked repayment');
-      assert(calculateMonthlyExpenseTotal(repository.getExpenses(), '2026-10') === 1100, 'October total includes groceries (500) + linked repayment (600)');
+      assert(dbExpenses.length === 4 && repository.getExpenses().length === 4, 'Hydrates FK-linked, legacy marker, and regular expenses cleanly');
+      assert(repository.getExpenses().find(e => e.id === 'exp_35_legacy')?.debtRepaymentId === 'rep_35_legacy', 'Legacy note-marker record hydrates debtRepaymentId accurately');
+      assert(calculateMonthlyExpenseTotal(repository.getExpenses(), '2026-10') === 1100, 'October total includes groceries (500) + FK repayment (600)');
 
-      // Delete first repayment -> removes exp_35_1, restores Bank Loan to partially_paid (remaining 600)
+      // 1) Delete FK-backed repayment -> Postgres ON DELETE CASCADE deletes exp_35_fk_1 with ZERO duplicate expense DELETE calls
       await repository.deleteDebtRepayment('rep_35_1');
-      assert(dbExpenses.length === 2 && !dbExpenses.some(e => e.id === 'exp_35_1'), 'deleteDebtRepayment deletes linked expense from DB');
+      assert(explicitExpenseDeleteCalls.length === 0, 'deleteDebtRepayment issues ZERO redundant DELETE calls for FK-linked expenses handled by ON DELETE CASCADE');
+      assert(dbExpenses.length === 3 && !dbExpenses.some(e => e.id === 'exp_35_fk_1'), 'ON DELETE CASCADE removes exp_35_fk_1 from DB');
       assert(calculateMonthlyExpenseTotal(repository.getExpenses(), '2026-10') === 500, 'October monthly expense drops back to 500 after repayment deletion');
       assert(calculateMonthlyExpenseTotal(repository.getExpenses(), '2026-11') === 400, 'November repayment expense remains intact');
       const bankLoanAfter = repository.getDebts().find(d => d.id === 'debt_35_pay')!;
       assert(bankLoanAfter.remaining_amount === 600 && bankLoanAfter.status === 'partially_paid', 'Parent debt balance & status recalculate cleanly');
 
-      // Delete parent debt -> cascades remaining repayment & deletes remaining linked expense exp_35_2, preserves regular groceries
+      // 2) Delete parent debt -> Postgres ON DELETE CASCADE removes remaining repayment & exp_35_fk_2 with ZERO duplicate expense DELETE calls
       await repository.deleteDebt('debt_35_pay');
-      assert(dbExpenses.length === 1 && dbExpenses[0].id === 'exp_35_regular', 'deleteDebt cleans up remaining linked Debt Repayment expenses while preserving unrelated expenses');
-      assert(repository.getExpenses().length === 1 && repository.getExpenses()[0].id === 'exp_35_regular', 'Memory expenses match clean DB state');
-      assert(dbRepayments.length === 1 && dbRepayments[0].id === 'rep_35_hist', 'Historical unrelated debt and repayment remain untouched');
+      assert(explicitExpenseDeleteCalls.length === 0, 'deleteDebt issues ZERO redundant DELETE calls for FK-linked expenses handled by ON DELETE CASCADE');
+      assert(!dbExpenses.some(e => e.id === 'exp_35_fk_2'), 'ON DELETE CASCADE removes remaining FK-linked expense exp_35_fk_2');
+      assert(repository.getExpenses().some(e => e.id === 'exp_35_regular'), 'Existing unrelated regular expense remains unaffected in memory');
+      assert(dbExpenses.some(e => e.id === 'exp_35_regular'), 'Existing unrelated regular expense remains unaffected in DB');
 
-      const deserialized = deserializeExpenseRepaymentNotes(linkedNotesOct);
-      assert(deserialized.debtRepaymentId === 'rep_35_1' && deserialized.notes === 'Money to Pay repayment to Bank Loan', 'deserializeExpenseRepaymentNotes cleanly separates marker ID from user notes');
+      // 3) Delete legacy note-marker-only repayment -> explicit legacy cleanup removes exp_35_legacy cleanly
+      await repository.deleteDebtRepayment('rep_35_legacy');
+      assert(explicitExpenseDeleteCalls.length === 1 && explicitExpenseDeleteCalls[0] === 'exp_35_legacy', 'Legacy note-marker expense (debt_repayment_id=NULL) is cleaned up explicitly');
+      assert(dbExpenses.length === 1 && dbExpenses[0].id === 'exp_35_regular', 'Only unrelated regular expense remains in DB');
+      assert(repository.getExpenses().length === 1 && repository.getExpenses()[0].id === 'exp_35_regular', 'Only unrelated regular expense remains in memory');
+
+      const deserialized = deserializeExpenseRepaymentNotes(linkedNotesLegacy);
+      assert(deserialized.debtRepaymentId === 'rep_35_legacy' && deserialized.notes === 'Legacy pre-FK repayment', 'deserializeExpenseRepaymentNotes cleanly separates marker ID from user notes');
     }
     console.log('✓ Test 35 passed.');
 

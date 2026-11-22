@@ -15,7 +15,8 @@ import {
   X,
   ChevronRight,
   HandCoins,
-  LogOut
+  LogOut,
+  AudioLines
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ActiveTab } from './Sidebar';
@@ -48,7 +49,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = React.memo(({
 
   const isMoneyActive = ['expenses', 'income', 'debt'].includes(activeTab);
   const isWorkActive = ['attendance'].includes(activeTab);
-  const isMoreActive = ['salary', 'savings', 'reports', 'settings'].includes(activeTab);
+  const isMoreActive = ['salary', 'savings', 'reports', 'ai-agent', 'settings'].includes(activeTab);
 
   // Close sheet on Escape key
   useEffect(() => {
@@ -331,6 +332,37 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = React.memo(({
                         </div>
                       </div>
                       <ChevronRight className={`w-4 h-4 ${activeTab === 'reports' ? 'text-[#87CEEB]' : 'text-neutral-400'}`} />
+                    </motion.button>
+                  </WaterRippleContainer>
+                </motion.div>
+
+                {/* AI Agent */}
+                <motion.div variants={submenuItemVariants}>
+                  <WaterRippleContainer className="rounded-2xl">
+                    <motion.button
+                      whileTap={{ scale: 0.98 }}
+                      type="button"
+                      onClick={() => handleSelectTab('ai-agent')}
+                      className={`w-full flex items-center justify-between p-3.5 rounded-2xl border text-left cursor-pointer min-h-[56px] transition-colors duration-150 ${
+                        activeTab === 'ai-agent'
+                          ? 'border-[#111111] bg-[#111111] text-white shadow-xs'
+                          : 'border-black/[0.06] bg-white/90 text-neutral-800 hover:bg-neutral-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                          activeTab === 'ai-agent' ? 'bg-white/10 text-[#87CEEB]' : 'bg-neutral-100 text-neutral-700'
+                        }`}>
+                          <AudioLines className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold leading-snug">AI Agent</div>
+                          <div className={`text-[11px] ${activeTab === 'ai-agent' ? 'text-neutral-300' : 'text-neutral-500'}`}>
+                            Personal voice assistant in English & Malayalam
+                          </div>
+                        </div>
+                      </div>
+                      <ChevronRight className={`w-4 h-4 ${activeTab === 'ai-agent' ? 'text-[#87CEEB]' : 'text-neutral-400'}`} />
                     </motion.button>
                   </WaterRippleContainer>
                 </motion.div>

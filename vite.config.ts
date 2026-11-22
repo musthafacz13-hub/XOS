@@ -88,6 +88,7 @@ export default defineConfig(() => {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,webmanifest}'],
           globIgnores: ['assets/aistudio/**', '404.html'],
           navigateFallbackDenylist: [
+            /^\/api\//,
             /^\/assets\//,
             /^\/manifest\.webmanifest$/,
             /^\/robots\.txt$/,
