@@ -201,6 +201,58 @@ async function runPDFTests() {
   assert(archivedCheckText.includes('Period Earned:'), 'PDF Salary section must include earned/paid/remaining summary');
   console.log('✓ Test 5 passed: Archived savings excluded, Paused preserved, and Debt/Salary summaries verified.');
 
+  // Case 6: Debt Repayment Expense Inclusion Without Double-Counting
+  console.log('Test 6: Verifying Debt Repayment expense appears in PDF export without double-counting...');
+  const repaymentExpenseBlob = await generateXOSReportPDF(
+    {
+      ...populatedData,
+      settings: { ...DEFAULT_USER_SETTINGS, currency: 'USD', dateFormat: 'YYYY-MM-DD' },
+      expenses: [
+        {
+          id: 'e_pay_rep',
+          title: 'Debt Repayment — Metro Leasing',
+          amount: 450,
+          category: 'Debt Repayment',
+          date: '2026-05-18',
+          paymentMethod: 'Bank Transfer',
+          notes: 'May installment',
+          debtRepaymentId: 'dr_pay_1',
+          createdAt: '2026-05-18'
+        }
+      ],
+      debts: [
+        {
+          id: 'd2',
+          person_name: 'Metro Leasing',
+          original_amount: 1500,
+          remaining_amount: 1050,
+          lent_date: '2026-05-01',
+          status: 'partially_paid',
+          direction: 'pay',
+          created_at: '2026-05-01'
+        }
+      ],
+      debtRepayments: [
+        {
+          id: 'dr_pay_1',
+          debt_id: 'd2',
+          amount: 450,
+          repayment_date: '2026-05-18',
+          payment_method: 'Bank Transfer',
+          notes: 'May installment',
+          created_at: '2026-05-18'
+        }
+      ]
+    },
+    { datePreset: 'all' }
+  );
+  const repPdfText = new TextDecoder('latin1').decode(new Uint8Array(await repaymentExpenseBlob.arrayBuffer()));
+  assert(repPdfText.includes('Debt Repayment'), 'PDF must include Debt Repayment expense category/title');
+  assert(repPdfText.includes('$450'), 'PDF must reflect exact $450 repayment expense');
+  assert(!repPdfText.includes('$900'), 'PDF must NOT double-count $450 repayment + $450 expense into $900');
+  assert(repPdfText.includes('$1,050'), 'PDF must accurately report remaining $1,050 payable balance');
+  console.log('✓ Test 6 passed: PDF includes Debt Repayment expense once with accurate payable balance.');
+
   console.log('\n--- ALL PDF EXPORT TESTS PASSED SUCCESSFULLY! ---');
 }
 

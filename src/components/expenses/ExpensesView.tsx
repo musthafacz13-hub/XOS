@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { CreditCard, Plus, Search, Trash2, Edit3, PieChart as PieChartIcon, X } from 'lucide-react';
+import { CreditCard, Plus, Search, Trash2, Edit3, PieChart as PieChartIcon, X, Banknote } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { useXOSData } from '../../hooks/useXOSData';
 import { Expense, ExpenseCategory, PaymentMethod, RecurrenceFrequency } from '../../types';
@@ -139,13 +139,22 @@ export const ExpensesView: React.FC = () => {
     setDeleteTargetId(id);
   };
 
+  const syncedRepaymentIds = useMemo(
+    () => new Set(data.debtRepayments.map(r => r.id)),
+    [data.debtRepayments]
+  );
+
   const filteredExpenses = useMemo(() => {
     const q = searchQuery.toLowerCase();
     return data.expenses.filter(e => {
       if (selectedCategory !== 'all' && e.category !== selectedCategory) return false;
       if (selectedPaymentMethod !== 'all' && e.paymentMethod !== selectedPaymentMethod) return false;
       if (q) {
-        return e.title.toLowerCase().includes(q) || (e.notes && e.notes.toLowerCase().includes(q));
+        return (
+          e.title.toLowerCase().includes(q) ||
+          e.category.toLowerCase().includes(q) ||
+          (e.notes && e.notes.toLowerCase().includes(q))
+        );
       }
       return true;
     });
@@ -342,52 +351,67 @@ export const ExpensesView: React.FC = () => {
         <>
           {/* Mobile Card List (widths < 768px: 320px, 360px, 375px, 390px, etc.) */}
           <div className="md:hidden space-y-2.5">
-            {filteredExpenses.map((exp) => (
-              <div key={exp.id} className="cv-auto p-4 rounded-2xl border border-black/[0.08] bg-white space-y-2.5 shadow-xs">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <span className="font-semibold text-sm text-[#111111] block truncate">{exp.title}</span>
-                    <span className="text-[11px] text-neutral-500 block truncate">
-                      {exp.category} · {exp.paymentMethod}
-                    </span>
+            {filteredExpenses.map((exp) => {
+              const isDebtSynced = Boolean(exp.debtRepaymentId && syncedRepaymentIds.has(exp.debtRepaymentId));
+              return (
+                <div key={exp.id} className="cv-auto p-4 rounded-2xl border border-black/[0.08] bg-white space-y-2.5 shadow-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="font-semibold text-sm text-[#111111] block truncate">{exp.title}</span>
+                      <span className="text-[11px] text-neutral-500 block truncate">
+                        {exp.category} · {exp.paymentMethod}
+                      </span>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="font-mono font-bold text-sm text-[#111111] block tabular-nums">
+                        {formatCurrency(exp.amount, data.settings.currency)}
+                      </span>
+                      <span className="text-[10px] text-neutral-400 font-mono block">
+                        {formatHumanDate(exp.date)} {exp.time ? `· ${exp.time}` : ''}
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <span className="font-mono font-bold text-sm text-[#111111] block tabular-nums">
-                      {formatCurrency(exp.amount, data.settings.currency)}
+
+                  {isDebtSynced && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-neutral-100 text-neutral-700 border border-neutral-200 font-mono">
+                      <Banknote className="w-3 h-3 text-[#87CEEB]" /> From Debt Repayment
                     </span>
-                    <span className="text-[10px] text-neutral-400 font-mono block">
-                      {formatHumanDate(exp.date)} {exp.time ? `· ${exp.time}` : ''}
-                    </span>
+                  )}
+
+                  {exp.notes && (
+                    <p className="text-xs text-neutral-500 bg-neutral-50 p-2 rounded-lg font-normal">
+                      {exp.notes}
+                    </p>
+                  )}
+
+                  <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-400">
+                    <span>{exp.isRecurring ? `Recurring (${exp.recurringFrequency})` : 'One-time'}</span>
+                    {isDebtSynced ? (
+                      <span className="text-[11px] font-medium text-neutral-500">
+                        Managed in Debt
+                      </span>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => openEditModal(exp)}
+                          className="p-1 text-neutral-500 hover:text-black cursor-pointer"
+                          title="Edit"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(exp.id)}
+                          className="p-1 text-neutral-500 hover:text-rose-600 cursor-pointer"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
-
-                {exp.notes && (
-                  <p className="text-xs text-neutral-500 bg-neutral-50 p-2 rounded-lg font-normal">
-                    {exp.notes}
-                  </p>
-                )}
-
-                <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-400">
-                  <span>{exp.isRecurring ? `Recurring (${exp.recurringFrequency})` : 'One-time'}</span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => openEditModal(exp)}
-                      className="p-1 text-neutral-500 hover:text-black cursor-pointer"
-                      title="Edit"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(exp.id)}
-                      className="p-1 text-neutral-500 hover:text-rose-600 cursor-pointer"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Desktop Table (widths >= 768px) */}
@@ -404,49 +428,68 @@ export const ExpensesView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/[0.06] text-xs text-neutral-700">
-                {filteredExpenses.map((exp) => (
-                  <tr key={exp.id} className="hover:bg-neutral-50/70 transition-colors">
-                    <td className="py-3 px-4">
-                      <span className="font-semibold text-[#111111] block">{exp.title}</span>
-                      {exp.notes && <span className="text-[11px] text-neutral-400 block">{exp.notes}</span>}
-                    </td>
-                    <td className="py-3 px-4 font-medium text-neutral-800">
-                      {exp.category}
-                      {exp.isRecurring && (
-                        <span className="ml-1.5 text-[10px] text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded font-mono">
-                          {exp.recurringFrequency}
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 font-mono text-neutral-600 tabular-nums">
-                      {formatHumanDate(exp.date)} {exp.time ? `(${exp.time})` : ''}
-                    </td>
-                    <td className="py-3 px-4 text-neutral-600">
-                      {exp.paymentMethod}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-[#111111] tabular-nums">
-                      {formatCurrency(exp.amount, data.settings.currency)}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={() => openEditModal(exp)}
-                          className="p-1 text-neutral-400 hover:text-black cursor-pointer"
-                          title="Edit"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(exp.id)}
-                          className="p-1 text-neutral-400 hover:text-rose-600 cursor-pointer"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {filteredExpenses.map((exp) => {
+                  const isDebtSynced = Boolean(exp.debtRepaymentId && syncedRepaymentIds.has(exp.debtRepaymentId));
+                  return (
+                    <tr key={exp.id} className="hover:bg-neutral-50/70 transition-colors">
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-[#111111] block">{exp.title}</span>
+                          {isDebtSynced && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-neutral-100 text-neutral-700 border border-neutral-200 font-semibold inline-flex items-center gap-1">
+                              <Banknote className="w-3 h-3 text-[#87CEEB]" /> From Debt
+                            </span>
+                          )}
+                        </div>
+                        {exp.notes && <span className="text-[11px] text-neutral-400 block">{exp.notes}</span>}
+                      </td>
+                      <td className="py-3 px-4 font-medium text-neutral-800">
+                        {exp.category}
+                        {exp.isRecurring && (
+                          <span className="ml-1.5 text-[10px] text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded font-mono">
+                            {exp.recurringFrequency}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-neutral-600 tabular-nums">
+                        {formatHumanDate(exp.date)} {exp.time ? `(${exp.time})` : ''}
+                      </td>
+                      <td className="py-3 px-4 text-neutral-600">
+                        {exp.paymentMethod}
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono font-bold text-[#111111] tabular-nums">
+                        {formatCurrency(exp.amount, data.settings.currency)}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {isDebtSynced ? (
+                          <span
+                            className="text-[11px] font-medium text-neutral-400"
+                            title="Manage or delete this repayment inside the Debt section"
+                          >
+                            Managed in Debt
+                          </span>
+                        ) : (
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => openEditModal(exp)}
+                              className="p-1 text-neutral-400 hover:text-black cursor-pointer"
+                              title="Edit"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(exp.id)}
+                              className="p-1 text-neutral-400 hover:text-rose-600 cursor-pointer"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

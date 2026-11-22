@@ -39,6 +39,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     'Health & Fitness',
     'Education',
     'Debt & Bills',
+    'Debt Repayment',
     'Subscriptions',
     'Other'
   ],

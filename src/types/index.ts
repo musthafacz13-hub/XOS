@@ -108,6 +108,7 @@ export type ExpenseCategory =
   | 'Health & Fitness' 
   | 'Education' 
   | 'Debt & Bills' 
+  | 'Debt Repayment'
   | 'Other'
   | string;
 
@@ -127,6 +128,7 @@ export interface Expense {
   isRecurring?: boolean;
   recurringFrequency?: RecurrenceFrequency; // DB recurrence_frequency
   recurrenceEndDate?: string; // YYYY-MM-DD -> DB recurrence_end_date
+  debtRepaymentId?: string; // Linked DebtRepayment ID for Money-to-Pay repayments
   createdAt: string;
 }
 

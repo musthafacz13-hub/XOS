@@ -188,6 +188,20 @@ let activeUserId: string | null = null;
 let fetchSequence = 0;
 let resetInFlightPromise: Promise<void> | null = null;
 const archiveGoalInFlightPromises = new Map<string, Promise<void>>();
+const debtRepaymentQueues = new Map<string, Promise<unknown>>();
+
+function enqueueDebtRepaymentOp<T>(debtId: string, task: () => Promise<T>): Promise<T> {
+  const previous = debtRepaymentQueues.get(debtId) || Promise.resolve();
+  const next = previous.catch(() => undefined).then(task);
+  const clearQueueTail = () => {
+    if (debtRepaymentQueues.get(debtId) === cleanup) {
+      debtRepaymentQueues.delete(debtId);
+    }
+  };
+  const cleanup = next.then(clearQueueTail, clearQueueTail);
+  debtRepaymentQueues.set(debtId, cleanup);
+  return next;
+}
 
 function validateResetRpcResponse(rpcData: unknown): void {
   // Standard PostgreSQL RETURNS void functions return data: null (with error: null) via PostgREST.
@@ -580,7 +594,69 @@ export function fromDbRecurrenceFrequency(isRecurring: unknown, val: unknown): R
   }
 }
 
+const REPAYMENT_TAG_REGEX = /\s*\[xos-repayment:([a-zA-Z0-9_-]+)\]\s*/g;
+
+export function deserializeExpenseRepaymentNotes(
+  rawNotes?: string | null,
+  explicitDebtRepaymentId?: string | null
+): { debtRepaymentId?: string; notes: string } {
+  const raw = rawNotes ? String(rawNotes) : '';
+  let extractedId: string | undefined =
+    typeof explicitDebtRepaymentId === 'string' && explicitDebtRepaymentId.trim()
+      ? explicitDebtRepaymentId.trim()
+      : undefined;
+
+  REPAYMENT_TAG_REGEX.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = REPAYMENT_TAG_REGEX.exec(raw)) !== null) {
+    if (!extractedId && match[1]) {
+      extractedId = match[1].trim();
+    }
+  }
+
+  const cleanNotes = raw.replace(/\s*\[xos-repayment:[a-zA-Z0-9_-]+\]\s*/g, ' ').trim();
+  return {
+    debtRepaymentId: extractedId,
+    notes: cleanNotes
+  };
+}
+
+export function serializeExpenseRepaymentNotes(notes?: string | null, debtRepaymentId?: string): string | null {
+  const { notes: cleanNotes } = deserializeExpenseRepaymentNotes(notes);
+  if (!debtRepaymentId) {
+    return cleanNotes || null;
+  }
+  const tag = `[xos-repayment:${debtRepaymentId}]`;
+  return cleanNotes ? `${cleanNotes} ${tag}` : tag;
+}
+
+export function buildDebtRepaymentExpenseTitle(debt: Pick<Debt, 'person_name'>): string {
+  const person = (debt.person_name || 'Unknown').trim();
+  return `Debt Repayment — ${person}`;
+}
+
+export function buildDebtRepaymentExpenseNotes(
+  debt: Pick<Debt, 'person_name' | 'description' | 'notes'>,
+  repayment: Pick<DebtRepayment, 'notes'>
+): string {
+  const person = (debt.person_name || 'Unknown').trim();
+  const debtContext = (debt.description || debt.notes || '').trim();
+  const repNote = (repayment.notes || '').trim();
+
+  if (debtContext && repNote && debtContext.toLowerCase() !== repNote.toLowerCase()) {
+    return `Repayment to ${person} (${debtContext}) · ${repNote}`;
+  }
+  if (repNote) {
+    return `Repayment to ${person} · ${repNote}`;
+  }
+  if (debtContext) {
+    return `Repayment to ${person} (${debtContext})`;
+  }
+  return `Repayment to ${person}`;
+}
+
 function mapExpenseRow(e: any): Expense {
+  const { debtRepaymentId, notes } = deserializeExpenseRepaymentNotes(e.notes, e.debt_repayment_id);
   return {
     id: e.id,
     title: e.title,
@@ -589,10 +665,11 @@ function mapExpenseRow(e: any): Expense {
     date: e.expense_date,
     time: e.expense_time ? String(e.expense_time).slice(0, 5) : undefined,
     paymentMethod: (e.payment_method || 'Cash') as PaymentMethod,
-    notes: e.notes || '',
+    notes,
     isRecurring: Boolean(e.is_recurring),
     recurringFrequency: fromDbRecurrenceFrequency(e.is_recurring, e.recurrence_frequency),
     recurrenceEndDate: e.recurrence_end_date || undefined,
+    debtRepaymentId,
     createdAt: e.created_at
   };
 }
@@ -2079,6 +2156,12 @@ export const repository = {
     }
 
     const existing = memoryState.expenses.find(e => e.id === id);
+    if (
+      existing?.debtRepaymentId &&
+      memoryState.debtRepayments.some(r => r.id === existing.debtRepaymentId)
+    ) {
+      throw new Error('This expense entry is synced with a Debt Repayment. Delete or manage the repayment in the Debt module instead.');
+    }
     let resolvedRecurrencePayload: {
       is_recurring?: boolean;
       recurrence_frequency?: 'daily' | 'weekly' | 'monthly' | 'yearly' | null;
@@ -2162,6 +2245,14 @@ export const repository = {
   },
 
   async deleteExpense(id: string): Promise<void> {
+    const existing = memoryState.expenses.find(e => e.id === id);
+    if (
+      existing?.debtRepaymentId &&
+      memoryState.debtRepayments.some(r => r.id === existing.debtRepaymentId)
+    ) {
+      throw new Error('This expense entry is synced with a Debt Repayment. Delete the repayment in the Debt module instead.');
+    }
+
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
@@ -3339,6 +3430,12 @@ export const repository = {
 
   async deleteDebt(id: string): Promise<void> {
     const ctx = await requirePersistenceContext();
+    const repaymentIds = new Set(
+      memoryState.debtRepayments.filter(r => r.debt_id === id).map(r => r.id)
+    );
+    const linkedExpenseIds = memoryState.expenses
+      .filter(e => e.debtRepaymentId && repaymentIds.has(e.debtRepaymentId))
+      .map(e => e.id);
 
     if (ctx.mode === 'supabase') {
       let data: any = null;
@@ -3362,10 +3459,41 @@ export const repository = {
       if (!data || data.length === 0) {
         throw new Error('Loan record not found or could not be deleted.');
       }
+
+      // Debt & cascaded debt_repayments are now deleted; remove any linked Debt Repayment expenses
+      const deletedExpenseIds = new Set<string>();
+      for (const expId of linkedExpenseIds) {
+        const { error: expDelError } = await ctx.client
+          .from('expenses')
+          .delete()
+          .eq('id', expId)
+          .eq('user_id', ctx.user.id)
+          .select('id');
+        if (expDelError) {
+          memoryState.debts = memoryState.debts.filter(d => d.id !== id);
+          memoryState.debtRepayments = memoryState.debtRepayments.filter(r => r.debt_id !== id);
+          if (deletedExpenseIds.size > 0) {
+            memoryState.expenses = memoryState.expenses.filter(e => !deletedExpenseIds.has(e.id));
+          }
+          notifyListeners();
+          throw new Error(
+            sanitizeDatabaseErrorMessage(
+              expDelError,
+              'Debt was deleted, but a linked Debt Repayment expense could not be removed cleanly.'
+            )
+          );
+        }
+        deletedExpenseIds.add(expId);
+      }
     }
 
     memoryState.debts = memoryState.debts.filter(d => d.id !== id);
     memoryState.debtRepayments = memoryState.debtRepayments.filter(r => r.debt_id !== id);
+    if (repaymentIds.size > 0) {
+      memoryState.expenses = memoryState.expenses.filter(
+        e => !e.debtRepaymentId || !repaymentIds.has(e.debtRepaymentId)
+      );
+    }
     notifyListeners();
   },
 
@@ -3380,94 +3508,269 @@ export const repository = {
   },
 
   async addDebtRepayment(repayment: Omit<DebtRepayment, 'id' | 'created_at'>): Promise<DebtRepayment> {
-    if (repayment.amount <= 0) {
+    if (!Number.isFinite(repayment.amount) || repayment.amount <= 0) {
       throw new Error('Repayment amount must be greater than zero.');
     }
-
-    const targetDebt = memoryState.debts.find(d => d.id === repayment.debt_id);
-    if (!targetDebt) {
-      throw new Error('Associated debt record not found.');
+    if (!isValidCalendarDateString(repayment.repayment_date)) {
+      throw new Error('Please select a valid repayment date in YYYY-MM-DD format.');
     }
 
-    const existingRepaid = memoryState.debtRepayments
-      .filter(r => r.debt_id === repayment.debt_id)
-      .reduce((sum, r) => sum + r.amount, 0);
+    const normalizedNotes = repayment.notes?.trim() || '';
+    const normalizedMethod = (repayment.payment_method?.trim() || 'Bank Transfer') as PaymentMethod;
+    const dedupKey = `debt_repayment:add:${repayment.debt_id}:${Number(repayment.amount).toFixed(2)}:${repayment.repayment_date}:${normalizedMethod}:${normalizedNotes}`;
 
-    const remainingDebt =
-      typeof targetDebt.remaining_amount === 'number' && Number.isFinite(targetDebt.remaining_amount)
-        ? Math.max(0, Number(targetDebt.remaining_amount.toFixed(2)))
-        : Math.max(0, Number((targetDebt.original_amount - existingRepaid).toFixed(2)));
+    return apiOptimization.coalesce(dedupKey, () =>
+      enqueueDebtRepaymentOp(repayment.debt_id, async () => {
+        const targetDebt = memoryState.debts.find(d => d.id === repayment.debt_id);
+        if (!targetDebt) {
+          throw new Error('Associated debt record not found.');
+        }
 
-    if (repayment.amount > remainingDebt + 0.001) {
-      throw new Error(`Repayment amount exceeds remaining debt balance (${remainingDebt}).`);
-    }
+        const existingRepaid = memoryState.debtRepayments
+          .filter(r => r.debt_id === repayment.debt_id)
+          .reduce((sum, r) => sum + r.amount, 0);
 
-    const ctx = await requirePersistenceContext();
+        const remainingDebt =
+          typeof targetDebt.remaining_amount === 'number' && Number.isFinite(targetDebt.remaining_amount)
+            ? Math.max(0, Number(targetDebt.remaining_amount.toFixed(2)))
+            : Math.max(0, Number((targetDebt.original_amount - existingRepaid).toFixed(2)));
 
-    if (ctx.mode === 'supabase') {
-      const insertPayload: Record<string, any> = {
-        debt_id: repayment.debt_id,
-        user_id: ctx.user.id,
-        amount: repayment.amount,
-        repayment_date: repayment.repayment_date,
-        notes: repayment.notes?.trim() ? repayment.notes.trim() : null
-      };
-      if (repayment.payment_method?.trim()) {
-        insertPayload.payment_method = repayment.payment_method.trim();
-      }
+        if (repayment.amount > remainingDebt + 0.001) {
+          throw new Error(`Repayment amount exceeds remaining debt balance (${remainingDebt}).`);
+        }
 
-      const { data: dbRep, error } = await ctx.client
-        .from('debt_repayments')
-        .insert(insertPayload)
-        .select()
-        .single();
+        const isPayDebt = targetDebt.direction === 'pay';
+        const currentTime = new Date().toTimeString().slice(0, 5);
+        const ctx = await requirePersistenceContext();
 
-      if (error || !dbRep) {
-        throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not record repayment.'));
-      }
+        if (ctx.mode === 'supabase') {
+          const knownRepaymentIds = new Set(memoryState.debtRepayments.map(r => r.id));
+          const insertPayload: Record<string, any> = {
+            debt_id: repayment.debt_id,
+            user_id: ctx.user.id,
+            amount: repayment.amount,
+            repayment_date: repayment.repayment_date,
+            notes: normalizedNotes || null
+          };
+          if (repayment.payment_method?.trim()) {
+            insertPayload.payment_method = repayment.payment_method.trim();
+          }
 
-      const confirmedRep = mapDebtRepaymentRow(dbRep);
-      memoryState.debtRepayments = [confirmedRep, ...memoryState.debtRepayments];
+          let dbRep: any = null;
+          let repError: any = null;
+          try {
+            const res = await ctx.client
+              .from('debt_repayments')
+              .insert(insertPayload)
+              .select()
+              .single();
+            dbRep = res.data;
+            repError = res.error;
+          } catch (thrown) {
+            repError = thrown;
+          }
 
-      // Reconcile parent debt remaining_amount & status maintained by DB trigger
-      const { data: refreshedDebt, error: refreshError } = await ctx.client
-        .from('debts')
-        .select('*')
-        .eq('id', repayment.debt_id)
-        .eq('user_id', ctx.user.id)
-        .single();
+          if (repError || !dbRep) {
+            const errKind = classifyFetchError(repError);
+            if (errKind === 'abort' || errKind === 'timeout') {
+              try {
+                const { data: recentReps, error: checkRepErr } = await ctx.client
+                  .from('debt_repayments')
+                  .select('*')
+                  .eq('user_id', ctx.user.id)
+                  .eq('debt_id', repayment.debt_id)
+                  .eq('repayment_date', repayment.repayment_date)
+                  .order('created_at', { ascending: false });
+                if (!checkRepErr && Array.isArray(recentReps)) {
+                  const matchedRep = recentReps.find((row: any) => {
+                    if (!row || !row.id || knownRepaymentIds.has(row.id)) return false;
+                    const amountMatch = Math.abs(Number(row.amount) - repayment.amount) < 0.005;
+                    const noteMatch = (row.notes ? String(row.notes).trim() : '') === normalizedNotes;
+                    return amountMatch && noteMatch;
+                  });
+                  if (matchedRep) {
+                    dbRep = matchedRep;
+                    repError = null;
+                  }
+                }
+              } catch {
+                // Keep original error if reconciliation query fails
+              }
+            }
+          }
 
-      if (!refreshError && refreshedDebt) {
-        const mappedDebt = mapDebtRow(refreshedDebt);
-        memoryState.debts = memoryState.debts.map(d => (d.id === mappedDebt.id ? mappedDebt : d));
-      } else {
-        const nextRemaining = Math.max(0, Number((remainingDebt - repayment.amount).toFixed(2)));
+          if (repError || !dbRep) {
+            throw new Error(sanitizeDatabaseErrorMessage(repError, 'Database error: Could not record repayment.'));
+          }
+
+          const confirmedRep = mapDebtRepaymentRow(dbRep);
+          let confirmedExpense: Expense | null = null;
+
+          // Only "Money to Pay" debts create a linked Debt Repayment expense
+          if (isPayDebt) {
+            const existingLinkedExpense = memoryState.expenses.find(
+              e => e.debtRepaymentId === confirmedRep.id
+            );
+
+            if (existingLinkedExpense) {
+              confirmedExpense = existingLinkedExpense;
+            } else {
+              const expenseTitle = buildDebtRepaymentExpenseTitle(targetDebt);
+              const humanNotes = buildDebtRepaymentExpenseNotes(targetDebt, confirmedRep);
+              const formattedTime = normalizeDbTime(currentTime);
+              const expenseInsertPayload = {
+                user_id: ctx.user.id,
+                title: expenseTitle,
+                amount: confirmedRep.amount,
+                category: 'Debt Repayment',
+                expense_date: confirmedRep.repayment_date,
+                expense_time: formattedTime,
+                payment_method: confirmedRep.payment_method || normalizedMethod,
+                notes: serializeExpenseRepaymentNotes(humanNotes, confirmedRep.id),
+                is_recurring: false,
+                recurrence_frequency: null,
+                recurrence_end_date: null
+              };
+
+              let expData: any = null;
+              let expError: any = null;
+              try {
+                const expRes = await ctx.client
+                  .from('expenses')
+                  .insert(expenseInsertPayload)
+                  .select()
+                  .single();
+                expData = expRes.data;
+                expError = expRes.error;
+              } catch (thrown) {
+                expError = thrown;
+              }
+
+              if ((expError || !expData) && ['abort', 'timeout'].includes(classifyFetchError(expError))) {
+                try {
+                  const { data: recentExps, error: checkExpErr } = await ctx.client
+                    .from('expenses')
+                    .select('*')
+                    .eq('user_id', ctx.user.id)
+                    .eq('expense_date', confirmedRep.repayment_date)
+                    .order('created_at', { ascending: false });
+                  if (!checkExpErr && Array.isArray(recentExps)) {
+                    const matchedExp = recentExps.find((row: any) => {
+                      const decoded = deserializeExpenseRepaymentNotes(row?.notes, row?.debt_repayment_id);
+                      return decoded.debtRepaymentId === confirmedRep.id;
+                    });
+                    if (matchedExp) {
+                      expData = matchedExp;
+                      expError = null;
+                    }
+                  }
+                } catch {
+                  // Reconciliation query failed; proceed to rollback below
+                }
+              }
+
+              if (expError || !expData) {
+                // Atomic consistency: roll back the newly inserted debt_repayment if linked expense creation fails
+                try {
+                  await ctx.client
+                    .from('debt_repayments')
+                    .delete()
+                    .eq('id', confirmedRep.id)
+                    .eq('user_id', ctx.user.id);
+                } catch {
+                  // Best-effort rollback
+                }
+                throw new Error(
+                  sanitizeDatabaseErrorMessage(
+                    expError,
+                    'Database error: Could not record linked Debt Repayment expense. Repayment was rolled back.'
+                  )
+                );
+              }
+
+              confirmedExpense = mapExpenseRow(expData);
+              if (!confirmedExpense.time) {
+                confirmedExpense.time = currentTime;
+              }
+              if (!confirmedExpense.debtRepaymentId) {
+                confirmedExpense.debtRepaymentId = confirmedRep.id;
+              }
+            }
+          }
+
+          memoryState.debtRepayments = [
+            confirmedRep,
+            ...memoryState.debtRepayments.filter(r => r.id !== confirmedRep.id)
+          ];
+
+          if (confirmedExpense) {
+            memoryState.expenses = [
+              confirmedExpense,
+              ...memoryState.expenses.filter(
+                e => e.id !== confirmedExpense!.id && e.debtRepaymentId !== confirmedRep.id
+              )
+            ];
+          }
+
+          // Reconcile parent debt remaining_amount & status maintained by DB trigger
+          const { data: refreshedDebt, error: refreshError } = await ctx.client
+            .from('debts')
+            .select('*')
+            .eq('id', repayment.debt_id)
+            .eq('user_id', ctx.user.id)
+            .single();
+
+          if (!refreshError && refreshedDebt) {
+            const mappedDebt = mapDebtRow(refreshedDebt);
+            memoryState.debts = memoryState.debts.map(d => (d.id === mappedDebt.id ? mappedDebt : d));
+          } else {
+            const nextRemaining = Math.max(0, Number((remainingDebt - repayment.amount).toFixed(2)));
+            const newStatus: DebtStatus = nextRemaining <= 0.0001 ? 'paid' : 'partially_paid';
+            memoryState.debts = memoryState.debts.map(d =>
+              d.id === targetDebt.id ? { ...d, remaining_amount: nextRemaining, status: newStatus } : d
+            );
+          }
+
+          notifyListeners();
+          return confirmedRep;
+        }
+
+        const newRepayment: DebtRepayment = {
+          ...repayment,
+          id: 'dr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+          created_at: getTodayString()
+        };
+        memoryState.debtRepayments = [newRepayment, ...memoryState.debtRepayments];
+
+        if (isPayDebt && !memoryState.expenses.some(e => e.debtRepaymentId === newRepayment.id)) {
+          const newExpense: Expense = {
+            id: 'e_rep_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+            title: buildDebtRepaymentExpenseTitle(targetDebt),
+            amount: newRepayment.amount,
+            category: 'Debt Repayment',
+            date: newRepayment.repayment_date,
+            time: currentTime,
+            paymentMethod: (newRepayment.payment_method as PaymentMethod) || normalizedMethod,
+            notes: buildDebtRepaymentExpenseNotes(targetDebt, newRepayment),
+            isRecurring: false,
+            recurringFrequency: 'None',
+            debtRepaymentId: newRepayment.id,
+            createdAt: getTodayString()
+          };
+          memoryState.expenses = [newExpense, ...memoryState.expenses];
+        }
+
+        const totalRepaidNow = existingRepaid + repayment.amount;
+        const nextRemaining = Math.max(0, Number((targetDebt.original_amount - totalRepaidNow).toFixed(2)));
         const newStatus: DebtStatus = nextRemaining <= 0.0001 ? 'paid' : 'partially_paid';
         memoryState.debts = memoryState.debts.map(d =>
           d.id === targetDebt.id ? { ...d, remaining_amount: nextRemaining, status: newStatus } : d
         );
-      }
 
-      notifyListeners();
-      return confirmedRep;
-    }
-
-    const newRepayment: DebtRepayment = {
-      ...repayment,
-      id: 'dr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-      created_at: getTodayString()
-    };
-    memoryState.debtRepayments = [newRepayment, ...memoryState.debtRepayments];
-
-    const totalRepaidNow = existingRepaid + repayment.amount;
-    const nextRemaining = Math.max(0, Number((targetDebt.original_amount - totalRepaidNow).toFixed(2)));
-    const newStatus: DebtStatus = nextRemaining <= 0.0001 ? 'paid' : 'partially_paid';
-    memoryState.debts = memoryState.debts.map(d =>
-      d.id === targetDebt.id ? { ...d, remaining_amount: nextRemaining, status: newStatus } : d
+        notifyListeners();
+        return newRepayment;
+      })
     );
-
-    notifyListeners();
-    return newRepayment;
   },
 
   async deleteDebtRepayment(id: string): Promise<void> {
@@ -3476,6 +3779,7 @@ export const repository = {
       throw new Error('Repayment record not found.');
     }
 
+    const linkedExpenses = memoryState.expenses.filter(e => e.debtRepaymentId === id);
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
@@ -3526,11 +3830,38 @@ export const repository = {
         }
       }
 
+      // Clean up linked Debt Repayment expense(s) in Supabase
+      const deletedExpenseIds = new Set<string>();
+      for (const linkedExp of linkedExpenses) {
+        const { error: expDelErr } = await ctx.client
+          .from('expenses')
+          .delete()
+          .eq('id', linkedExp.id)
+          .eq('user_id', ctx.user.id)
+          .select('id');
+
+        if (expDelErr) {
+          if (deletedExpenseIds.size > 0) {
+            memoryState.expenses = memoryState.expenses.filter(e => !deletedExpenseIds.has(e.id));
+          }
+          notifyListeners();
+          throw new Error(
+            sanitizeDatabaseErrorMessage(
+              expDelErr,
+              'Repayment was deleted, but its linked Debt Repayment expense could not be removed.'
+            )
+          );
+        }
+        deletedExpenseIds.add(linkedExp.id);
+      }
+
+      memoryState.expenses = memoryState.expenses.filter(e => e.debtRepaymentId !== id);
       notifyListeners();
       return;
     }
 
     memoryState.debtRepayments = memoryState.debtRepayments.filter(r => r.id !== id);
+    memoryState.expenses = memoryState.expenses.filter(e => e.debtRepaymentId !== id);
 
     const targetDebt = memoryState.debts.find(d => d.id === targetRepayment.debt_id);
     if (targetDebt) {

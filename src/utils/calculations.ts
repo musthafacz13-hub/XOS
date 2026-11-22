@@ -328,6 +328,16 @@ export function calculateFinancialTotals(
   };
 }
 
+export function calculateMonthlyExpenseTotal(
+  expenses: Expense[],
+  monthStr: string = getMonthString()
+): number {
+  const total = expenses
+    .filter(e => typeof e.date === 'string' && e.date.startsWith(monthStr))
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  return Number(total.toFixed(2));
+}
+
 // DAILY SALARY CALCULATIONS
 export interface DailySalaryCalculationResult {
   workingHours: number;

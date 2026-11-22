@@ -19,7 +19,8 @@ import {
   calculateFinancialTotals,
   calculateDebtSummary,
   calculateDebtOutstanding,
-  calculateSeparateDebtTotals
+  calculateSeparateDebtTotals,
+  calculateMonthlyExpenseTotal
 } from '../utils/calculations';
 import {
   formatCurrency,
@@ -589,6 +590,74 @@ async function runTests() {
     assert(emptyEst.extraHourRate === undefined, 'Empty estimate leaves extraHourRate undefined');
   }
   console.log('✓ Test 12 passed: Clean initial unconfigured salary state verified.');
+
+  // ==========================================
+  // TEST 13: Local-Mode Money to Pay Repayment -> Expense Sync & Deletion Lock
+  // ==========================================
+  console.log('Test 13: Local-mode Money to Pay repayment-to-expense sync, Receive exclusion, and monthly totals...');
+  {
+    repository.clearAllData();
+
+    const payDebt = await repository.addDebt({
+      person_name: 'Axis Bank',
+      original_amount: 3000,
+      lent_date: '2026-09-01',
+      direction: 'pay',
+      description: 'Personal Loan'
+    });
+    const receiveDebt = await repository.addDebt({
+      person_name: 'Sam',
+      original_amount: 1200,
+      lent_date: '2026-09-02',
+      direction: 'receive'
+    });
+    assert(repository.getExpenses().length === 0, 'Local mode addDebt does not create principal expense');
+
+    await repository.addDebtRepayment({
+      debt_id: receiveDebt.id,
+      amount: 500,
+      repayment_date: '2026-09-10',
+      payment_method: 'Cash'
+    });
+    assert(repository.getExpenses().length === 0, 'Local mode Money to Receive repayment creates no expense');
+
+    const localRep1 = await repository.addDebtRepayment({
+      debt_id: payDebt.id,
+      amount: 1200,
+      repayment_date: '2026-09-15',
+      payment_method: 'UPI',
+      notes: 'Sep part'
+    });
+    const localRep2 = await repository.addDebtRepayment({
+      debt_id: payDebt.id,
+      amount: 1800,
+      repayment_date: '2026-10-05',
+      payment_method: 'Bank Transfer'
+    });
+
+    const exps = repository.getExpenses();
+    assert(exps.length === 2, 'Local mode Money to Pay repayments create 2 linked expenses');
+    assertClose(calculateMonthlyExpenseTotal(exps, '2026-09'), 1200, 'September monthly expense total is 1200');
+    assertClose(calculateMonthlyExpenseTotal(exps, '2026-10'), 1800, 'October monthly expense total is 1800');
+    assertClose(calculateFinancialTotals([], exps, [], []).totalExpenses, 3000, 'Total expenses equal actual repayments (3000)');
+
+    let blockedLocalDelete = false;
+    try {
+      await repository.deleteExpense(exps[0].id);
+    } catch {
+      blockedLocalDelete = true;
+    }
+    assert(blockedLocalDelete, 'Local mode blocks direct deleteExpense on active linked repayment expense');
+
+    await repository.deleteDebtRepayment(localRep1.id);
+    assert(repository.getExpenses().length === 1 && repository.getExpenses()[0].debtRepaymentId === localRep2.id, 'Local deleteDebtRepayment removes only its linked expense');
+    assertClose(calculateMonthlyExpenseTotal(repository.getExpenses(), '2026-09'), 0, 'September monthly expense drops to 0 after deletion');
+
+    await repository.deleteDebt(payDebt.id);
+    assert(repository.getExpenses().length === 0, 'Local deleteDebt removes remaining linked repayment expenses');
+    repository.clearAllData();
+  }
+  console.log('✓ Test 13 passed: Local-mode repayment-expense sync & cleanup verified.');
 
   console.log('\n======================================================');
   console.log('--- ALL XOS TEST SUITE CASES PASSED SUCCESSFULLY! ---');

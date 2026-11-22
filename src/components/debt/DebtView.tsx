@@ -870,6 +870,12 @@ export const DebtView: React.FC = () => {
                   </div>
                 </div>
 
+                {activeRepaymentDebt.direction === 'pay' && (
+                  <p className="text-[11px] text-neutral-500">
+                    Automatically records a Debt Repayment expense for the selected date.
+                  </p>
+                )}
+
                 <div className="flex justify-end pt-1">
                   <button
                     type="submit"
@@ -932,7 +938,12 @@ export const DebtView: React.FC = () => {
       <ConfirmDialog
         isOpen={deleteTargetId !== null}
         title="Delete Debt Record"
-        message="Are you sure you want to permanently delete this debt record?"
+        message={
+          allDebts.find(d => d.id === deleteTargetId)?.direction === 'pay' &&
+          data.debtRepayments.some(r => r.debt_id === deleteTargetId)
+            ? 'Are you sure you want to permanently delete this debt record? Its repayment history and linked Debt Repayment expenses will also be removed.'
+            : 'Are you sure you want to permanently delete this debt record?'
+        }
         confirmLabel="Delete"
         isLoading={isDeletingDebt}
         error={deleteDebtError}
@@ -959,7 +970,11 @@ export const DebtView: React.FC = () => {
       <ConfirmDialog
         isOpen={deleteRepaymentId !== null}
         title="Delete Repayment Entry"
-        message="Are you sure you want to delete this repayment? The remaining debt balance will increase automatically."
+        message={
+          activeRepaymentDebt?.direction === 'pay'
+            ? 'Are you sure you want to delete this repayment? The remaining debt balance will increase automatically and its linked Debt Repayment expense will be removed.'
+            : 'Are you sure you want to delete this repayment? The remaining debt balance will increase automatically.'
+        }
         confirmLabel="Delete Repayment"
         isLoading={isDeletingRepayment}
         error={deleteRepaymentError}
