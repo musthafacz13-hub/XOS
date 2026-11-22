@@ -124,13 +124,14 @@ export async function verifySupabaseSessionToken(
   }
 }
 
-function createAiClient(apiKey: string): GoogleGenAI {
+function createAiClient(apiKey: string, signal?: AbortSignal): GoogleGenAI {
   return new GoogleGenAI({
     apiKey,
     httpOptions: {
       headers: {
         'User-Agent': 'aistudio-build'
-      }
+      },
+      ...(signal ? { signal } : {})
     }
   });
 }
@@ -160,11 +161,25 @@ export async function handleAssistantRequest(
   payload: unknown,
   authHeader?: string | string[]
 ): Promise<HandlerResponse> {
+  const startTime = Date.now();
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+  const authStart = Date.now();
   const authCheck = await verifySupabaseSessionToken(authHeader);
+  const authDurationMs = Date.now() - authStart;
+
   if (!authCheck.valid) {
+    console.error(JSON.stringify({
+      event: 'ai_assistant_auth_failed',
+      requestId,
+      authDurationMs,
+      totalDurationMs: Date.now() - startTime,
+      status: 401,
+      errorCategory: 'auth_required'
+    }));
     return {
       status: 401,
-      body: { error: authCheck.reason || 'Unauthorized', code: 'auth_required' }
+      body: { error: authCheck.reason || 'Unauthorized', code: 'auth_required', requestId }
     };
   }
 
@@ -174,7 +189,8 @@ export async function handleAssistantRequest(
       status: 503,
       body: {
         error: 'Gemini AI backend key is not configured. Add GEMINI_API_KEY to your server environment secrets to enable live responses.',
-        code: 'unavailable'
+        code: 'unavailable',
+        requestId
       }
     };
   }
@@ -182,7 +198,7 @@ export async function handleAssistantRequest(
   if (!payload || typeof payload !== 'object') {
     return {
       status: 400,
-      body: { error: 'Invalid request payload.', code: 'bad_request' }
+      body: { error: 'Invalid request payload.', code: 'bad_request', requestId }
     };
   }
 
@@ -191,13 +207,13 @@ export async function handleAssistantRequest(
   if (!message) {
     return {
       status: 400,
-      body: { error: 'Message cannot be empty.', code: 'bad_request' }
+      body: { error: 'Message cannot be empty.', code: 'bad_request', requestId }
     };
   }
   if (message.length > MAX_MESSAGE_CHARS) {
     return {
       status: 400,
-      body: { error: 'Message is too long. Please keep questions concise.', code: 'bad_request' }
+      body: { error: 'Message is too long. Please keep questions concise.', code: 'bad_request', requestId }
     };
   }
 
@@ -251,12 +267,19 @@ ${serializedContext}`;
     }
   ];
 
-  const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-  const startTime = Date.now();
-  console.log(`[AI Agent] Request ${requestId} started | model: gemini-4-hydrogen`);
+  const geminiStart = Date.now();
+  const serverController = new AbortController();
+  const serverTimeoutId = setTimeout(() => serverController.abort(), 45000);
+
+  console.log(JSON.stringify({
+    event: 'ai_assistant_started',
+    requestId,
+    model: 'gemini-4-hydrogen',
+    authDurationMs
+  }));
 
   try {
-    const ai = createAiClient(apiKey);
+    const ai = createAiClient(apiKey, serverController.signal);
     const response = await ai.models.generateContent({
       model: 'gemini-4-hydrogen',
       contents,
@@ -270,46 +293,81 @@ ${serializedContext}`;
       }
     });
 
-    const durationMs = Date.now() - startTime;
+    const geminiDurationMs = Date.now() - geminiStart;
+    const totalDurationMs = Date.now() - startTime;
     const reply = (response.text || '').trim();
+
     if (!reply) {
-      console.warn(`[AI Agent] Request ${requestId} completed with empty reply | duration: ${durationMs}ms`);
+      console.warn(JSON.stringify({
+        event: 'ai_assistant_empty_reply',
+        requestId,
+        model: 'gemini-4-hydrogen',
+        authDurationMs,
+        geminiDurationMs,
+        totalDurationMs
+      }));
       return {
         status: 502,
-        body: { error: 'AI returned an empty response. Please try again.', code: 'server' }
+        body: { error: 'AI returned an empty response. Please try again.', code: 'server', requestId }
       };
     }
 
-    console.log(`[AI Agent] Request ${requestId} completed successfully | duration: ${durationMs}ms`);
+    console.log(JSON.stringify({
+      event: 'ai_assistant_success',
+      requestId,
+      model: 'gemini-4-hydrogen',
+      authDurationMs,
+      geminiDurationMs,
+      totalDurationMs,
+      status: 200
+    }));
+
     return {
       status: 200,
       body: {
         reply,
         detectedLanguage: detectResponseLanguage(reply),
-        model: 'gemini-4-hydrogen'
+        model: 'gemini-4-hydrogen',
+        requestId
       }
     };
   } catch (err: unknown) {
-    const durationMs = Date.now() - startTime;
-    const status = (err as { status?: number })?.status;
-    console.error(`[AI Agent] Request ${requestId} failed | duration: ${durationMs}ms | error:`, err instanceof Error ? err.message : String(err));
+    const geminiDurationMs = Date.now() - geminiStart;
+    const totalDurationMs = Date.now() - startTime;
+    const isAbort =
+      (err as { name?: string })?.name === 'AbortError' ||
+      (err as { code?: string })?.code === 'ABORT_ERR' ||
+      serverController.signal.aborted;
+    const status = isAbort ? 504 : ((err as { status?: number })?.status || 502);
+    const code = isAbort ? 'timeout' : status === 429 ? 'rate_limited' : 'server';
+    const errorMessage = isAbort
+      ? 'The AI request timed out on the server after 45 seconds. Please try asking a more concise question.'
+      : status === 429
+        ? 'AI request rate limit reached. Please wait a moment and try again.'
+        : 'Unable to reach Gemini right now. Please try again shortly.';
 
-    if (status === 429) {
-      return {
-        status: 429,
-        body: {
-          error: 'AI request rate limit reached. Please wait a moment and try again.',
-          code: 'rate_limited'
-        }
-      };
-    }
+    console.error(JSON.stringify({
+      event: 'ai_assistant_error',
+      requestId,
+      model: 'gemini-4-hydrogen',
+      authDurationMs,
+      geminiDurationMs,
+      totalDurationMs,
+      status,
+      errorCategory: code,
+      errorMessage: err instanceof Error ? err.message : String(err)
+    }));
+
     return {
-      status: 502,
+      status,
       body: {
-        error: 'Unable to reach Gemini right now. Please try again shortly.',
-        code: 'server'
+        error: errorMessage,
+        code,
+        requestId
       }
     };
+  } finally {
+    clearTimeout(serverTimeoutId);
   }
 }
 

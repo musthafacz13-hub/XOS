@@ -393,6 +393,7 @@ async function runAiAgentTests() {
     process.env.GEMINI_API_KEY = 'test-key-present-for-validation';
     const emptyMsgResp = await handleAssistantRequest({ message: '   ' }, undefined);
     assert(emptyMsgResp.status === 400, 'Rejects blank message with 400');
+    assert(Boolean(emptyMsgResp.body.requestId), 'Includes diagnostic requestId in error responses');
   } finally {
     if (prevUrl !== undefined) process.env.VITE_SUPABASE_URL = prevUrl;
     else delete process.env.VITE_SUPABASE_URL;
