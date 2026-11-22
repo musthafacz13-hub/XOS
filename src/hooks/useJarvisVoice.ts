@@ -574,7 +574,7 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
 
     // For 'auto' (bilingual Malayalam + English + Manglish) prefer MediaRecorder + Gemini transcription
     // when available; otherwise fall back to Web Speech en-IN.
-    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined') {
+    if (typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia)) {
       void startMediaRecorderCapture();
     } else if (hasSpeech) {
       startWebSpeechCapture('en-IN');

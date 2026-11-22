@@ -124,7 +124,7 @@ async function postAiEndpoint<T>(
       throw err;
     }
     if ((err as { name?: string })?.name === 'AbortError') {
-      throw new AiServiceError('The AI request timed out. Please try again.', 'network');
+      throw new AiServiceError('The AI response took longer than expected. Please try again.', 'network');
     }
     throw new AiServiceError(
       'Unable to connect to the AI service. Check your connection and try again.',
@@ -152,7 +152,7 @@ export const agentService = {
         preferredLanguage: params.preferredLanguage
       },
       params.accessToken,
-      25000
+      55000
     );
   },
 
@@ -170,7 +170,7 @@ export const agentService = {
         preferredLanguage: params.preferredLanguage
       },
       params.accessToken,
-      25000
+      55000
     );
   },
 
@@ -186,7 +186,7 @@ export const agentService = {
         languageHint: params.languageHint
       },
       params.accessToken,
-      20000
+      45000
     );
   }
 };

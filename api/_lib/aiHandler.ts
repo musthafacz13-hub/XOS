@@ -251,6 +251,10 @@ ${serializedContext}`;
     }
   ];
 
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const startTime = Date.now();
+  console.log(`[AI Agent] Request ${requestId} started | model: gemini-4-hydrogen`);
+
   try {
     const ai = createAiClient(apiKey);
     const response = await ai.models.generateContent({
@@ -266,14 +270,17 @@ ${serializedContext}`;
       }
     });
 
+    const durationMs = Date.now() - startTime;
     const reply = (response.text || '').trim();
     if (!reply) {
+      console.warn(`[AI Agent] Request ${requestId} completed with empty reply | duration: ${durationMs}ms`);
       return {
         status: 502,
         body: { error: 'AI returned an empty response. Please try again.', code: 'server' }
       };
     }
 
+    console.log(`[AI Agent] Request ${requestId} completed successfully | duration: ${durationMs}ms`);
     return {
       status: 200,
       body: {
@@ -283,7 +290,10 @@ ${serializedContext}`;
       }
     };
   } catch (err: unknown) {
+    const durationMs = Date.now() - startTime;
     const status = (err as { status?: number })?.status;
+    console.error(`[AI Agent] Request ${requestId} failed | duration: ${durationMs}ms | error:`, err instanceof Error ? err.message : String(err));
+
     if (status === 429) {
       return {
         status: 429,

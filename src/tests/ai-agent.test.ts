@@ -405,6 +405,11 @@ async function runAiAgentTests() {
   const vercelRaw = fs.readFileSync(path.join(rootDir, 'vercel.json'), 'utf8');
   assert(vercelRaw.includes('microphone=(self)'), 'vercel.json enables same-origin microphone permission');
   assert(vercelRaw.includes("media-src 'self' blob: data:"), 'vercel.json permits blob/data WAV media playback in CSP');
+  assert(vercelRaw.includes('maxDuration') && vercelRaw.includes('api/ai/*.ts'), 'vercel.json configures 60s maxDuration for AI functions');
+
+  const agentServiceSrc = fs.readFileSync(path.join(rootDir, 'src/services/ai/agentService.ts'), 'utf8');
+  assert(agentServiceSrc.includes('55000'), 'agentService configures 55s timeout for AI assistant and transcription');
+  assert(agentServiceSrc.includes('45000'), 'agentService configures 45s timeout for speech synthesis');
 
   const viteCfgRaw = fs.readFileSync(path.join(rootDir, 'vite.config.ts'), 'utf8');
   assert(viteCfgRaw.includes('/^\\/api\\//'), 'vite.config.ts excludes /api/ routes from PWA navigateFallback');
