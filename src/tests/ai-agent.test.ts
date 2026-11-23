@@ -23,8 +23,13 @@ import {
   handleAssistantRequest,
   handleSpeakRequest,
   handleTranscribeRequest,
+  serializeGroundedContextSafely,
   verifySupabaseSessionToken
 } from '../../api/_lib/aiHandler';
+import {
+  configureRepositoryBackendForTests,
+  repository
+} from '../services/repository';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -280,6 +285,80 @@ async function runAiAgentTests() {
   assert(debtPayload.totalToPay === 6000, 'Computes Money to Pay remaining balance accurately');
   assert(debtPayload.totalToReceive === 5000, 'Computes Money Owed to Me remaining balance accurately');
 
+  // Empty current month fallback (e.g., asking in Dec when records are in Nov/Oct)
+  const decNow = new Date('2026-12-10T10:00:00+05:30');
+  const emptyMonthExpCtx = buildSelectiveXosContext({
+    query: 'What are my expenses?',
+    data: snapshot,
+    now: decNow
+  });
+  const decExp = emptyMonthExpCtx.groundedContext.expenses as {
+    total: number;
+    allTime: { total: number; transactionCount: number };
+    recentAllTimeTransactions?: unknown[];
+  };
+  assert(decExp.total === 0, 'Target month expense total is honestly 0 in empty month');
+  assert(decExp.allTime.total === 7900 && decExp.allTime.transactionCount === 3, 'Includes allTime expense totals when current month is empty');
+  assert(Array.isArray(decExp.recentAllTimeTransactions) && decExp.recentAllTimeTransactions.length === 3, 'Provides recentAllTimeTransactions fallback');
+
+  // Complete 23-query bilingual audit regression suite (10 English, 8 Malayalam, 5 Manglish)
+  const auditCases: Array<{
+    query: string;
+    expectedModule: string;
+    expectedLang: 'en' | 'ml' | 'mixed';
+    forbiddenModules?: string[];
+  }> = [
+    // 10 English
+    { query: 'How much did I spend this month?', expectedModule: 'expenses', expectedLang: 'en' },
+    { query: 'What are my expenses?', expectedModule: 'expenses', expectedLang: 'en' },
+    { query: 'How much income did I receive?', expectedModule: 'income', expectedLang: 'en' },
+    { query: 'How much debt do I have?', expectedModule: 'debt', expectedLang: 'en' },
+    { query: 'How much money do I have in savings?', expectedModule: 'savings', expectedLang: 'en' },
+    { query: 'What is my total savings?', expectedModule: 'savings', expectedLang: 'en', forbiddenModules: ['attendance', 'overview'] },
+    { query: 'What is my salary?', expectedModule: 'salary', expectedLang: 'en' },
+    { query: 'How many days did I work this month?', expectedModule: 'attendance', expectedLang: 'en' },
+    { query: 'What are my financial goals?', expectedModule: 'goals', expectedLang: 'en' },
+    { query: 'What is my available balance?', expectedModule: 'overview', expectedLang: 'en' },
+    // 8 Malayalam
+    { query: 'ഈ മാസം എന്റെ ചെലവുകൾ എങ്ങനെയുണ്ട്?', expectedModule: 'expenses', expectedLang: 'ml' },
+    { query: 'ഈ മാസം എത്ര വരവ് ഉണ്ടായി?', expectedModule: 'income', expectedLang: 'ml' },
+    { query: 'എനിക്ക് എത്ര കടമുണ്ട്?', expectedModule: 'debt', expectedLang: 'ml', forbiddenModules: ['overview'] },
+    { query: 'എനിക്ക് എത്ര പണം കിട്ടാനുണ്ട്?', expectedModule: 'debt', expectedLang: 'ml', forbiddenModules: ['overview', 'salary'] },
+    { query: 'എന്റെ സേവിങ്സ് എത്രയാണ്?', expectedModule: 'savings', expectedLang: 'ml' },
+    { query: 'ഈ മാസം എന്റെ ശമ്പളം എത്രയാണ്?', expectedModule: 'salary', expectedLang: 'ml' },
+    { query: 'ഈ മാസം എത്ര ദിവസം ജോലി ചെയ്തു?', expectedModule: 'attendance', expectedLang: 'ml' },
+    { query: 'എന്റെ ലക്ഷ്യങ്ങൾ എന്തൊക്കെയാണ്?', expectedModule: 'goals', expectedLang: 'ml' },
+    // 5 Manglish
+    { query: 'Ee month ethra expense aayi?', expectedModule: 'expenses', expectedLang: 'mixed' },
+    { query: 'Ente income ethra aanu?', expectedModule: 'income', expectedLang: 'mixed' },
+    { query: 'Enikku aarkkokke kadam kodukkan undu?', expectedModule: 'debt', expectedLang: 'mixed' },
+    { query: 'Ente savings ethra aanu?', expectedModule: 'savings', expectedLang: 'mixed' },
+    { query: 'Ee month ethra days work cheythu?', expectedModule: 'attendance', expectedLang: 'mixed' }
+  ];
+
+  for (const tc of auditCases) {
+    const built = buildSelectiveXosContext({ query: tc.query, data: snapshot, now: fixedNow });
+    assert(
+      built.selectedModules.includes(tc.expectedModule as never),
+      `Query "${tc.query}" routes to ${tc.expectedModule} (got ${built.selectedModules.join(',')})`
+    );
+    assert(
+      built.intent.detectedLanguage === tc.expectedLang,
+      `Query "${tc.query}" detects language=${tc.expectedLang} (got ${built.intent.detectedLanguage})`
+    );
+    for (const forbidden of tc.forbiddenModules || []) {
+      assert(
+        !built.selectedModules.includes(forbidden as never),
+        `Query "${tc.query}" does not falsely include ${forbidden}`
+      );
+    }
+    const ctxKey = tc.expectedModule === 'app_help' ? 'workspace' : tc.expectedModule;
+    assert(
+      ctxKey in built.groundedContext,
+      `Query "${tc.query}" populates groundedContext.${ctxKey}`
+    );
+  }
+
   // ==========================================
   // TEST 3: Salary, Unconfigured Guard & Archived Goal Exclusion
   // ==========================================
@@ -357,11 +436,16 @@ async function runAiAgentTests() {
     assert(!content.includes('indexedDB'), `No indexedDB in ${relPath}`);
     assert(!content.includes('@google/genai'), `No client @google/genai import in ${relPath}`);
     assert(!content.includes('GEMINI_API_KEY'), `No GEMINI_API_KEY exposure in ${relPath}`);
+    assert(!content.includes('GROQ_API_KEY'), `No GROQ_API_KEY exposure in ${relPath}`);
+    assert(!content.includes('api.groq.com'), `No direct Groq API endpoint reference in ${relPath}`);
     assert(
       !/repository\.(add|update|delete|upsert|persist|save|clear|reset|import|recordSalaryPayout)/.test(content),
       `No repository write/reset calls in ${relPath}`
     );
   }
+  const groqServerSrc = fs.readFileSync(path.join(rootDir, 'api/_lib/groq.ts'), 'utf8');
+  assert(!groqServerSrc.includes('@google/genai'), 'api/_lib/groq.ts does not import @google/genai');
+  assert(!/service_role|SUPABASE_SERVICE_ROLE/i.test(groqServerSrc), 'api/_lib/groq.ts has no Supabase service-role references');
 
   // ==========================================
   // TEST 5: Server-Side Auth, Validation & Deployment Config
@@ -369,6 +453,7 @@ async function runAiAgentTests() {
   console.log('Test 5: Verifying server JWT verification, error handling, Vercel headers & PWA denylist...');
   const prevUrl = process.env.VITE_SUPABASE_URL;
   const prevAnon = process.env.VITE_SUPABASE_ANON_KEY;
+  const prevGroq = process.env.GROQ_API_KEY;
   const prevGemini = process.env.GEMINI_API_KEY;
 
   try {
@@ -391,73 +476,146 @@ async function runAiAgentTests() {
     const unauthResp = await handleAssistantRequest({ message: 'Hi' }, undefined);
     assert(unauthResp.status === 401, `Assistant endpoint rejects unauthenticated call with 401 (got ${unauthResp.status})`);
 
-    // Unconfigured Supabase + missing GEMINI_API_KEY returns honest 503 unavailable
+    // Unconfigured Supabase + missing GROQ_API_KEY returns honest 503 unavailable (even if GEMINI_API_KEY is present)
     delete process.env.VITE_SUPABASE_URL;
     delete process.env.VITE_SUPABASE_ANON_KEY;
+    delete process.env.GROQ_API_KEY;
     delete process.env.GEMINI_API_KEY;
-    const unavailResp = await handleAssistantRequest({ message: 'Hi' }, undefined);
-    assert(unavailResp.status === 503, `Returns honest 503 when GEMINI_API_KEY is absent (got ${unavailResp.status})`);
+    const unavailNoKeysResp = await handleAssistantRequest({ message: 'Hi' }, undefined);
+    assert(unavailNoKeysResp.status === 503, `Returns honest 503 when keys are absent (got ${unavailNoKeysResp.status})`);
 
-    process.env.GEMINI_API_KEY = 'test-key-present-for-validation';
+    process.env.GEMINI_API_KEY = 'test-gemini-key-present';
+    const unavailNoGroqResp = await handleAssistantRequest({ message: 'Hi' }, undefined);
+    assert(
+      unavailNoGroqResp.status === 503 && unavailNoGroqResp.body.provider === 'groq',
+      `Returns 503 when primary GROQ_API_KEY is absent instead of silently switching providers (got ${unavailNoGroqResp.status})`
+    );
+
+    process.env.GROQ_API_KEY = 'test-groq-key-present';
     const emptyMsgResp = await handleAssistantRequest({ message: '   ' }, undefined);
     assert(emptyMsgResp.status === 400, 'Rejects blank message with 400');
     assert(Boolean(emptyMsgResp.body.requestId), 'Includes diagnostic requestId in error responses');
 
     // ==========================================
-    // TEST 6: Deterministic Backend Deadlines, Model Fallback & Error Classification
+    // TEST 6: Groq Primary Provider, Strict Deadlines, Fallback Rules & Error Classification
     // ==========================================
-    console.log('Test 6: Verifying server deadlines, AbortSignal propagation, error categories, and model config...');
+    console.log('Test 6: Verifying Groq openai/gpt-oss-20b primary flow, AbortSignal timeouts, strict non-fallback rules, and optional Gemini fallback...');
 
-    // 6a. Successful AI response & strict Gemini 4 config verification
-    let capturedParams: Record<string, unknown> | null = null;
+    // 6a. Successful Groq primary response & strict request verification
+    let capturedGroqUrl = '';
+    let capturedGroqAuth = '';
+    let capturedGroqBody: Record<string, unknown> | null = null;
+    let geminiCalledWhenGroqOk = false;
     const okResp = await handleAssistantRequest(
       { message: 'How are my expenses?', groundedContext: { expenses: { total: 6400 } } },
       undefined,
       {
+        groqFetchImpl: async (url, init) => {
+          capturedGroqUrl = String(url);
+          const hdrs = (init?.headers || {}) as Record<string, string>;
+          capturedGroqAuth = hdrs.Authorization || hdrs.authorization || '';
+          capturedGroqBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
+          return new Response(
+            JSON.stringify({
+              choices: [{ message: { content: 'Your expenses total ₹6,400 this month.' }, finish_reason: 'stop' }]
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          );
+        },
         createClient: () => ({
           models: {
-            generateContent: async (params) => {
-              capturedParams = params;
-              return { text: 'Your expenses total ₹6,400 this month.' };
+            generateContent: async () => {
+              geminiCalledWhenGroqOk = true;
+              return { text: 'Should not call Gemini' };
             }
           }
         })
       }
     );
-    assert(okResp.status === 200 && okResp.body.reply === 'Your expenses total ₹6,400 this month.', 'Returns successful Gemini response');
+    assert(!geminiCalledWhenGroqOk, 'Does not call Gemini fallback when Groq succeeds');
+    assert(
+      okResp.status === 200 &&
+        okResp.body.reply === 'Your expenses total ₹6,400 this month.' &&
+        okResp.body.provider === 'groq' &&
+        okResp.body.fallbackUsed === false &&
+        okResp.body.model === 'openai/gpt-oss-20b',
+      'Returns successful Groq primary response with provider/model metadata'
+    );
     assert(Boolean(okResp.body.requestId), 'Successful response includes requestId');
-    assert(capturedParams !== null && (capturedParams as Record<string, unknown>).model === 'gemini-4-hydrogen', 'Uses gemini-4-hydrogen primary model');
-    const capturedConfig = (capturedParams as unknown as { config: Record<string, unknown> }).config;
-    assert(!('temperature' in capturedConfig), 'Does not pass deprecated temperature to gemini-4-hydrogen');
-    assert(!('maxOutputTokens' in capturedConfig), 'Does not pass maxOutputTokens to gemini-4-hydrogen');
-    assert(capturedConfig.abortSignal instanceof AbortSignal, 'Passes real AbortSignal via config.abortSignal');
+    assert(capturedGroqUrl === 'https://api.groq.com/openai/v1/chat/completions', 'Calls official Groq OpenAI-compatible chat completions endpoint');
+    assert(capturedGroqAuth === 'Bearer test-groq-key-present', 'Sends GROQ_API_KEY via server-side Bearer header');
+    const groqBody = capturedGroqBody as Record<string, unknown> | null;
+    assert(groqBody !== null && groqBody.model === 'openai/gpt-oss-20b', 'Uses openai/gpt-oss-20b primary model');
+    assert(groqBody?.reasoning_effort === 'low', 'Configures reasoning_effort=low');
+    assert(groqBody?.max_completion_tokens === 480, 'Uses bounded max_completion_tokens=480');
+    assert(groqBody?.temperature === 0.2, 'Uses low temperature=0.2');
+    assert(groqBody?.stream === false, 'Disables streaming for reliable serverless JSON response');
+    const capturedMessages = (groqBody?.messages || []) as Array<{ role: string; content: string }>;
+    const finalUserText = capturedMessages[capturedMessages.length - 1]?.content || '';
+    assert(
+      capturedMessages[0]?.role === 'system' &&
+        finalUserText.includes('How are my expenses?') &&
+        finalUserText.includes('XOS GROUNDED DATA CONTEXT (READ-ONLY JSON):') &&
+        finalUserText.includes('"total":6400'),
+      'Embeds valid grounded JSON directly alongside final user question'
+    );
 
-    // 6b. Server-side Gemini timeout aborts underlying signal & returns 504 timeout
-    const timeoutState = { signalAborted: false };
+    // 6a-2. Oversized context compacts cleanly without corrupting JSON
+    const hugeContext = {
+      workspace: { currency: 'INR', selectedModules: ['expenses'] },
+      expenses: {
+        total: 95000,
+        recentTransactions: Array.from({ length: 120 }, (_, i) => ({
+          title: `Detailed Merchant Purchase Item Number ${i} with Extra Descriptive Padding Text`,
+          amount: 790 + i,
+          category: 'Shopping',
+          date: '2026-11-10',
+          paymentMethod: 'Bank Transfer'
+        }))
+      }
+    };
+    const compacted = serializeGroundedContextSafely(hugeContext, 4000);
+    assert(compacted.compacted === true, 'Marks oversized grounded context as compacted');
+    assert(compacted.json.length <= 4000, `Compacted JSON stays within budget (${compacted.json.length} <= 4000)`);
+    const parsedCompacted = JSON.parse(compacted.json) as {
+      workspace?: { contextCompacted?: boolean };
+      expenses?: { total?: number };
+    };
+    assert(
+      parsedCompacted.workspace?.contextCompacted === true && parsedCompacted.expenses?.total === 95000,
+      'Compacted context remains valid JSON and preserves authoritative module totals'
+    );
+
+    // 6b. Server-side Groq timeout aborts underlying signal, does NOT fallback, & returns 504 timeoutStage=groq
+    const timeoutState = { signalAborted: false, geminiCalled: false };
     const timeoutResp = await handleAssistantRequest(
       { message: 'Slow query' },
       undefined,
       {
         assistantTimeoutMs: 40,
+        groqFetchImpl: (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              timeoutState.signalAborted = true;
+              const err = new Error('The operation was aborted');
+              err.name = 'AbortError';
+              reject(err);
+            });
+          }),
         createClient: () => ({
           models: {
-            generateContent: (params) =>
-              new Promise((_resolve, reject) => {
-                const sig = (params as { config?: { abortSignal?: AbortSignal } }).config?.abortSignal;
-                sig?.addEventListener('abort', () => {
-                  timeoutState.signalAborted = true;
-                  const err = new Error('The operation was aborted');
-                  err.name = 'AbortError';
-                  reject(err);
-                });
-              })
+            generateContent: async () => {
+              timeoutState.geminiCalled = true;
+              return { text: 'Should not run after timeout' };
+            }
           }
         })
       }
     );
-    assert(timeoutState.signalAborted, 'Server deadline actually aborts Gemini request via config.abortSignal');
+    assert(timeoutState.signalAborted, 'Server deadline actually aborts Groq fetch via AbortSignal');
+    assert(!timeoutState.geminiCalled, 'Never invokes Gemini fallback after request deadline expires');
     assert(timeoutResp.status === 504 && timeoutResp.body.category === 'timeout', 'Returns 504 with category=timeout');
-    assert(timeoutResp.body.timeoutStage === 'gemini', 'Records timeoutStage=gemini');
+    assert(timeoutResp.body.timeoutStage === 'groq', 'Records timeoutStage=groq');
 
     // 6c. Auth verification timeout returns 504 with timeoutStage=auth
     process.env.VITE_SUPABASE_URL = 'https://demo-project.supabase.co';
@@ -481,69 +639,113 @@ async function runAiAgentTests() {
     delete process.env.VITE_SUPABASE_URL;
     delete process.env.VITE_SUPABASE_ANON_KEY;
 
-    // 6d. Invalid API key (403) -> invalid_api_key
+    // 6d. Invalid Groq API key (401) -> invalid_api_key (NO Gemini fallback)
+    let fallbackCalledOnBadKey = false;
     const badKeyResp = await handleAssistantRequest(
       { message: 'Hi' },
       undefined,
       {
+        groqFetchImpl: async () =>
+          new Response(JSON.stringify({ error: { message: 'Invalid API Key', type: 'invalid_request_error', code: 'invalid_api_key' } }), {
+            status: 401,
+            headers: { 'content-type': 'application/json' }
+          }),
         createClient: () => ({
           models: {
             generateContent: async () => {
-              const err = new Error('API_KEY_INVALID') as Error & { status?: number };
-              err.status = 403;
-              throw err;
+              fallbackCalledOnBadKey = true;
+              return { text: 'Should not run' };
             }
           }
         })
       }
     );
-    assert(badKeyResp.status === 502 && badKeyResp.body.category === 'invalid_api_key', 'Maps 403/invalid key to invalid_api_key');
+    assert(!fallbackCalledOnBadKey, 'Never falls back to Gemini on invalid Groq API key');
+    assert(badKeyResp.status === 502 && badKeyResp.body.category === 'invalid_api_key', 'Maps Groq 401/invalid key to invalid_api_key');
 
-    // 6e. Rate limit (429) vs Quota exhaustion (429)
+    // 6e. Rate limit (429) vs Quota exhaustion (429) vs Bad request (400) — NO Gemini fallback
+    let fallbackCalledOn429 = false;
     const rateResp = await handleAssistantRequest(
       { message: 'Hi' },
       undefined,
       {
+        groqFetchImpl: async () =>
+          new Response(JSON.stringify({ error: { message: 'Too many requests', code: 'rate_limit_exceeded' } }), { status: 429 }),
         createClient: () => ({
           models: {
             generateContent: async () => {
-              const err = new Error('Too many requests') as Error & { status?: number };
-              err.status = 429;
-              throw err;
+              fallbackCalledOn429 = true;
+              return { text: 'Should not run' };
             }
           }
         })
       }
     );
-    assert(rateResp.status === 429 && rateResp.body.category === 'rate_limited', 'Maps transient 429 to rate_limited');
+    assert(!fallbackCalledOn429, 'Never falls back to Gemini on Groq rate limit');
+    assert(rateResp.status === 429 && rateResp.body.category === 'rate_limited', 'Maps transient Groq 429 to rate_limited');
 
     const quotaResp = await handleAssistantRequest(
       { message: 'Hi' },
       undefined,
       {
+        groqFetchImpl: async () =>
+          new Response(JSON.stringify({ error: { message: 'You exceeded your current quota, please check billing' } }), { status: 429 })
+      }
+    );
+    assert(quotaResp.status === 429 && quotaResp.body.category === 'quota_exceeded', 'Distinguishes Groq quota exhaustion from transient rate limit');
+
+    let fallbackCalledOn400 = false;
+    const badReqResp = await handleAssistantRequest(
+      { message: 'Hi' },
+      undefined,
+      {
+        groqFetchImpl: async () =>
+          new Response(JSON.stringify({ error: { message: 'Malformed request', type: 'invalid_request_error' } }), { status: 400 }),
         createClient: () => ({
           models: {
             generateContent: async () => {
-              const err = new Error('You exceeded your current quota, please check billing') as Error & { status?: number };
-              err.status = 429;
-              throw err;
+              fallbackCalledOn400 = true;
+              return { text: 'Should not run' };
             }
           }
         })
       }
     );
-    assert(quotaResp.status === 429 && quotaResp.body.category === 'quota_exceeded', 'Distinguishes quota exhaustion from transient rate limit');
+    assert(!fallbackCalledOn400, 'Never falls back to Gemini on 400 invalid user input');
+    assert(badReqResp.status === 400 && badReqResp.body.category === 'invalid_request', 'Maps Groq 400 to invalid_request');
 
-    // 6f. Model unavailable (404) triggers fallback and reports model_unavailable if both fail
-    const attemptedModels: string[] = [];
+    // 6f. Groq temporary unavailability (503) falls back ONCE to Gemini when GEMINI_API_KEY is configured, or errors cleanly without it
+    const geminiFallbackOk = await handleAssistantRequest(
+      { message: 'Hi' },
+      undefined,
+      {
+        groqFetchImpl: async () =>
+          new Response(JSON.stringify({ error: { message: 'Service temporarily unavailable' } }), { status: 503 }),
+        createClient: () => ({
+          models: {
+            generateContent: async () => ({ text: 'Fallback Gemini reply.' })
+          }
+        })
+      }
+    );
+    assert(
+      geminiFallbackOk.status === 200 &&
+        geminiFallbackOk.body.reply === 'Fallback Gemini reply.' &&
+        geminiFallbackOk.body.provider === 'gemini' &&
+        geminiFallbackOk.body.fallbackUsed === true,
+      'Falls back once to Gemini when Groq returns 503 and GEMINI_API_KEY is configured'
+    );
+
+    const attemptedGeminiModels: string[] = [];
     const modelMissingResp = await handleAssistantRequest(
       { message: 'Hi' },
       undefined,
       {
+        groqFetchImpl: async () => new Response(JSON.stringify({ error: { message: 'Upstream 503' } }), { status: 503 }),
         createClient: () => ({
           models: {
             generateContent: async (params) => {
-              attemptedModels.push(String(params.model));
+              attemptedGeminiModels.push(String(params.model));
               const err = new Error('Model not found') as Error & { status?: number };
               err.status = 404;
               throw err;
@@ -553,49 +755,110 @@ async function runAiAgentTests() {
       }
     );
     assert(
-      attemptedModels.length === 2 &&
-        attemptedModels[0] === 'gemini-4-hydrogen' &&
-        attemptedModels[1] === 'gemini-3.1-flash-lite',
-      'Falls back to gemini-3.1-flash-lite on 404 model_unavailable'
+      attemptedGeminiModels.length === 2 &&
+        attemptedGeminiModels[0] === 'gemini-4-hydrogen' &&
+        attemptedGeminiModels[1] === 'gemini-3.1-flash-lite',
+      'Gemini fallback chain steps from gemini-4-hydrogen to gemini-3.1-flash-lite on 404'
     );
-    assert(modelMissingResp.status === 502 && modelMissingResp.body.category === 'model_unavailable', 'Reports model_unavailable when models are unavailable');
+    assert(modelMissingResp.status === 502 && modelMissingResp.body.category === 'model_unavailable', 'Reports model_unavailable when fallback Gemini models are unavailable');
 
-    // 6g. Empty AI response -> 502 invalid_response
+    delete process.env.GEMINI_API_KEY;
+    const groqOnly503 = await handleAssistantRequest(
+      { message: 'Hi' },
+      undefined,
+      {
+        groqFetchImpl: async () => new Response(JSON.stringify({ error: { message: 'Service temporarily unavailable' } }), { status: 503 })
+      }
+    );
+    assert(groqOnly503.status === 503 && groqOnly503.body.category === 'server_error', 'Returns clean 503 server_error when Groq is down and Gemini fallback is unconfigured');
+    process.env.GEMINI_API_KEY = 'test-gemini-key-present';
+
+    // 6g. Empty Groq response -> 502 invalid_response (no retry loop / fallback)
     const emptyReplyResp = await handleAssistantRequest(
       { message: 'Hi' },
       undefined,
       {
-        createClient: () => ({
-          models: {
-            generateContent: async () => ({ text: '   ' })
-          }
-        })
+        groqFetchImpl: async () =>
+          new Response(JSON.stringify({ choices: [{ message: { content: '   ' } }] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          })
       }
     );
-    assert(emptyReplyResp.status === 502 && emptyReplyResp.body.category === 'invalid_response', 'Rejects empty AI response with 502 invalid_response');
+    assert(emptyReplyResp.status === 502 && emptyReplyResp.body.category === 'invalid_response', 'Rejects empty Groq response with 502 invalid_response');
 
-    // 6h. Transcribe & Speak timeout/success/invalid tests
+    // 6h. Transcribe (Groq whisper-large-v3-turbo primary + optional Gemini fallback) & Speak (Gemini TTS)
+    let capturedSttUrl = '';
+    let capturedSttModel: FormDataEntryValue | null = null;
+    let capturedSttLang: FormDataEntryValue | null = null;
+    const transcribeOkResp = await handleTranscribeRequest(
+      { audioBase64: 'dGVzdA==', mimeType: 'audio/webm', preferredLanguage: 'ml-IN' },
+      undefined,
+      {
+        groqFetchImpl: async (url, init) => {
+          capturedSttUrl = String(url);
+          const form = init?.body as FormData;
+          capturedSttModel = form.get('model');
+          capturedSttLang = form.get('language');
+          return new Response(JSON.stringify({ text: 'ഈ മാസം എത്ര ചെലവായി?' }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          });
+        }
+      }
+    );
+    assert(
+      transcribeOkResp.status === 200 &&
+        transcribeOkResp.body.transcript === 'ഈ മാസം എത്ര ചെലവായി?' &&
+        transcribeOkResp.body.provider === 'groq' &&
+        transcribeOkResp.body.model === 'whisper-large-v3-turbo' &&
+        capturedSttUrl === 'https://api.groq.com/openai/v1/audio/transcriptions' &&
+        capturedSttModel === 'whisper-large-v3-turbo' &&
+        capturedSttLang === 'ml',
+      'Transcribe routes primarily to Groq whisper-large-v3-turbo with Malayalam language hint'
+    );
+
     const transcribeTimeoutResp = await handleTranscribeRequest(
       { audioBase64: 'dGVzdA==', mimeType: 'audio/webm' },
       undefined,
       {
         transcribeTimeoutMs: 30,
+        groqFetchImpl: (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              const err = new Error('Aborted');
+              err.name = 'AbortError';
+              reject(err);
+            });
+          })
+      }
+    );
+    assert(
+      transcribeTimeoutResp.status === 504 &&
+        transcribeTimeoutResp.body.category === 'timeout' &&
+        transcribeTimeoutResp.body.timeoutStage === 'groq',
+      'Transcribe handler respects server AbortSignal timeout on Groq'
+    );
+
+    const transcribeFallbackOk = await handleTranscribeRequest(
+      { audioBase64: 'dGVzdA==', mimeType: 'audio/webm' },
+      undefined,
+      {
+        groqFetchImpl: async () => new Response(JSON.stringify({ error: { message: 'Upstream 503' } }), { status: 503 }),
         createClient: () => ({
           models: {
-            generateContent: (params) =>
-              new Promise((_resolve, reject) => {
-                const sig = (params as { config?: { abortSignal?: AbortSignal } }).config?.abortSignal;
-                sig?.addEventListener('abort', () => {
-                  const err = new Error('Aborted');
-                  err.name = 'AbortError';
-                  reject(err);
-                });
-              })
+            generateContent: async () => ({ text: 'Fallback transcript' })
           }
         })
       }
     );
-    assert(transcribeTimeoutResp.status === 504 && transcribeTimeoutResp.body.category === 'timeout', 'Transcribe handler respects server AbortSignal timeout');
+    assert(
+      transcribeFallbackOk.status === 200 &&
+        transcribeFallbackOk.body.transcript === 'Fallback transcript' &&
+        transcribeFallbackOk.body.provider === 'gemini' &&
+        transcribeFallbackOk.body.fallbackUsed === true,
+      'Transcribe falls back to Gemini only when Groq returns temporary unavailability and GEMINI_API_KEY is configured'
+    );
 
     const speakOkResp = await handleSpeakRequest(
       { text: 'Hello Ameen' },
@@ -791,12 +1054,77 @@ async function runAiAgentTests() {
         fetchImpl: delayedOkFetch
       })
     ]);
-    assert(networkCallCount === 1 && r1.reply === 'Coalesced OK' && r2.reply === 'Coalesced OK', 'Prevents duplicate concurrent assistant requests');
+    assert(networkCallCount === 1 && r1.reply === 'Coalesced OK' && r2.reply === 'Coalesced OK', 'Prevents duplicate concurrent identical assistant requests');
+
+    // Different concurrent queries must NOT be coalesced together
+    let seqCount = 0;
+    const perQueryFetch: typeof fetch = async (_url, init) => {
+      seqCount += 1;
+      const body = JSON.parse(String(init?.body || '{}')) as { message?: string };
+      await new Promise(r => setTimeout(r, 20));
+      return new Response(
+        JSON.stringify({ reply: `Answer for ${body.message}`, detectedLanguage: 'en', requestId: `req_${seqCount}` }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    };
+    const [d1, d2] = await Promise.all([
+      agentService.sendMessage({
+        message: 'Query A',
+        history: [],
+        groundedContext: {},
+        preferredLanguage: 'auto',
+        fetchImpl: perQueryFetch
+      }),
+      agentService.sendMessage({
+        message: 'Query B',
+        history: [],
+        groundedContext: {},
+        preferredLanguage: 'auto',
+        fetchImpl: perQueryFetch
+      })
+    ]);
+    assert(
+      seqCount === 2 && d1.reply === 'Answer for Query A' && d2.reply === 'Answer for Query B',
+      'Does not coalesce distinct concurrent assistant queries'
+    );
+
+    // 7e. Repository hydration state tracking
+    const makeTableStub = () => {
+      const chain: Record<string, unknown> = {
+        select: () => chain,
+        eq: () => chain,
+        order: async () => ({ data: [], error: null }),
+        maybeSingle: async () => ({ data: null, error: null })
+      };
+      return chain;
+    };
+    try {
+      configureRepositoryBackendForTests(
+        { from: () => makeTableStub() } as never,
+        true
+      );
+      repository.clearUserData();
+      repository.setActiveUserId('user-hyd-1');
+      assert(repository.getHydrationState().hasHydrated === false, 'Initial user hydration is false before fetchAllUserData');
+      await repository.fetchAllUserData('user-hyd-1');
+      assert(
+        repository.getHydrationState().hasHydrated === true &&
+          repository.getHydrationState().hydratedUserId === 'user-hyd-1',
+        'Marks user hydrated after fetchAllUserData completes'
+      );
+      repository.clearUserData();
+      assert(repository.getHydrationState().hasHydrated === false, 'Resets hydration flag on clearUserData');
+    } finally {
+      repository.clearUserData();
+      configureRepositoryBackendForTests(null, null);
+    }
   } finally {
     if (prevUrl !== undefined) process.env.VITE_SUPABASE_URL = prevUrl;
     else delete process.env.VITE_SUPABASE_URL;
     if (prevAnon !== undefined) process.env.VITE_SUPABASE_ANON_KEY = prevAnon;
     else delete process.env.VITE_SUPABASE_ANON_KEY;
+    if (prevGroq !== undefined) process.env.GROQ_API_KEY = prevGroq;
+    else delete process.env.GROQ_API_KEY;
     if (prevGemini !== undefined) process.env.GEMINI_API_KEY = prevGemini;
     else delete process.env.GEMINI_API_KEY;
   }
@@ -807,6 +1135,8 @@ async function runAiAgentTests() {
     'api/ai/transcribe.ts',
     'api/ai/speak.ts',
     'api/_lib/aiHandler.ts',
+    'api/_lib/groq.ts',
+    'api/_lib/gemini.ts',
     'server.ts'
   ];
   for (const relPath of serverEsmFiles) {

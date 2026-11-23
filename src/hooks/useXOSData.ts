@@ -65,6 +65,7 @@ export function useXOSData() {
   const debtRepayments = repository.getDebtRepayments();
   const backendStatus = repository.getBackendStatus();
   const fetchErrors = repository.getFetchErrors();
+  const hydrationState = repository.getHydrationState();
 
   return useMemo(
     () => ({
@@ -80,6 +81,8 @@ export function useXOSData() {
       debtRepayments,
       backendStatus,
       fetchErrors,
+      hasHydrated: hydrationState.hasHydrated,
+      isHydrating: hydrationState.isHydrating,
       ...REPOSITORY_ACTIONS
     }),
     [
@@ -94,7 +97,9 @@ export function useXOSData() {
       debts,
       debtRepayments,
       backendStatus,
-      fetchErrors
+      fetchErrors,
+      hydrationState.hasHydrated,
+      hydrationState.isHydrating
     ]
   );
 }

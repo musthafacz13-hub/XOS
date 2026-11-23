@@ -67,6 +67,8 @@ export class AiServiceError extends Error {
 export interface AssistantReplyResult {
   reply: string;
   detectedLanguage: 'ml' | 'en' | 'mixed';
+  provider?: string;
+  fallbackUsed?: boolean;
   model?: string;
   requestId?: string;
   durationMs?: number;
@@ -405,7 +407,10 @@ export async function postAiEndpoint<T>(
   }
 }
 
-let inFlightAssistantPromise: Promise<AssistantReplyResult> | null = null;
+let inFlightAssistantRequest: {
+  key: string;
+  promise: Promise<AssistantReplyResult>;
+} | null = null;
 
 export const agentService = {
   async sendMessage(params: {
@@ -418,8 +423,13 @@ export const agentService = {
     timeoutMs?: number;
     signal?: AbortSignal;
   }): Promise<AssistantReplyResult> {
-    if (inFlightAssistantPromise) {
-      return inFlightAssistantPromise;
+    const requestKey = JSON.stringify({
+      message: params.message.trim(),
+      preferredLanguage: params.preferredLanguage,
+      historyLength: params.history.length
+    });
+    if (inFlightAssistantRequest && inFlightAssistantRequest.key === requestKey) {
+      return inFlightAssistantRequest.promise;
     }
 
     const requestPromise = (async () => {
@@ -449,12 +459,12 @@ export const agentService = {
       return data;
     })();
 
-    inFlightAssistantPromise = requestPromise;
+    inFlightAssistantRequest = { key: requestKey, promise: requestPromise };
     try {
       return await requestPromise;
     } finally {
-      if (inFlightAssistantPromise === requestPromise) {
-        inFlightAssistantPromise = null;
+      if (inFlightAssistantRequest?.promise === requestPromise) {
+        inFlightAssistantRequest = null;
       }
     }
   },

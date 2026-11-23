@@ -185,6 +185,9 @@ function notifyListeners() {
 let activeSupabaseClient: SupabaseClient = supabase;
 let configuredOverride: boolean | null = null;
 let activeUserId: string | null = null;
+let hydratedUserId: string | null = null;
+let isHydrating = false;
+let inFlightFetchAll: { userId: string; seq: number; promise: Promise<FetchAllResult> } | null = null;
 let fetchSequence = 0;
 let resetInFlightPromise: Promise<void> | null = null;
 const archiveGoalInFlightPromises = new Map<string, Promise<void>>();
@@ -1018,11 +1021,23 @@ export const repository = {
     if (activeUserId !== userId) {
       fetchSequence += 1;
       activeUserId = userId;
+      hydratedUserId = null;
+      isHydrating = false;
+      inFlightFetchAll = null;
     }
   },
 
   getActiveUserId(): string | null {
     return activeUserId;
+  },
+
+  getHydrationState(): { isHydrating: boolean; hasHydrated: boolean; hydratedUserId: string | null } {
+    const backendActive = isBackendActive();
+    return {
+      isHydrating,
+      hasHydrated: !backendActive || (hydratedUserId !== null && hydratedUserId === activeUserId),
+      hydratedUserId
+    };
   },
 
   getFetchErrors(): FetchTableError[] {
@@ -1045,9 +1060,18 @@ export const repository = {
       return { partialErrors: [], stale: false };
     }
 
+    if (
+      inFlightFetchAll &&
+      inFlightFetchAll.userId === userId &&
+      inFlightFetchAll.seq === fetchSequence
+    ) {
+      return inFlightFetchAll.promise;
+    }
+
     const client = getClient();
     activeUserId = userId;
     const mySeq = ++fetchSequence;
+    isHydrating = true;
 
     const queryDefs = [
       {
@@ -1100,7 +1124,9 @@ export const repository = {
       }
     ] as const;
 
-    const settled = await Promise.allSettled(queryDefs.map(q => q.promise));
+    const runFetch = (async (): Promise<FetchAllResult> => {
+      try {
+        const settled = await Promise.allSettled(queryDefs.map(q => q.promise));
 
     // Discard stale responses if another user switched in or user signed out while fetching
     if (mySeq !== fetchSequence || activeUserId !== userId) {
@@ -1354,12 +1380,26 @@ export const repository = {
 
     memoryState.settings = nextSettings;
     memoryState.fetchErrors = partialErrors;
+    hydratedUserId = userId;
+    isHydrating = false;
     if (partialErrors.length > 0 && import.meta.env?.DEV) {
       console.warn('Partial errors during fetchAllUserData:', partialErrors.map(e => e.table));
     }
 
     notifyListeners();
     return { partialErrors, stale: false };
+      } finally {
+        if (inFlightFetchAll?.seq === mySeq) {
+          inFlightFetchAll = null;
+        }
+        if (mySeq === fetchSequence) {
+          isHydrating = false;
+        }
+      }
+    })();
+
+    inFlightFetchAll = { userId, seq: mySeq, promise: runFetch };
+    return runFetch;
   },
 
   /**
@@ -1368,6 +1408,9 @@ export const repository = {
   clearUserData() {
     fetchSequence += 1;
     activeUserId = null;
+    hydratedUserId = null;
+    isHydrating = false;
+    inFlightFetchAll = null;
     legacyNoteLinkedExpenseIds.clear();
     memoryState.expenses = [];
     memoryState.incomes = [];
@@ -3940,6 +3983,9 @@ export const repository = {
 
   clearAllData() {
     fetchSequence += 1;
+    hydratedUserId = null;
+    isHydrating = false;
+    inFlightFetchAll = null;
     legacyNoteLinkedExpenseIds.clear();
     memoryState.goals = [];
     memoryState.expenses = [];
@@ -3990,6 +4036,9 @@ export const repository = {
       // Only after confirmed RPC success: clear caches and in-memory state
       apiOptimization.invalidateCache();
       fetchSequence += 1;
+      hydratedUserId = null;
+      isHydrating = false;
+      inFlightFetchAll = null;
       legacyNoteLinkedExpenseIds.clear();
       memoryState.goals = [];
       memoryState.expenses = [];

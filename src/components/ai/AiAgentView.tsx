@@ -8,7 +8,6 @@ import {
   VolumeX
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { useXOSData } from '../../hooks/useXOSData';
 import { JarvisVoiceState, useJarvisVoice } from '../../hooks/useJarvisVoice';
 import {
   agentService,
@@ -17,9 +16,13 @@ import {
 } from '../../services/ai/agentService';
 import {
   buildSelectiveXosContext,
-  SessionTurnMemory
+  detectQueryIntent,
+  SessionTurnMemory,
+  XOSReadOnlySnapshot
 } from '../../services/ai/contextBuilder';
 import { XosModuleKey } from '../../services/ai/xosKnowledge';
+import { repository } from '../../services/repository';
+import { isSupabaseConfigured } from '../../services/supabase';
 import { VoiceOrb } from './VoiceOrb';
 
 interface AgentMessage {
@@ -67,8 +70,7 @@ function createMessageId(): string {
 }
 
 export const AiAgentView: React.FC = () => {
-  const data = useXOSData();
-  const { session } = useAuth();
+  const { session, user } = useAuth();
   const accessToken = session?.access_token || null;
 
   // Strictly active-session in-memory conversation state (zero browser persistence)
@@ -135,20 +137,18 @@ export const AiAgentView: React.FC = () => {
         modules: m.modules
       }));
 
-      // Selective read-only data retrieval (zero DB writes, zero full-DB dump)
-      const selective = buildSelectiveXosContext({
-        query: cleanQuery,
-        data,
-        recentTurns: recentHistory
-      });
+      const lastTurnWithModules = [...recentHistory]
+        .reverse()
+        .find(t => t.role === 'user' && Array.isArray(t.modules) && t.modules.length > 0);
+      const preliminaryIntent = detectQueryIntent(cleanQuery, lastTurnWithModules?.modules || []);
 
       if (!isRetry && !alreadyAppendedSamePendingTurn) {
         const userMessage: AgentMessage = {
           id: createMessageId(),
           role: 'user',
           text: cleanQuery,
-          modules: selective.selectedModules,
-          langHint: selective.intent.detectedLanguage
+          modules: preliminaryIntent.modules,
+          langHint: preliminaryIntent.detectedLanguage
         };
         setMessages(prev => [...prev, userMessage]);
       }
@@ -161,6 +161,54 @@ export const AiAgentView: React.FC = () => {
       abortControllerRef.current = controller;
 
       try {
+        // Ensure authenticated Supabase records are hydrated before building grounded AI context
+        const hydrationBefore = repository.getHydrationState();
+        const needsHydration =
+          isSupabaseConfigured &&
+          Boolean(user?.id) &&
+          (!hydrationBefore.hasHydrated ||
+            hydrationBefore.hydratedUserId !== user?.id ||
+            repository.getFetchErrors().length > 0);
+
+        if (needsHydration && user?.id) {
+          try {
+            await repository.fetchAllUserData(user.id);
+          } catch {
+            // Non-fatal: proceed with current repository state and report fetchErrorTables cleanly
+          }
+          if (!mountedRef.current || controller.signal.aborted) {
+            voiceRef.current?.setVoiceState('idle');
+            return;
+          }
+        }
+
+        // Read fresh read-only snapshot directly from repository (never stale React closure state)
+        const freshSnapshot: XOSReadOnlySnapshot = {
+          settings: repository.getSettings(),
+          goals: repository.getGoals(),
+          expenses: repository.getExpenses(),
+          incomes: repository.getIncomes(),
+          attendance: repository.getAttendance(),
+          savingsGoals: repository.getSavingsGoals(),
+          savingsTransactions: repository.getSavingsTransactions(),
+          salaryPayouts: repository.getSalaryPayouts(),
+          debts: repository.getDebts(),
+          debtRepayments: repository.getDebtRepayments()
+        };
+        const hydrationAfter = repository.getHydrationState();
+        const fetchErrorTables = repository.getFetchErrors().map(err => err.table);
+
+        const selective = buildSelectiveXosContext({
+          query: cleanQuery,
+          data: freshSnapshot,
+          recentTurns: recentHistory,
+          dataAvailability: {
+            isHydrated: hydrationAfter.hasHydrated,
+            isHydrating: hydrationAfter.isHydrating,
+            fetchErrorTables
+          }
+        });
+
         const result = await agentService.sendMessage({
           message: cleanQuery,
           history: recentHistory,
@@ -218,7 +266,7 @@ export const AiAgentView: React.FC = () => {
         }
       }
     },
-    [accessToken, data]
+    [accessToken, user?.id]
   );
 
   const voice = useJarvisVoice({

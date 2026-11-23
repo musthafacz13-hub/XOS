@@ -19,7 +19,6 @@ import {
   calculateMonthlySalarySummary,
   calculateSeparateDebtTotals,
   calculateUnifiedGoalTotals,
-  filterRecordsByDateRange,
   isSalaryConfigured,
   resolveGoalsWithSavings
 } from '../../utils/calculations';
@@ -37,6 +36,12 @@ export interface XOSReadOnlySnapshot {
   salaryPayouts: SalaryPayout[];
   debts: Debt[];
   debtRepayments: DebtRepayment[];
+}
+
+export interface DataAvailabilityInfo {
+  isHydrated: boolean;
+  isHydrating: boolean;
+  fetchErrorTables: string[];
 }
 
 export interface SessionTurnMemory {
@@ -64,43 +69,45 @@ export interface DetectedIntent {
 
 const MODULE_KEYWORDS: Record<XosModuleKey, string[]> = {
   expenses: [
-    'expense', 'expenses', 'spend', 'spent', 'spending', 'cost', 'bill', 'bills', 'recurring',
-    'chelav', 'chelavu', 'chilavu', 'chilav', 'poyathu', 'check cheyy', 'paisa poyi',
-    'ചെലവ്', 'ചെലവുകൾ', 'ചിലവ്', 'ചിലവുകൾ', 'ചെലവായ', 'ചിലവായ'
+    'expense', 'expenses', 'spend', 'spent', 'spending', 'cost', 'costs', 'bill', 'bills', 'recurring',
+    'chelav', 'chelavu', 'chilavu', 'chilav', 'poyathu', 'paisa poyi',
+    'ചെലവ്', 'ചെലവ', 'ചിലവ്', 'ചിലവ'
   ],
   income: [
-    'income', 'incomes', 'earn', 'earned', 'earning', 'revenue', 'inflow', 'cash in', 'freelance',
+    'income', 'incomes', 'earn', 'earned', 'earning', 'earnings', 'revenue', 'inflow', 'cash in', 'freelance',
     'varavu', 'kittiya', 'varumanam',
-    'വരവ്', 'വരുമാനം', 'കിട്ടിയ'
+    'വരവ്', 'വരവ', 'വരുമാനം', 'വരുമാന', 'കിട്ടിയ'
   ],
   debt: [
     'debt', 'debts', 'owe', 'owed', 'owes', 'lend', 'lent', 'borrow', 'borrowed', 'repay',
-    'repayment', 'repayments', 'payable', 'receivable', 'loan', 'credit',
-    'kadam', 'kadangal', 'kodukkan', 'tharan', 'baaki', 'thirichu',
-    'കടം', 'കടങ്ങൾ', 'തരാൻ', 'കൊടുക്കാൻ', 'ബാക്കി', 'തിരിച്ചു'
+    'repayment', 'repayments', 'payable', 'receivable', 'loan', 'loans', 'credit',
+    'kadam', 'kadangal', 'kodukkan', 'tharan', 'baaki', 'thirichu', 'kittanund', 'kittanundu', 'kittanulla',
+    'കടം', 'കടമ', 'കടങ്ങൾ', 'തരാൻ', 'തരാനുണ്ട്', 'കൊടുക്കാൻ', 'കൊടുക്കാനുണ്ട്',
+    'കിട്ടാനുണ്ട്', 'കിട്ടാൻ', 'കിട്ടാനുള്ള', 'ബാക്കി', 'തിരിച്ചു', 'ലോൺ'
   ],
   attendance: [
     'attendance', 'work', 'worked', 'working', 'shift', 'shifts', 'hours', 'overtime', 'ot',
     'present', 'absent', 'leave', 'holiday', 'check in', 'check out', 'checkin', 'checkout',
-    'joli', 'hazir', 'divasam', 'manikkoor',
+    'joli', 'hazir', 'divasam', 'manikkoor', 'cheythu',
     'ജോലി', 'അറ്റൻഡൻസ്', 'ഹാജർ', 'ദിവസം', 'മണിക്കൂർ', 'ഓവർടൈം', 'അവധി'
   ],
   salary: [
-    'salary', 'pay', 'payout', 'payouts', 'wage', 'wages', 'payroll', 'base salary', 'addon',
+    'salary', 'salaries', 'pay', 'payout', 'payouts', 'wage', 'wages', 'payroll', 'base salary', 'addon',
     'add-on', 'hourly', 'rate', 'remaining salary',
-    'shambalam', 'sambalam', 'shambala', 'kittanulla',
-    'ശമ്പളം', 'ശമ്പള', 'വേതനം', 'കിട്ടാനുള്ള'
+    'shambalam', 'sambalam', 'shambala', 'kittanulla salary',
+    'ശമ്പളം', 'ശമ്പള', 'വേതനം', 'സാലറി'
   ],
   savings: [
     'saving', 'savings', 'reserve', 'reserves', 'deposit', 'deposits', 'withdraw', 'withdrawal',
     'emergency fund', 'fund', 'funds',
     'sampadyam', 'neekkiveppu',
-    'സേവിംഗ്സ്', 'സേവിങ്സ്', 'സമ്പാദ്യം', 'നീക്കിവെപ്പ്'
+    'സേവിംഗ്സ്', 'സേവിങ്സ്', 'സേവിങ്', 'സേവിംഗ്', 'സമ്പാദ്യം', 'സമ്പാദ്യ', 'നീക്കിവെപ്പ്'
   ],
   goals: [
-    'goal', 'goals', 'target', 'targets', 'dream', 'dreams', 'milestone', 'milestones', 'progress',
+    'goal', 'goals', 'financial goal', 'financial goals', 'target', 'targets', 'dream', 'dreams',
+    'milestone', 'milestones', 'progress',
     'lakshyam', 'lakshyangal',
-    'ലക്ഷ്യം', 'ലക്ഷ്യങ്ങൾ', 'ഗോൾ'
+    'ലക്ഷ്യം', 'ലക്ഷ്യ', 'ഗോൾ', 'ഗോളു'
   ],
   overview: [
     'overview', 'summary', 'balance', 'available money', 'available balance', 'cash flow', 'cashflow',
@@ -131,7 +138,7 @@ const LAST_MONTH_KEYWORDS = [
 
 const THIS_MONTH_KEYWORDS = [
   'this month', 'current month', 'monthly',
-  'ee masam', 'ee maasam',
+  'ee masam', 'ee maasam', 'ee month',
   'ഈ മാസം', 'ഈമാസം'
 ];
 
@@ -144,8 +151,29 @@ const MUTATION_KEYWORDS = [
   'ചേർക്ക', 'ഡിലീറ്റ്', 'നീക്കം', 'മാറ്റു', 'റീസെറ്റ്'
 ];
 
+const ASCII_ONLY_REGEX = /^[\x00-\x7F]+$/;
+const BOUNDARY_REGEX_CACHE = new Map<string, RegExp>();
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function hasKeywordMatch(haystack: string, keyword: string): boolean {
+  if (ASCII_ONLY_REGEX.test(keyword)) {
+    const trimmed = keyword.trim();
+    if (!trimmed) return false;
+    let regex = BOUNDARY_REGEX_CACHE.get(trimmed);
+    if (!regex) {
+      regex = new RegExp(`\\b${escapeRegex(trimmed)}\\b`, 'i');
+      BOUNDARY_REGEX_CACHE.set(trimmed, regex);
+    }
+    return regex.test(haystack);
+  }
+  return haystack.includes(keyword);
+}
+
 function containsAny(haystack: string, needles: string[]): boolean {
-  return needles.some(keyword => haystack.includes(keyword));
+  return needles.some(keyword => hasKeywordMatch(haystack, keyword));
 }
 
 function getPreviousMonthString(monthStr: string): string {
@@ -155,22 +183,24 @@ function getPreviousMonthString(monthStr: string): string {
   if (!Number.isFinite(year) || !Number.isFinite(month)) {
     return getMonthString();
   }
-  const d = new Date(year, month - 2, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const d = new Date(Date.UTC(year, month - 2, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }
+
+const MANGLISH_HINTS = [
+  'ee', 'ente', 'ethra', 'aanu', 'aayi', 'und', 'undu', 'undo', 'cheythu',
+  'chelav', 'chilav', 'shambalam', 'sambalam', 'kadam', 'kittan', 'kittanund',
+  'varavu', 'varumanam', 'paisa', 'enganeyundu', 'engane', 'enthanu',
+  'masam', 'maasam', 'masathile', 'kazhinja', 'tharan', 'kodukkan', 'joli',
+  'namaskaram', 'sukhamano', 'parayu', 'sahayikk', 'divasam'
+];
 
 function detectLanguageFromText(text: string): 'ml' | 'en' | 'mixed' {
   const hasMalayalamScript = /[\u0D00-\u0D7F]/.test(text);
   const hasLatin = /[A-Za-z]{2,}/.test(text);
   if (hasMalayalamScript && hasLatin) return 'mixed';
   if (hasMalayalamScript) return 'ml';
-  const lower = text.toLowerCase();
-  const manglishHints = [
-    'chelav', 'chilav', 'shambalam', 'sambalam', 'kadam', 'varavu',
-    'enganeyundu', 'engane', 'enthanu', 'masam', 'maasam', 'kazhinja',
-    'tharan', 'kodukkan', 'joli', 'namaskaram', 'sukhamano', 'parayu', 'sahayikk'
-  ];
-  if (manglishHints.some(hint => lower.includes(hint))) {
+  if (containsAny(text, MANGLISH_HINTS)) {
     return 'mixed';
   }
   return 'en';
@@ -189,11 +219,22 @@ export function detectQueryIntent(
     }
   });
 
+  // Avoid pulling overview solely from generic "total" when a specific module already matched
+  if (matched.size > 1 && matched.has('overview') && /\btotal\b/i.test(normalized)) {
+    const hasDedicatedOverviewCue = containsAny(normalized, [
+      'overview', 'summary', 'available money', 'available balance', 'cash flow', 'cashflow',
+      'financial health', 'how am i doing', 'dashboard', 'overall', 'net'
+    ]);
+    if (!hasDedicatedOverviewCue) {
+      matched.delete('overview');
+    }
+  }
+
   // Repayment expenses connect debt & expenses naturally
-  if (matched.has('debt') && (normalized.includes('expense') || normalized.includes('ചെലവ്'))) {
+  if (matched.has('debt') && (hasKeywordMatch(normalized, 'expense') || hasKeywordMatch(normalized, 'expenses') || normalized.includes('ചെലവ'))) {
     matched.add('expenses');
   }
-  // Salary queries benefit from attendance context and vice versa
+  // Salary queries benefit from attendance context
   if (matched.has('salary')) {
     matched.add('attendance');
   }
@@ -227,7 +268,7 @@ export function detectQueryIntent(
       (wantsComparison ||
         timeScope !== 'this_month' ||
         containsAny(normalized, [
-          'what about', 'how about', 'and ', 'that', 'those', 'more', 'details', 'breakdown', 'why',
+          'what about', 'how about', 'and', 'that', 'those', 'more', 'details', 'breakdown', 'why',
           'അത്', 'കൂടുതൽ', 'വിവരങ്ങൾ', 'എന്തുകൊണ്ട്', 'ബാക്കി', 'pinne', 'athu'
         ]));
     if (isShortFollowUp) {
@@ -244,7 +285,7 @@ export function detectQueryIntent(
     matched.add('overview');
   }
 
-  // Keep greeting context super lightweight
+  // Keep greeting context lightweight
   const modules: XosModuleKey[] = isGreetingOnly ? ['overview'] : Array.from(matched);
 
   const readOnlyMutationRequested =
@@ -270,16 +311,40 @@ export interface SelectiveXosContext {
   groundedContext: Record<string, unknown>;
 }
 
+function summarizeExpensesByCategory(
+  items: Expense[],
+  fmt: (amount: number) => string
+): Array<{ category: string; total: number; totalFormatted: string; count: number }> {
+  const categoryMap = new Map<string, { total: number; count: number }>();
+  for (const exp of items) {
+    const cat = exp.category || 'Other';
+    const entry = categoryMap.get(cat) || { total: 0, count: 0 };
+    entry.total += Number(exp.amount) || 0;
+    entry.count += 1;
+    categoryMap.set(cat, entry);
+  }
+  return Array.from(categoryMap.entries())
+    .map(([category, info]) => ({
+      category,
+      total: Number(info.total.toFixed(2)),
+      totalFormatted: fmt(info.total),
+      count: info.count
+    }))
+    .sort((a, b) => b.total - a.total);
+}
+
 export function buildSelectiveXosContext(params: {
   query: string;
   data: XOSReadOnlySnapshot;
   recentTurns?: SessionTurnMemory[];
   now?: Date;
+  dataAvailability?: DataAvailabilityInfo;
 }): SelectiveXosContext {
   const now = params.now || new Date();
-  const currentMonth = getMonthString(now);
-  const lastMonth = getPreviousMonthString(currentMonth);
   const todayIst = getIstTodayString(now);
+  const currentMonth = todayIst.slice(0, 7);
+  const currentYear = todayIst.slice(0, 4);
+  const lastMonth = getPreviousMonthString(currentMonth);
   const currency = params.data.settings.currency || 'INR';
 
   const lastUserTurnWithModules = [...(params.recentTurns || [])]
@@ -313,7 +378,8 @@ export function buildSelectiveXosContext(params: {
       targetMonth,
       timeScope: intent.timeScope,
       selectedModules: intent.modules,
-      readOnlyMutationRequested: intent.readOnlyMutationRequested
+      readOnlyMutationRequested: intent.readOnlyMutationRequested,
+      ...(params.dataAvailability ? { dataAvailability: params.dataAvailability } : {})
     }
   };
 
@@ -325,8 +391,12 @@ export function buildSelectiveXosContext(params: {
       params.data.savingsTransactions
     );
     const monthExpenses = calculateMonthlyExpenseTotal(params.data.expenses, targetMonth);
+    const lastMonthExpenses = calculateMonthlyExpenseTotal(params.data.expenses, lastMonth);
     const monthIncomes = params.data.incomes
-      .filter(i => i.date.startsWith(targetMonth))
+      .filter(i => typeof i.date === 'string' && i.date.startsWith(targetMonth))
+      .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+    const lastMonthIncomes = params.data.incomes
+      .filter(i => typeof i.date === 'string' && i.date.startsWith(lastMonth))
       .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
     const salarySummary = calculateMonthlySalarySummary(
       params.data.attendance,
@@ -346,10 +416,18 @@ export function buildSelectiveXosContext(params: {
       availableBalanceFormatted: fmt(globalTotals.availableBalance),
       totalSavingsBalance: globalTotals.currentSavingsBalance,
       totalSavingsBalanceFormatted: fmt(globalTotals.currentSavingsBalance),
+      allTimeTotalIncome: globalTotals.totalIncome,
+      allTimeTotalIncomeFormatted: fmt(globalTotals.totalIncome),
+      allTimeTotalExpenses: globalTotals.totalExpenses,
+      allTimeTotalExpensesFormatted: fmt(globalTotals.totalExpenses),
       targetMonthIncome: Number(monthIncomes.toFixed(2)),
       targetMonthIncomeFormatted: fmt(monthIncomes),
+      lastMonthIncome: Number(lastMonthIncomes.toFixed(2)),
+      lastMonthIncomeFormatted: fmt(lastMonthIncomes),
       targetMonthExpenses: monthExpenses,
       targetMonthExpensesFormatted: fmt(monthExpenses),
+      lastMonthExpenses,
+      lastMonthExpensesFormatted: fmt(lastMonthExpenses),
       targetMonthNetCashFlow: Number((monthIncomes - monthExpenses).toFixed(2)),
       targetMonthNetCashFlowFormatted: fmt(monthIncomes - monthExpenses),
       debtToReceive: totalToReceive,
@@ -368,13 +446,15 @@ export function buildSelectiveXosContext(params: {
         incomes: params.data.incomes.length,
         debts: params.data.debts.length,
         attendance: params.data.attendance.length,
+        salaryPayouts: params.data.salaryPayouts.length,
+        savingsGoals: activeSavingsGoals.length,
         goals: resolvedGoals.length
       }
     };
   }
 
   if (modulesSet.has('expenses')) {
-    const presetForFilter =
+    const scopeFilter =
       intent.timeScope === 'today'
         ? 'today'
         : intent.timeScope === 'this_year'
@@ -383,44 +463,38 @@ export function buildSelectiveXosContext(params: {
             ? 'all'
             : null;
 
-    const targetExpenses = presetForFilter
-      ? filterRecordsByDateRange(params.data.expenses, presetForFilter, undefined, undefined, now)
-      : params.data.expenses.filter(e => e.date && e.date.startsWith(targetMonth));
+    const targetExpenses =
+      scopeFilter === 'today'
+        ? params.data.expenses.filter(e => e.date === todayIst)
+        : scopeFilter === 'this_year'
+          ? params.data.expenses.filter(e => typeof e.date === 'string' && e.date.startsWith(currentYear))
+          : scopeFilter === 'all'
+            ? params.data.expenses
+            : params.data.expenses.filter(e => typeof e.date === 'string' && e.date.startsWith(targetMonth));
 
     const total = Number(
       targetExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0).toFixed(2)
     );
+    const allTimeTotal = Number(
+      params.data.expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0).toFixed(2)
+    );
     const prevMonthTotal = calculateMonthlyExpenseTotal(params.data.expenses, lastMonth);
     const currentMonthTotal = calculateMonthlyExpenseTotal(params.data.expenses, currentMonth);
 
-    const categoryMap = new Map<string, { total: number; count: number }>();
     let debtRepaymentExpenseTotal = 0;
     let recurringCount = 0;
-
     for (const exp of targetExpenses) {
-      const cat = exp.category || 'Other';
-      const entry = categoryMap.get(cat) || { total: 0, count: 0 };
-      entry.total += Number(exp.amount) || 0;
-      entry.count += 1;
-      categoryMap.set(cat, entry);
       if (exp.category === 'Debt Repayment' || exp.debtRepaymentId) {
         debtRepaymentExpenseTotal += Number(exp.amount) || 0;
       }
       if (exp.isRecurring) recurringCount += 1;
     }
 
-    const byCategory = Array.from(categoryMap.entries())
-      .map(([category, info]) => ({
-        category,
-        total: Number(info.total.toFixed(2)),
-        totalFormatted: fmt(info.total),
-        count: info.count
-      }))
-      .sort((a, b) => b.total - a.total);
+    const byCategory = summarizeExpensesByCategory(targetExpenses, fmt);
 
     const recentTransactions = [...targetExpenses]
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, 10)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+      .slice(0, 15)
       .map(e => ({
         title: e.title,
         amount: e.amount,
@@ -432,15 +506,39 @@ export function buildSelectiveXosContext(params: {
         fromDebtRepayment: Boolean(e.debtRepaymentId || e.category === 'Debt Repayment')
       }));
 
+    const recentAllTimeTransactions =
+      targetExpenses.length === 0 && params.data.expenses.length > 0
+        ? [...params.data.expenses]
+            .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+            .slice(0, 8)
+            .map(e => ({
+              title: e.title,
+              amount: e.amount,
+              amountFormatted: fmt(e.amount),
+              category: e.category,
+              date: e.date,
+              paymentMethod: e.paymentMethod,
+              isRecurring: Boolean(e.isRecurring),
+              fromDebtRepayment: Boolean(e.debtRepaymentId || e.category === 'Debt Repayment')
+            }))
+        : undefined;
+
     payload.expenses = {
-      scope: presetForFilter || targetMonth,
+      scope: scopeFilter || targetMonth,
       transactionCount: targetExpenses.length,
+      omittedTransactionsCount: Math.max(0, targetExpenses.length - recentTransactions.length),
       total,
       totalFormatted: fmt(total),
       debtRepaymentIncludedTotal: Number(debtRepaymentExpenseTotal.toFixed(2)),
       debtRepaymentIncludedFormatted: fmt(debtRepaymentExpenseTotal),
       recurringTransactionsCount: recurringCount,
       byCategory,
+      allTime: {
+        transactionCount: params.data.expenses.length,
+        total: allTimeTotal,
+        totalFormatted: fmt(allTimeTotal),
+        topCategories: summarizeExpensesByCategory(params.data.expenses, fmt).slice(0, 8)
+      },
       monthComparison: {
         currentMonth,
         currentMonthTotal,
@@ -451,12 +549,13 @@ export function buildSelectiveXosContext(params: {
         differenceFromLastMonth: Number((currentMonthTotal - prevMonthTotal).toFixed(2)),
         differenceFormatted: fmt(currentMonthTotal - prevMonthTotal)
       },
-      recentTransactions
+      recentTransactions,
+      ...(recentAllTimeTransactions ? { recentAllTimeTransactions } : {})
     };
   }
 
   if (modulesSet.has('income')) {
-    const presetForFilter =
+    const scopeFilter =
       intent.timeScope === 'today'
         ? 'today'
         : intent.timeScope === 'this_year'
@@ -465,22 +564,37 @@ export function buildSelectiveXosContext(params: {
             ? 'all'
             : null;
 
-    const targetIncomes = presetForFilter
-      ? filterRecordsByDateRange(params.data.incomes, presetForFilter, undefined, undefined, now)
-      : params.data.incomes.filter(i => i.date && i.date.startsWith(targetMonth));
+    const targetIncomes =
+      scopeFilter === 'today'
+        ? params.data.incomes.filter(i => i.date === todayIst)
+        : scopeFilter === 'this_year'
+          ? params.data.incomes.filter(i => typeof i.date === 'string' && i.date.startsWith(currentYear))
+          : scopeFilter === 'all'
+            ? params.data.incomes
+            : params.data.incomes.filter(i => typeof i.date === 'string' && i.date.startsWith(targetMonth));
 
     const total = Number(
       targetIncomes.reduce((sum, i) => sum + (Number(i.amount) || 0), 0).toFixed(2)
     );
+    const allTimeTotal = Number(
+      params.data.incomes.reduce((sum, i) => sum + (Number(i.amount) || 0), 0).toFixed(2)
+    );
+    const salaryLinkedTotal = Number(
+      targetIncomes
+        .filter(i => Boolean(i.salaryPayoutId) || i.source === 'Salary')
+        .reduce((sum, i) => sum + (Number(i.amount) || 0), 0)
+        .toFixed(2)
+    );
+    const otherIncomeTotal = Number((total - salaryLinkedTotal).toFixed(2));
     const prevMonthTotal = Number(
       params.data.incomes
-        .filter(i => i.date && i.date.startsWith(lastMonth))
+        .filter(i => typeof i.date === 'string' && i.date.startsWith(lastMonth))
         .reduce((sum, i) => sum + (Number(i.amount) || 0), 0)
         .toFixed(2)
     );
     const currentMonthTotal = Number(
       params.data.incomes
-        .filter(i => i.date && i.date.startsWith(currentMonth))
+        .filter(i => typeof i.date === 'string' && i.date.startsWith(currentMonth))
         .reduce((sum, i) => sum + (Number(i.amount) || 0), 0)
         .toFixed(2)
     );
@@ -503,12 +617,49 @@ export function buildSelectiveXosContext(params: {
       }))
       .sort((a, b) => b.total - a.total);
 
+    const recentEntries = [...targetIncomes]
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+      .slice(0, 12)
+      .map(i => ({
+        title: i.title,
+        amount: i.amount,
+        amountFormatted: fmt(i.amount),
+        source: i.source,
+        date: i.date,
+        syncedFromSalaryPayout: Boolean(i.salaryPayoutId)
+      }));
+
+    const recentAllTimeEntries =
+      targetIncomes.length === 0 && params.data.incomes.length > 0
+        ? [...params.data.incomes]
+            .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+            .slice(0, 8)
+            .map(i => ({
+              title: i.title,
+              amount: i.amount,
+              amountFormatted: fmt(i.amount),
+              source: i.source,
+              date: i.date,
+              syncedFromSalaryPayout: Boolean(i.salaryPayoutId)
+            }))
+        : undefined;
+
     payload.income = {
-      scope: presetForFilter || targetMonth,
+      scope: scopeFilter || targetMonth,
       entryCount: targetIncomes.length,
+      omittedEntriesCount: Math.max(0, targetIncomes.length - recentEntries.length),
       total,
       totalFormatted: fmt(total),
+      salaryLinkedTotal,
+      salaryLinkedTotalFormatted: fmt(salaryLinkedTotal),
+      otherIncomeTotal,
+      otherIncomeTotalFormatted: fmt(otherIncomeTotal),
       bySource,
+      allTime: {
+        entryCount: params.data.incomes.length,
+        total: allTimeTotal,
+        totalFormatted: fmt(allTimeTotal)
+      },
       monthComparison: {
         currentMonth,
         currentMonthTotal,
@@ -517,17 +668,8 @@ export function buildSelectiveXosContext(params: {
         lastMonthTotal: prevMonthTotal,
         lastMonthTotalFormatted: fmt(prevMonthTotal)
       },
-      recentEntries: [...targetIncomes]
-        .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(0, 8)
-        .map(i => ({
-          title: i.title,
-          amount: i.amount,
-          amountFormatted: fmt(i.amount),
-          source: i.source,
-          date: i.date,
-          syncedFromSalaryPayout: Boolean(i.salaryPayoutId)
-        }))
+      recentEntries,
+      ...(recentAllTimeEntries ? { recentAllTimeEntries } : {})
     };
   }
 
@@ -538,24 +680,36 @@ export function buildSelectiveXosContext(params: {
       params.data.debtRepayments
     );
 
-    const debtItems = params.data.debts.map(d => {
-      const remaining = calculateDebtOutstanding(d, params.data.debtRepayments);
-      return {
-        personName: d.person_name,
-        direction: d.direction === 'pay' ? 'money_to_pay' : 'money_owed_to_me',
-        originalAmount: d.original_amount,
-        originalAmountFormatted: fmt(d.original_amount),
-        remainingAmount: remaining,
-        remainingAmountFormatted: fmt(remaining),
-        status: d.status,
-        date: d.lent_date,
-        dueDate: d.due_date || null
-      };
-    });
+    const debtItems = params.data.debts
+      .map(d => {
+        const remaining = calculateDebtOutstanding(d, params.data.debtRepayments);
+        return {
+          personName: d.person_name,
+          direction: d.direction === 'pay' ? 'money_to_pay' : 'money_owed_to_me',
+          originalAmount: d.original_amount,
+          originalAmountFormatted: fmt(d.original_amount),
+          remainingAmount: remaining,
+          remainingAmountFormatted: fmt(remaining),
+          status: d.status,
+          date: d.lent_date,
+          dueDate: d.due_date || null
+        };
+      })
+      .sort((a, b) => {
+        const aActive = a.status !== 'paid' && a.remainingAmount > 0 ? 0 : 1;
+        const bActive = b.status !== 'paid' && b.remainingAmount > 0 ? 0 : 1;
+        if (aActive !== bActive) return aActive - bActive;
+        return (b.date || '').localeCompare(a.date || '');
+      });
+
+    const activeToPayCount = debtItems.filter(d => d.direction === 'money_to_pay' && d.status !== 'paid' && d.remainingAmount > 0).length;
+    const activeToReceiveCount = debtItems.filter(d => d.direction === 'money_owed_to_me' && d.status !== 'paid' && d.remainingAmount > 0).length;
+    const paidCount = debtItems.filter(d => d.status === 'paid' || d.remainingAmount <= 0).length;
+    const displayedDebts = debtItems.slice(0, 20);
 
     const recentRepayments = [...params.data.debtRepayments]
-      .sort((a, b) => b.repayment_date.localeCompare(a.repayment_date))
-      .slice(0, 8)
+      .sort((a, b) => (b.repayment_date || '').localeCompare(a.repayment_date || ''))
+      .slice(0, 10)
       .map(r => {
         const parent = params.data.debts.find(d => d.id === r.debt_id);
         return {
@@ -575,8 +729,15 @@ export function buildSelectiveXosContext(params: {
       totalToPayFormatted: fmt(totalToPay),
       netDebtPosition: Number((totalToReceive - totalToPay).toFixed(2)),
       netDebtPositionFormatted: fmt(totalToReceive - totalToPay),
+      counts: {
+        totalDebts: debtItems.length,
+        activeToPayCount,
+        activeToReceiveCount,
+        paidCount,
+        omittedDebtsCount: Math.max(0, debtItems.length - displayedDebts.length)
+      },
       receivableStats: receivableSummary,
-      debts: debtItems.slice(0, 12),
+      debts: displayedDebts,
       recentRepayments
     };
   }
@@ -598,9 +759,9 @@ export function buildSelectiveXosContext(params: {
       );
 
       const recentAttendance = params.data.attendance
-        .filter(r => r.date && r.date.startsWith(targetMonth))
-        .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(0, 10)
+        .filter(r => typeof r.date === 'string' && r.date.startsWith(targetMonth))
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+        .slice(0, 12)
         .map(r => ({
           date: r.date,
           status: r.status,
@@ -669,7 +830,7 @@ export function buildSelectiveXosContext(params: {
           remainingSalaryFormatted: fmt(prevSummary.remainingSalary)
         },
         recentPayouts: [...params.data.salaryPayouts]
-          .sort((a, b) => b.paidAt.localeCompare(a.paidAt))
+          .sort((a, b) => (b.paidAt || '').localeCompare(a.paidAt || ''))
           .slice(0, 8)
           .map(p => ({
             periodStart: p.periodStart,
@@ -693,14 +854,16 @@ export function buildSelectiveXosContext(params: {
     );
 
     if (modulesSet.has('goals')) {
+      const displayedGoals = resolvedGoals.slice(0, 20);
       payload.goals = {
         totals: {
           ...goalTotals,
           totalTargetFormatted: fmt(goalTotals.totalTargetAmount),
           totalSavedFormatted: fmt(goalTotals.totalSavedAmount),
-          totalRemainingFormatted: fmt(goalTotals.totalRemainingAmount)
+          totalRemainingFormatted: fmt(goalTotals.totalRemainingAmount),
+          omittedGoalsCount: Math.max(0, resolvedGoals.length - displayedGoals.length)
         },
-        items: resolvedGoals.slice(0, 12).map(item => ({
+        items: displayedGoals.map(item => ({
           title: item.goal.title,
           category: item.goal.category,
           priority: item.goal.priority,
@@ -727,16 +890,19 @@ export function buildSelectiveXosContext(params: {
         .filter(t => t.type === 'withdrawal')
         .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
+      const displayedReserves = activeSavingsGoals.slice(0, 20);
       payload.savings = {
         totalActiveReserves: globalTotals.currentSavingsBalance,
         totalActiveReservesFormatted: fmt(globalTotals.currentSavingsBalance),
+        activeReservesCount: activeSavingsGoals.length,
+        omittedReservesCount: Math.max(0, activeSavingsGoals.length - displayedReserves.length),
         availableCashAfterSavings: globalTotals.availableBalance,
         availableCashAfterSavingsFormatted: fmt(globalTotals.availableBalance),
         totalDepositsAllTime: Number(totalDeposits.toFixed(2)),
         totalDepositsFormatted: fmt(totalDeposits),
         totalWithdrawalsAllTime: Number(totalWithdrawals.toFixed(2)),
         totalWithdrawalsFormatted: fmt(totalWithdrawals),
-        activeReserves: activeSavingsGoals.slice(0, 12).map(sg => ({
+        activeReserves: displayedReserves.map(sg => ({
           name: sg.name,
           currentAmount: sg.currentAmount,
           currentAmountFormatted: fmt(sg.currentAmount),
@@ -745,8 +911,8 @@ export function buildSelectiveXosContext(params: {
           targetDate: sg.targetDate || null
         })),
         recentTransactions: [...params.data.savingsTransactions]
-          .sort((a, b) => b.date.localeCompare(a.date))
-          .slice(0, 10)
+          .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+          .slice(0, 12)
           .map(tx => {
             const sg = params.data.savingsGoals.find(g => g.id === tx.savingsGoalId);
             return {

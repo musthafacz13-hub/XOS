@@ -8,6 +8,9 @@ import {
   handleTranscribeRequest
 } from './api/_lib/aiHandler.js';
 
+import { getGeminiApiKey } from './api/_lib/gemini.js';
+import { getGroqApiKey } from './api/_lib/groq.js';
+
 const PORT = Number(process.env.PORT) || 3000;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
@@ -30,7 +33,14 @@ async function startServer() {
   // Lightweight health endpoint (no secret disclosure)
   app.get('/api/health', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ ok: true, aiConfigured: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY') });
+    const groqConfigured = Boolean(getGroqApiKey());
+    const geminiConfigured = Boolean(getGeminiApiKey());
+    res.json({
+      ok: true,
+      aiConfigured: groqConfigured,
+      primaryProvider: groqConfigured ? 'groq' : 'unconfigured',
+      fallbackConfigured: geminiConfigured
+    });
   });
 
   // Server-side Gemini AI endpoints (Bearer token verified inside handlers)

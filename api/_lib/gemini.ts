@@ -25,6 +25,7 @@ export type AiRequestStage =
   | 'validation'
   | 'auth'
   | 'config'
+  | 'groq'
   | 'gemini'
   | 'response'
   | 'vercel'
