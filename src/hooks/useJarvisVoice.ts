@@ -64,6 +64,34 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
+function wrapRawPcmAsWav(pcmBytes: Uint8Array, sampleRate: number = 24000): Uint8Array {
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+  const writeStr = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset + i, str.charCodeAt(i));
+    }
+  };
+  writeStr(0, 'RIFF');
+  view.setUint32(4, 36 + pcmBytes.byteLength, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  view.setUint32(16, 16, true); // PCM chunk size
+  view.setUint16(20, 1, true); // PCM format
+  view.setUint16(22, 1, true); // Mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true); // Byte rate
+  view.setUint16(32, 2, true); // Block align
+  view.setUint16(34, 16, true); // Bits per sample
+  writeStr(36, 'data');
+  view.setUint32(40, pcmBytes.byteLength, true);
+
+  const wav = new Uint8Array(44 + pcmBytes.byteLength);
+  wav.set(new Uint8Array(header), 0);
+  wav.set(pcmBytes, 44);
+  return wav;
+}
+
 function base64ToWavBlobUrl(base64: string, mimeType: string = 'audio/wav'): string {
   const binary = atob(base64);
   const len = binary.length;
@@ -71,12 +99,30 @@ function base64ToWavBlobUrl(base64: string, mimeType: string = 'audio/wav'): str
   for (let i = 0; i < len; i++) {
     bytes[i] = binary.charCodeAt(i);
   }
-  const blob = new Blob([bytes], { type: mimeType });
+  const hasRiffHeader =
+    bytes.length >= 4 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46;
+
+  const isRawPcm = mimeType.toLowerCase().includes('l16') || mimeType.toLowerCase().includes('pcm');
+  if (isRawPcm && !hasRiffHeader) {
+    const wavBytes = wrapRawPcmAsWav(bytes);
+    const copy = new Uint8Array(wavBytes.byteLength);
+    copy.set(wavBytes);
+    return URL.createObjectURL(new Blob([copy.buffer], { type: 'audio/wav' }));
+  }
+
+  const normalizedMime = mimeType.toLowerCase().includes('wav') || hasRiffHeader ? 'audio/wav' : mimeType;
+  const blob = new Blob([bytes.buffer], { type: normalizedMime });
   return URL.createObjectURL(blob);
 }
 
-function pickSupportedRecorderMimeType(): string {
-  if (typeof MediaRecorder === 'undefined') return 'audio/webm';
+function pickSupportedRecorderMimeType(): string | undefined {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+    return undefined;
+  }
   const candidates = [
     'audio/webm;codecs=opus',
     'audio/webm',
@@ -85,11 +131,15 @@ function pickSupportedRecorderMimeType(): string {
     'audio/ogg'
   ];
   for (const mime of candidates) {
-    if (typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(mime)) {
-      return mime;
+    try {
+      if (MediaRecorder.isTypeSupported(mime)) {
+        return mime;
+      }
+    } catch {
+      // Ignore probe errors
     }
   }
-  return 'audio/webm';
+  return undefined;
 }
 
 interface UseJarvisVoiceOptions {
@@ -123,6 +173,7 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const rafIdRef = useRef<number | null>(null);
+  const maxCaptureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlCacheRef = useRef<Map<string, string>>(new Map());
@@ -146,6 +197,10 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
   }, [voiceState]);
 
   const cleanupCaptureResources = useCallback(() => {
+    if (maxCaptureTimerRef.current !== null) {
+      clearTimeout(maxCaptureTimerRef.current);
+      maxCaptureTimerRef.current = null;
+    }
     if (rafIdRef.current !== null) {
       cancelAnimationFrame(rafIdRef.current);
       rafIdRef.current = null;
@@ -315,7 +370,19 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
           speakWithBrowserFallback(clean, messageId, langHint, attemptId);
         };
 
-        await audio.play();
+        try {
+          await audio.play();
+        } catch (playErr) {
+          if (!mountedRef.current || speechAttemptIdRef.current !== attemptId) return;
+          activeAudioRef.current = null;
+          setSpeakingMessageId(null);
+          if ((playErr as { name?: string })?.name === 'NotAllowedError') {
+            setVoiceNotice('Audio playback was blocked by your browser. Tap Replay to listen.');
+            setVoiceState('idle');
+            return;
+          }
+          speakWithBrowserFallback(clean, messageId, langHint, attemptId);
+        }
       } catch {
         if (!mountedRef.current || speechAttemptIdRef.current !== attemptId) return;
         speakWithBrowserFallback(clean, messageId, langHint, attemptId);
@@ -348,8 +415,14 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
       setVoiceNotice(null);
       mediaStreamRef.current = stream;
 
-      const mimeType = pickSupportedRecorderMimeType();
-      const recorder = new MediaRecorder(stream, { mimeType });
+      const preferredMime = pickSupportedRecorderMimeType();
+      let recorder: MediaRecorder;
+      try {
+        recorder = preferredMime ? new MediaRecorder(stream, { mimeType: preferredMime }) : new MediaRecorder(stream);
+      } catch {
+        recorder = new MediaRecorder(stream);
+      }
+      const effectiveMimeType = (recorder.mimeType || preferredMime || 'audio/webm').toLowerCase();
       recordedChunksRef.current = [];
       mediaRecorderRef.current = recorder;
 
@@ -420,7 +493,7 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
           return;
         }
 
-        const blob = new Blob(chunks, { type: mimeType });
+        const blob = new Blob(chunks, { type: effectiveMimeType });
         if (blob.size < 400) {
           setVoiceState('idle');
           return;
@@ -433,7 +506,7 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
           const base64 = await blobToBase64(blob);
           const res = await agentService.transcribeAudio({
             audioBase64: base64,
-            mimeType,
+            mimeType: effectiveMimeType,
             preferredLanguage: voiceLanguage,
             accessToken
           });
@@ -457,6 +530,11 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
       setLiveTranscript('');
       setVoiceState('listening');
       recorder.start(250);
+      maxCaptureTimerRef.current = setTimeout(() => {
+        if (mediaRecorderRef.current?.state === 'recording') {
+          mediaRecorderRef.current.stop();
+        }
+      }, 40000);
     } catch (err) {
       cleanupCaptureResources();
       const errName = (err as { name?: string })?.name || '';
@@ -563,6 +641,9 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
   );
 
   const startListening = useCallback(() => {
+    if (voiceStateRef.current === 'listening' || voiceStateRef.current === 'thinking') {
+      return;
+    }
     stopSpeaking();
     setVoiceNotice(null);
 

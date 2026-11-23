@@ -35,6 +35,15 @@ interface AgentMessage {
   timestamp: string;
 }
 
+interface AgentErrorState {
+  message: string;
+  category?: string;
+  stage?: string;
+  requestId?: string;
+  durationMs?: number;
+  failedQuery?: string;
+}
+
 const QUICK_PROMPTS: Array<{ label: string; query: string }> = [
   {
     label: 'Monthly spending overview',
@@ -73,7 +82,7 @@ export const AiAgentView: React.FC = () => {
   // Strictly active-session in-memory conversation state (never written to persistent browser storage)
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [inputText, setInputText] = useState('');
-  const [errorNotice, setErrorNotice] = useState<string | null>(null);
+  const [errorNotice, setErrorNotice] = useState<AgentErrorState | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const messagesRef = useRef<AgentMessage[]>([]);
@@ -86,7 +95,7 @@ export const AiAgentView: React.FC = () => {
   }, [messages]);
 
   const handleSubmitQuery = useCallback(
-    async (rawQuery: string, viaVoice: boolean = false) => {
+    async (rawQuery: string, viaVoice: boolean = false, isRetry: boolean = false) => {
       const cleanQuery = rawQuery.trim();
       if (!cleanQuery || isSubmittingRef.current) return;
 
@@ -97,8 +106,15 @@ export const AiAgentView: React.FC = () => {
       voiceRef.current?.stopSpeaking();
       voiceRef.current?.setVoiceState('thinking');
 
-      const userMsgId = createMessageId();
-      const recentHistory: SessionTurnMemory[] = messagesRef.current.slice(-12).map(m => ({
+      const lastMsg = messagesRef.current[messagesRef.current.length - 1];
+      const alreadyAppendedSamePendingTurn =
+        Boolean(lastMsg && lastMsg.role === 'user' && lastMsg.text.trim() === cleanQuery);
+
+      const historySource = alreadyAppendedSamePendingTurn
+        ? messagesRef.current.slice(0, -1)
+        : messagesRef.current;
+
+      const recentHistory: SessionTurnMemory[] = historySource.slice(-10).map(m => ({
         role: m.role,
         text: m.text,
         modules: m.modules
@@ -111,16 +127,18 @@ export const AiAgentView: React.FC = () => {
         recentTurns: recentHistory
       });
 
-      const userMessage: AgentMessage = {
-        id: userMsgId,
-        role: 'user',
-        text: cleanQuery,
-        modules: selective.selectedModules,
-        langHint: selective.intent.detectedLanguage,
-        timestamp: formatMessageTime()
-      };
+      if (!isRetry && !alreadyAppendedSamePendingTurn) {
+        const userMessage: AgentMessage = {
+          id: createMessageId(),
+          role: 'user',
+          text: cleanQuery,
+          modules: selective.selectedModules,
+          langHint: selective.intent.detectedLanguage,
+          timestamp: formatMessageTime()
+        };
+        setMessages(prev => [...prev, userMessage]);
+      }
 
-      setMessages(prev => [...prev, userMessage]);
       if (!viaVoice) {
         setInputText('');
       }
@@ -151,11 +169,22 @@ export const AiAgentView: React.FC = () => {
           result.detectedLanguage
         );
       } catch (err) {
-        const msg =
-          err instanceof AiServiceError
-            ? err.message
-            : 'Unable to reach the AI Agent right now. Please try again.';
-        setErrorNotice(msg);
+        if (err instanceof AiServiceError) {
+          setErrorNotice({
+            message: err.message,
+            category: err.category,
+            stage: err.stage,
+            requestId: err.requestId,
+            durationMs: err.durationMs,
+            failedQuery: cleanQuery
+          });
+        } else {
+          setErrorNotice({
+            message: 'Unable to reach the AI Agent right now. Please try again.',
+            category: 'network_error',
+            failedQuery: cleanQuery
+          });
+        }
         voiceRef.current?.setVoiceState('idle');
       } finally {
         isSubmittingRef.current = false;
@@ -188,6 +217,11 @@ export const AiAgentView: React.FC = () => {
     setErrorNotice(null);
     setMessages([]);
     setInputText('');
+  };
+
+  const handleRetryFailedQuery = () => {
+    if (!errorNotice?.failedQuery || isSubmitting) return;
+    void handleSubmitQuery(errorNotice.failedQuery, false, true);
   };
 
   const handleTextSubmit = (e: React.FormEvent) => {
@@ -536,10 +570,39 @@ export const AiAgentView: React.FC = () => {
           {errorNotice && (
             <div
               role="alert"
-              className="mx-5 mb-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2"
+              className="mx-5 mb-3 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs space-y-2"
             >
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-              <span>{errorNotice}</span>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="font-semibold text-rose-950">AI Service Error</div>
+                    <p className="text-rose-800 leading-relaxed">{errorNotice.message}</p>
+                    {(errorNotice.requestId || errorNotice.category || errorNotice.stage || typeof errorNotice.durationMs === 'number') && (
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pt-0.5 text-[11px] font-mono text-rose-700/90">
+                        {errorNotice.requestId && <span>ID: {errorNotice.requestId}</span>}
+                        {errorNotice.category && <span>Category: {errorNotice.category}</span>}
+                        {errorNotice.stage && <span>Stage: {errorNotice.stage}</span>}
+                        {typeof errorNotice.durationMs === 'number' && (
+                          <span>Duration: {(errorNotice.durationMs / 1000).toFixed(1)}s</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {errorNotice.failedQuery && (
+                  <button
+                    type="button"
+                    onClick={handleRetryFailedQuery}
+                    disabled={isSubmitting}
+                    className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white border border-rose-200 hover:bg-rose-100/70 text-[11px] font-semibold text-rose-900 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Retry</span>
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

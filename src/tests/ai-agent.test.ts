@@ -14,7 +14,15 @@ import {
   XOSReadOnlySnapshot
 } from '../services/ai/contextBuilder';
 import {
+  agentService,
+  AiServiceError,
+  FRONTEND_ASSISTANT_TIMEOUT_MS,
+  FRONTEND_SPEAK_TIMEOUT_MS
+} from '../services/ai/agentService';
+import {
   handleAssistantRequest,
+  handleSpeakRequest,
+  handleTranscribeRequest,
   verifySupabaseSessionToken
 } from '../../api/_lib/aiHandler';
 
@@ -394,6 +402,316 @@ async function runAiAgentTests() {
     const emptyMsgResp = await handleAssistantRequest({ message: '   ' }, undefined);
     assert(emptyMsgResp.status === 400, 'Rejects blank message with 400');
     assert(Boolean(emptyMsgResp.body.requestId), 'Includes diagnostic requestId in error responses');
+
+    // ==========================================
+    // TEST 6: Deterministic Backend Deadlines, Model Fallback & Error Classification
+    // ==========================================
+    console.log('Test 6: Verifying server deadlines, AbortSignal propagation, error categories, and model config...');
+
+    // 6a. Successful AI response & strict Gemini 4 config verification
+    let capturedParams: Record<string, unknown> | null = null;
+    const okResp = await handleAssistantRequest(
+      { message: 'How are my expenses?', groundedContext: { expenses: { total: 6400 } } },
+      undefined,
+      {
+        createClient: () => ({
+          models: {
+            generateContent: async (params) => {
+              capturedParams = params;
+              return { text: 'Your expenses total ₹6,400 this month.' };
+            }
+          }
+        })
+      }
+    );
+    assert(okResp.status === 200 && okResp.body.reply === 'Your expenses total ₹6,400 this month.', 'Returns successful Gemini response');
+    assert(Boolean(okResp.body.requestId), 'Successful response includes requestId');
+    assert(capturedParams !== null && (capturedParams as Record<string, unknown>).model === 'gemini-4-hydrogen', 'Uses gemini-4-hydrogen primary model');
+    const capturedConfig = (capturedParams as unknown as { config: Record<string, unknown> }).config;
+    assert(!('temperature' in capturedConfig), 'Does not pass deprecated temperature to gemini-4-hydrogen');
+    assert(!('maxOutputTokens' in capturedConfig), 'Does not pass maxOutputTokens to gemini-4-hydrogen');
+    assert(capturedConfig.abortSignal instanceof AbortSignal, 'Passes real AbortSignal via config.abortSignal');
+
+    // 6b. Server-side Gemini timeout aborts underlying signal & returns 504 timeout
+    const timeoutState = { signalAborted: false };
+    const timeoutResp = await handleAssistantRequest(
+      { message: 'Slow query' },
+      undefined,
+      {
+        assistantTimeoutMs: 40,
+        createClient: () => ({
+          models: {
+            generateContent: (params) =>
+              new Promise((_resolve, reject) => {
+                const sig = (params as { config?: { abortSignal?: AbortSignal } }).config?.abortSignal;
+                sig?.addEventListener('abort', () => {
+                  timeoutState.signalAborted = true;
+                  const err = new Error('The operation was aborted');
+                  err.name = 'AbortError';
+                  reject(err);
+                });
+              })
+          }
+        })
+      }
+    );
+    assert(timeoutState.signalAborted, 'Server deadline actually aborts Gemini request via config.abortSignal');
+    assert(timeoutResp.status === 504 && timeoutResp.body.category === 'timeout', 'Returns 504 with category=timeout');
+    assert(timeoutResp.body.timeoutStage === 'gemini', 'Records timeoutStage=gemini');
+
+    // 6c. Auth verification timeout returns 504 with timeoutStage=auth
+    process.env.VITE_SUPABASE_URL = 'https://demo-project.supabase.co';
+    process.env.VITE_SUPABASE_ANON_KEY = 'anon-public-test-key';
+    const authTimeoutResp = await handleAssistantRequest(
+      { message: 'Hi' },
+      'Bearer valid-looking-token',
+      {
+        authTimeoutMs: 30,
+        fetchImpl: (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              const err = new Error('Aborted');
+              err.name = 'AbortError';
+              reject(err);
+            });
+          })
+      }
+    );
+    assert(authTimeoutResp.status === 504 && authTimeoutResp.body.timeoutStage === 'auth', 'Returns 504 timeoutStage=auth when Supabase auth hangs');
+    delete process.env.VITE_SUPABASE_URL;
+    delete process.env.VITE_SUPABASE_ANON_KEY;
+
+    // 6d. Invalid API key (403) -> invalid_api_key
+    const badKeyResp = await handleAssistantRequest(
+      { message: 'Hi' },
+      undefined,
+      {
+        createClient: () => ({
+          models: {
+            generateContent: async () => {
+              const err = new Error('API_KEY_INVALID') as Error & { status?: number };
+              err.status = 403;
+              throw err;
+            }
+          }
+        })
+      }
+    );
+    assert(badKeyResp.status === 502 && badKeyResp.body.category === 'invalid_api_key', 'Maps 403/invalid key to invalid_api_key');
+
+    // 6e. Rate limit (429) vs Quota exhaustion (429)
+    const rateResp = await handleAssistantRequest(
+      { message: 'Hi' },
+      undefined,
+      {
+        createClient: () => ({
+          models: {
+            generateContent: async () => {
+              const err = new Error('Too many requests') as Error & { status?: number };
+              err.status = 429;
+              throw err;
+            }
+          }
+        })
+      }
+    );
+    assert(rateResp.status === 429 && rateResp.body.category === 'rate_limited', 'Maps transient 429 to rate_limited');
+
+    const quotaResp = await handleAssistantRequest(
+      { message: 'Hi' },
+      undefined,
+      {
+        createClient: () => ({
+          models: {
+            generateContent: async () => {
+              const err = new Error('You exceeded your current quota, please check billing') as Error & { status?: number };
+              err.status = 429;
+              throw err;
+            }
+          }
+        })
+      }
+    );
+    assert(quotaResp.status === 429 && quotaResp.body.category === 'quota_exceeded', 'Distinguishes quota exhaustion from transient rate limit');
+
+    // 6f. Model unavailable (404) triggers fallback and reports model_unavailable if both fail
+    const attemptedModels: string[] = [];
+    const modelMissingResp = await handleAssistantRequest(
+      { message: 'Hi' },
+      undefined,
+      {
+        createClient: () => ({
+          models: {
+            generateContent: async (params) => {
+              attemptedModels.push(String(params.model));
+              const err = new Error('Model not found') as Error & { status?: number };
+              err.status = 404;
+              throw err;
+            }
+          }
+        })
+      }
+    );
+    assert(
+      attemptedModels.length === 2 &&
+        attemptedModels[0] === 'gemini-4-hydrogen' &&
+        attemptedModels[1] === 'gemini-3.1-flash-lite',
+      'Falls back to gemini-3.1-flash-lite on 404 model_unavailable'
+    );
+    assert(modelMissingResp.status === 502 && modelMissingResp.body.category === 'model_unavailable', 'Reports model_unavailable when models are unavailable');
+
+    // 6g. Empty AI response -> 502 server_error
+    const emptyReplyResp = await handleAssistantRequest(
+      { message: 'Hi' },
+      undefined,
+      {
+        createClient: () => ({
+          models: {
+            generateContent: async () => ({ text: '   ' })
+          }
+        })
+      }
+    );
+    assert(emptyReplyResp.status === 502 && emptyReplyResp.body.category === 'server_error', 'Rejects empty AI response with 502 server_error');
+
+    // 6h. Transcribe & Speak timeout/success tests
+    const transcribeTimeoutResp = await handleTranscribeRequest(
+      { audioBase64: 'dGVzdA==', mimeType: 'audio/webm' },
+      undefined,
+      {
+        transcribeTimeoutMs: 30,
+        createClient: () => ({
+          models: {
+            generateContent: (params) =>
+              new Promise((_resolve, reject) => {
+                const sig = (params as { config?: { abortSignal?: AbortSignal } }).config?.abortSignal;
+                sig?.addEventListener('abort', () => {
+                  const err = new Error('Aborted');
+                  err.name = 'AbortError';
+                  reject(err);
+                });
+              })
+          }
+        })
+      }
+    );
+    assert(transcribeTimeoutResp.status === 504 && transcribeTimeoutResp.body.category === 'timeout', 'Transcribe handler respects server AbortSignal timeout');
+
+    const speakOkResp = await handleSpeakRequest(
+      { text: 'Hello Ameen' },
+      undefined,
+      {
+        createClient: () => ({
+          models: {
+            generateContent: async () => ({
+              candidates: [{ content: { parts: [{ inlineData: { data: 'UklGRg==', mimeType: 'audio/wav' } }] } }]
+            })
+          }
+        })
+      }
+    );
+    assert(speakOkResp.status === 200 && speakOkResp.body.mimeType === 'audio/wav', 'Speak handler returns audioBase64 and mimeType');
+
+    // ==========================================
+    // TEST 7: Frontend Service Timeouts, Non-JSON Gateway Errors & Duplicate Prevention
+    // ==========================================
+    console.log('Test 7: Verifying frontend timeout, network failure, Vercel 504, and duplicate-request protection...');
+
+    // 7a. Frontend timeout
+    let frontendTimeoutCaught: AiServiceError | null = null;
+    try {
+      await agentService.sendMessage({
+        message: 'Test timeout',
+        history: [],
+        groundedContext: {},
+        preferredLanguage: 'auto',
+        timeoutMs: 35,
+        fetchImpl: (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              const err = new Error('Aborted');
+              err.name = 'AbortError';
+              reject(err);
+            });
+          })
+      });
+    } catch (e) {
+      frontendTimeoutCaught = e as AiServiceError;
+    }
+    assert(
+      frontendTimeoutCaught instanceof AiServiceError &&
+        frontendTimeoutCaught.category === 'timeout' &&
+        frontendTimeoutCaught.stage === 'network',
+      'Frontend AbortController cleanly classifies client timeout without generic masking'
+    );
+
+    // 7b. Vercel non-JSON 504 Gateway Timeout
+    let vercel504Caught: AiServiceError | null = null;
+    try {
+      await agentService.sendMessage({
+        message: 'Test vercel 504',
+        history: [],
+        groundedContext: {},
+        preferredLanguage: 'auto',
+        fetchImpl: async () => new Response('FUNCTION_INVOCATION_TIMEOUT', { status: 504, headers: { 'content-type': 'text/plain' } })
+      });
+    } catch (e) {
+      vercel504Caught = e as AiServiceError;
+    }
+    assert(
+      vercel504Caught instanceof AiServiceError &&
+        vercel504Caught.category === 'timeout' &&
+        vercel504Caught.stage === 'vercel',
+      'Distinguishes Vercel 504 plain-text gateway timeout'
+    );
+
+    // 7c. Network error
+    let networkErrCaught: AiServiceError | null = null;
+    try {
+      await agentService.sendMessage({
+        message: 'Test offline',
+        history: [],
+        groundedContext: {},
+        preferredLanguage: 'auto',
+        fetchImpl: async () => {
+          throw new TypeError('Failed to fetch');
+        }
+      });
+    } catch (e) {
+      networkErrCaught = e as AiServiceError;
+    }
+    assert(
+      networkErrCaught instanceof AiServiceError && networkErrCaught.category === 'network_error',
+      'Classifies fetch connection drop as network_error'
+    );
+
+    // 7d. Duplicate in-flight assistant request coalescing
+    let networkCallCount = 0;
+    const delayedOkFetch: typeof fetch = async () => {
+      networkCallCount += 1;
+      await new Promise(r => setTimeout(r, 30));
+      return new Response(
+        JSON.stringify({ reply: 'Coalesced OK', detectedLanguage: 'en', requestId: 'req_dup_1' }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    };
+    const [r1, r2] = await Promise.all([
+      agentService.sendMessage({
+        message: 'Hello',
+        history: [],
+        groundedContext: {},
+        preferredLanguage: 'auto',
+        fetchImpl: delayedOkFetch
+      }),
+      agentService.sendMessage({
+        message: 'Hello',
+        history: [],
+        groundedContext: {},
+        preferredLanguage: 'auto',
+        fetchImpl: delayedOkFetch
+      })
+    ]);
+    assert(networkCallCount === 1 && r1.reply === 'Coalesced OK' && r2.reply === 'Coalesced OK', 'Prevents duplicate concurrent assistant requests');
   } finally {
     if (prevUrl !== undefined) process.env.VITE_SUPABASE_URL = prevUrl;
     else delete process.env.VITE_SUPABASE_URL;
@@ -408,9 +726,8 @@ async function runAiAgentTests() {
   assert(vercelRaw.includes("media-src 'self' blob: data:"), 'vercel.json permits blob/data WAV media playback in CSP');
   assert(vercelRaw.includes('maxDuration') && vercelRaw.includes('api/ai/*.ts'), 'vercel.json configures 60s maxDuration for AI functions');
 
-  const agentServiceSrc = fs.readFileSync(path.join(rootDir, 'src/services/ai/agentService.ts'), 'utf8');
-  assert(agentServiceSrc.includes('55000'), 'agentService configures 55s timeout for AI assistant and transcription');
-  assert(agentServiceSrc.includes('45000'), 'agentService configures 45s timeout for speech synthesis');
+  assert(FRONTEND_ASSISTANT_TIMEOUT_MS === 52000, 'Frontend assistant timeout aligns at 52s (> 42s server deadline)');
+  assert(FRONTEND_SPEAK_TIMEOUT_MS === 42000, 'Frontend speak timeout aligns at 42s (> 32s server deadline)');
 
   const viteCfgRaw = fs.readFileSync(path.join(rootDir, 'vite.config.ts'), 'utf8');
   assert(viteCfgRaw.includes('/^\\/api\\//'), 'vite.config.ts excludes /api/ routes from PWA navigateFallback');

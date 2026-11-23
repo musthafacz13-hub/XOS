@@ -36,20 +36,32 @@ async function startServer() {
   // Server-side Gemini AI endpoints (Bearer token verified inside handlers)
   app.post('/api/ai/assistant', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-    const result = await handleAssistantRequest(req.body, req.headers.authorization);
-    res.status(result.status).json(result.body);
+    try {
+      const result = await handleAssistantRequest(req.body, req.headers.authorization);
+      res.status(result.status).json(result.body);
+    } catch {
+      res.status(500).json({ error: 'Unexpected AI assistant server error.', code: 'server_error', category: 'server_error' });
+    }
   });
 
   app.post('/api/ai/transcribe', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-    const result = await handleTranscribeRequest(req.body, req.headers.authorization);
-    res.status(result.status).json(result.body);
+    try {
+      const result = await handleTranscribeRequest(req.body, req.headers.authorization);
+      res.status(result.status).json(result.body);
+    } catch {
+      res.status(500).json({ error: 'Unexpected voice transcription server error.', code: 'server_error', category: 'server_error' });
+    }
   });
 
   app.post('/api/ai/speak', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-    const result = await handleSpeakRequest(req.body, req.headers.authorization);
-    res.status(result.status).json(result.body);
+    try {
+      const result = await handleSpeakRequest(req.body, req.headers.authorization);
+      res.status(result.status).json(result.body);
+    } catch {
+      res.status(500).json({ error: 'Unexpected voice synthesis server error.', code: 'server_error', category: 'server_error' });
+    }
   });
 
   // Explicit 404 JSON for unknown /api/* routes

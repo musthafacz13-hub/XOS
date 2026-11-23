@@ -420,7 +420,7 @@ export function buildSelectiveXosContext(params: {
 
     const recentTransactions = [...targetExpenses]
       .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, 15)
+      .slice(0, 10)
       .map(e => ({
         title: e.title,
         amount: e.amount,
@@ -519,7 +519,7 @@ export function buildSelectiveXosContext(params: {
       },
       recentEntries: [...targetIncomes]
         .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(0, 12)
+        .slice(0, 8)
         .map(i => ({
           title: i.title,
           amount: i.amount,
@@ -555,7 +555,7 @@ export function buildSelectiveXosContext(params: {
 
     const recentRepayments = [...params.data.debtRepayments]
       .sort((a, b) => b.repayment_date.localeCompare(a.repayment_date))
-      .slice(0, 10)
+      .slice(0, 8)
       .map(r => {
         const parent = params.data.debts.find(d => d.id === r.debt_id);
         return {
@@ -576,7 +576,7 @@ export function buildSelectiveXosContext(params: {
       netDebtPosition: Number((totalToReceive - totalToPay).toFixed(2)),
       netDebtPositionFormatted: fmt(totalToReceive - totalToPay),
       receivableStats: receivableSummary,
-      debts: debtItems.slice(0, 20),
+      debts: debtItems.slice(0, 12),
       recentRepayments
     };
   }
@@ -600,7 +600,7 @@ export function buildSelectiveXosContext(params: {
       const recentAttendance = params.data.attendance
         .filter(r => r.date && r.date.startsWith(targetMonth))
         .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(0, 15)
+        .slice(0, 10)
         .map(r => ({
           date: r.date,
           status: r.status,
@@ -700,7 +700,7 @@ export function buildSelectiveXosContext(params: {
           totalSavedFormatted: fmt(goalTotals.totalSavedAmount),
           totalRemainingFormatted: fmt(goalTotals.totalRemainingAmount)
         },
-        items: resolvedGoals.slice(0, 20).map(item => ({
+        items: resolvedGoals.slice(0, 12).map(item => ({
           title: item.goal.title,
           category: item.goal.category,
           priority: item.goal.priority,
@@ -736,7 +736,7 @@ export function buildSelectiveXosContext(params: {
         totalDepositsFormatted: fmt(totalDeposits),
         totalWithdrawalsAllTime: Number(totalWithdrawals.toFixed(2)),
         totalWithdrawalsFormatted: fmt(totalWithdrawals),
-        activeReserves: activeSavingsGoals.slice(0, 20).map(sg => ({
+        activeReserves: activeSavingsGoals.slice(0, 12).map(sg => ({
           name: sg.name,
           currentAmount: sg.currentAmount,
           currentAmountFormatted: fmt(sg.currentAmount),
