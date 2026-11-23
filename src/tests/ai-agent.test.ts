@@ -560,7 +560,7 @@ async function runAiAgentTests() {
     );
     assert(modelMissingResp.status === 502 && modelMissingResp.body.category === 'model_unavailable', 'Reports model_unavailable when models are unavailable');
 
-    // 6g. Empty AI response -> 502 server_error
+    // 6g. Empty AI response -> 502 invalid_response
     const emptyReplyResp = await handleAssistantRequest(
       { message: 'Hi' },
       undefined,
@@ -572,9 +572,9 @@ async function runAiAgentTests() {
         })
       }
     );
-    assert(emptyReplyResp.status === 502 && emptyReplyResp.body.category === 'server_error', 'Rejects empty AI response with 502 server_error');
+    assert(emptyReplyResp.status === 502 && emptyReplyResp.body.category === 'invalid_response', 'Rejects empty AI response with 502 invalid_response');
 
-    // 6h. Transcribe & Speak timeout/success tests
+    // 6h. Transcribe & Speak timeout/success/invalid tests
     const transcribeTimeoutResp = await handleTranscribeRequest(
       { audioBase64: 'dGVzdA==', mimeType: 'audio/webm' },
       undefined,
@@ -612,10 +612,23 @@ async function runAiAgentTests() {
     );
     assert(speakOkResp.status === 200 && speakOkResp.body.mimeType === 'audio/wav', 'Speak handler returns audioBase64 and mimeType');
 
+    const speakEmptyResp = await handleSpeakRequest(
+      { text: 'Hello Ameen' },
+      undefined,
+      {
+        createClient: () => ({
+          models: {
+            generateContent: async () => ({ candidates: [] })
+          }
+        })
+      }
+    );
+    assert(speakEmptyResp.status === 502 && speakEmptyResp.body.category === 'invalid_response', 'Speak handler rejects empty TTS audio with 502 invalid_response');
+
     // ==========================================
-    // TEST 7: Frontend Service Timeouts, Non-JSON Gateway Errors & Duplicate Prevention
+    // TEST 7: Frontend Service Timeouts, Non-JSON Gateway Errors, Cancel vs Timeout & Duplicate Prevention
     // ==========================================
-    console.log('Test 7: Verifying frontend timeout, network failure, Vercel 504, and duplicate-request protection...');
+    console.log('Test 7: Verifying frontend timeout, cancel, HTML/non-JSON invalid_response, Vercel 504, and duplicate-request protection...');
 
     // 7a. Frontend timeout
     let frontendTimeoutCaught: AiServiceError | null = null;
@@ -645,6 +658,36 @@ async function runAiAgentTests() {
       'Frontend AbortController cleanly classifies client timeout without generic masking'
     );
 
+    // 7a-2. External abort signal -> cancelled (not timeout)
+    const externalCtrl = new AbortController();
+    let cancelledCaught: AiServiceError | null = null;
+    try {
+      setTimeout(() => externalCtrl.abort(), 15);
+      await agentService.sendMessage({
+        message: 'Test user cancel',
+        history: [],
+        groundedContext: {},
+        preferredLanguage: 'auto',
+        signal: externalCtrl.signal,
+        fetchImpl: (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              const err = new Error('Aborted');
+              err.name = 'AbortError';
+              reject(err);
+            });
+          })
+      });
+    } catch (e) {
+      cancelledCaught = e as AiServiceError;
+    }
+    assert(
+      cancelledCaught instanceof AiServiceError &&
+        cancelledCaught.category === 'cancelled' &&
+        cancelledCaught.code === 'cancelled',
+      'External AbortSignal classifies as cancelled rather than timeout'
+    );
+
     // 7b. Vercel non-JSON 504 Gateway Timeout
     let vercel504Caught: AiServiceError | null = null;
     try {
@@ -665,11 +708,46 @@ async function runAiAgentTests() {
       'Distinguishes Vercel 504 plain-text gateway timeout'
     );
 
-    // 7c. Network error
+    // 7b-2. HTML SPA fallback 200 or gateway HTML 500 -> invalid_response
+    let html200Caught: AiServiceError | null = null;
+    try {
+      await agentService.sendMessage({
+        message: 'Test html 200',
+        history: [],
+        groundedContext: {},
+        preferredLanguage: 'auto',
+        fetchImpl: async () => new Response('<!doctype html><html><body>XOS</body></html>', { status: 200, headers: { 'content-type': 'text/html' } })
+      });
+    } catch (e) {
+      html200Caught = e as AiServiceError;
+    }
+    assert(
+      html200Caught instanceof AiServiceError && html200Caught.category === 'invalid_response',
+      'Classifies HTML SPA fallback 200 response as invalid_response'
+    );
+
+    let html500Caught: AiServiceError | null = null;
+    try {
+      await agentService.sendMessage({
+        message: 'Test html 500',
+        history: [],
+        groundedContext: {},
+        preferredLanguage: 'auto',
+        fetchImpl: async () => new Response('<html>500 Error</html>', { status: 500, headers: { 'content-type': 'text/html' } })
+      });
+    } catch (e) {
+      html500Caught = e as AiServiceError;
+    }
+    assert(
+      html500Caught instanceof AiServiceError && html500Caught.category === 'invalid_response',
+      'Classifies non-JSON HTML 500 gateway error as invalid_response'
+    );
+
+    // 7c. Network error does not falsely blame user internet when navigator.onLine !== false
     let networkErrCaught: AiServiceError | null = null;
     try {
       await agentService.sendMessage({
-        message: 'Test offline',
+        message: 'Test connection drop',
         history: [],
         groundedContext: {},
         preferredLanguage: 'auto',
@@ -681,8 +759,10 @@ async function runAiAgentTests() {
       networkErrCaught = e as AiServiceError;
     }
     assert(
-      networkErrCaught instanceof AiServiceError && networkErrCaught.category === 'network_error',
-      'Classifies fetch connection drop as network_error'
+      networkErrCaught instanceof AiServiceError &&
+        networkErrCaught.category === 'network_error' &&
+        !networkErrCaught.message.includes('Check your internet connection'),
+      'Classifies fetch connection drop as network_error without misleading internet blame'
     );
 
     // 7d. Duplicate in-flight assistant request coalescing
@@ -720,6 +800,37 @@ async function runAiAgentTests() {
     if (prevGemini !== undefined) process.env.GEMINI_API_KEY = prevGemini;
     else delete process.env.GEMINI_API_KEY;
   }
+
+  // ESM .js relative import specifiers check for Vercel Node ESM runtime
+  const serverEsmFiles = [
+    'api/ai/assistant.ts',
+    'api/ai/transcribe.ts',
+    'api/ai/speak.ts',
+    'api/_lib/aiHandler.ts',
+    'server.ts'
+  ];
+  for (const relPath of serverEsmFiles) {
+    const content = fs.readFileSync(path.join(rootDir, relPath), 'utf8');
+    assert(!/from\s+['"]\.\.?\/[^'"]+\.ts['"]/.test(content), `Uses Node ESM .js specifier rather than .ts in ${relPath}`);
+  }
+
+  // Minimalist UI contract verification
+  const aiViewSrc = fs.readFileSync(path.join(rootDir, 'src/components/ai/AiAgentView.tsx'), 'utf8');
+  for (const requiredToken of [
+    'Read-only',
+    'Auto',
+    'English',
+    'മലയാളം',
+    'Monthly spending',
+    'ഈ മാസം എന്റെ ചെലവുകൾ',
+    'Salary and attendance',
+    'Debt and savings',
+    'Retry',
+    'Message XOS'
+  ]) {
+    assert(aiViewSrc.includes(requiredToken), `AiAgentView includes required minimalist UI element: ${requiredToken}`);
+  }
+  assert(!aiViewSrc.includes('Voice On') && !aiViewSrc.includes('Voice Muted') && !aiViewSrc.includes('Diagnostic Stage'), 'AiAgentView removes oversized telemetry badges and debug boxes');
 
   const vercelRaw = fs.readFileSync(path.join(rootDir, 'vercel.json'), 'utf8');
   assert(vercelRaw.includes('microphone=(self)'), 'vercel.json enables same-origin microphone permission');

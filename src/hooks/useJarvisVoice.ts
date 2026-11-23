@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { agentService, PreferredVoiceLanguage } from '../services/ai/agentService';
 
-export type JarvisVoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
+export type JarvisVoiceState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 export type MicPermissionState = 'prompt' | 'granted' | 'denied' | 'unsupported';
 
 interface SpeechRecognitionAlternativeLike {
@@ -399,8 +399,8 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
   const startMediaRecorderCapture = useCallback(async () => {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setMicPermission('unsupported');
-      setVoiceNotice('Microphone voice capture is not supported in this browser. You can type your question below.');
-      setVoiceState('idle');
+      setVoiceNotice('Voice capture is unavailable in this browser. Type your message below.');
+      setVoiceState('error');
       return;
     }
 
@@ -514,8 +514,8 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
           if (!mountedRef.current) return;
           const transcript = (res.transcript || '').trim();
           if (!transcript) {
-            setVoiceNotice('No clear speech detected. Tap the microphone and try again.');
-            setVoiceState('idle');
+            setVoiceNotice('No clear speech detected. Tap to speak again.');
+            setVoiceState('error');
             return;
           }
           await onTranscriptReadyRef.current(transcript);
@@ -523,7 +523,7 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
           if (!mountedRef.current) return;
           const message = err instanceof Error ? err.message : 'Unable to transcribe audio.';
           setVoiceNotice(message);
-          setVoiceState('idle');
+          setVoiceState('error');
         }
       };
 
@@ -540,11 +540,11 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
       const errName = (err as { name?: string })?.name || '';
       if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
         setMicPermission('denied');
-        setVoiceNotice('Microphone permission was denied. Allow mic access in your browser settings or type below.');
+        setVoiceNotice('Microphone access is blocked. Allow permission in browser settings.');
       } else {
-        setVoiceNotice('Could not access your microphone right now. You can type your question below.');
+        setVoiceNotice('Could not access microphone. You can type your message below.');
       }
-      setVoiceState('idle');
+      setVoiceState('error');
     }
   }, [accessToken, cleanupCaptureResources, voiceLanguage]);
 
@@ -593,8 +593,8 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
             settled = true;
             recognitionRef.current = null;
             setMicPermission('denied');
-            setVoiceNotice('Microphone permission is blocked. Enable access or type your question below.');
-            setVoiceState('idle');
+            setVoiceNotice('Microphone access is blocked. Allow permission in browser settings.');
+            setVoiceState('error');
             return;
           }
           if (code === 'language-not-supported' || code === 'network' || code === 'audio-capture') {
@@ -606,8 +606,8 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
           if (code === 'no-speech') {
             settled = true;
             recognitionRef.current = null;
-            setVoiceNotice('No speech heard. Tap the microphone to speak again.');
-            setVoiceState('idle');
+            setVoiceNotice('No speech heard. Tap to speak again.');
+            setVoiceState('error');
             return;
           }
           if (code !== 'aborted') {
@@ -661,7 +661,8 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
       startWebSpeechCapture('en-IN');
     } else {
       setMicPermission('unsupported');
-      setVoiceNotice('Voice input is not supported in this browser. Type your question below.');
+      setVoiceNotice('Voice input is unavailable in this browser. Type your message below.');
+      setVoiceState('error');
     }
   }, [startMediaRecorderCapture, startWebSpeechCapture, stopSpeaking, voiceLanguage]);
 
@@ -689,7 +690,7 @@ export function useJarvisVoice({ accessToken, onTranscriptReady }: UseJarvisVoic
     } else if (voiceStateRef.current === 'speaking') {
       stopSpeaking();
       startListening();
-    } else if (voiceStateRef.current === 'idle') {
+    } else if (voiceStateRef.current === 'idle' || voiceStateRef.current === 'error') {
       startListening();
     }
   }, [startListening, stopListening, stopSpeaking]);

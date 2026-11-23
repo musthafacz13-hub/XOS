@@ -1,4 +1,4 @@
-import { XOS_SYSTEM_SPECIFICATION } from '../../src/services/ai/xosKnowledge.ts';
+import { XOS_SYSTEM_SPECIFICATION } from '../../src/services/ai/xosKnowledge.js';
 import {
   AiErrorCategory,
   AiRequestStage,
@@ -10,7 +10,7 @@ import {
   getThinkingConfigForModel,
   TRANSCRIBE_MODEL,
   TTS_MODEL
-} from './gemini.ts';
+} from './gemini.js';
 
 export interface ConversationHistoryTurn {
   role: 'user' | 'model';
@@ -143,7 +143,7 @@ export async function verifySupabaseSessionToken(
   if (!token) {
     return {
       valid: false,
-      reason: 'Authentication required. Please sign in to use the AI Agent.',
+      reason: 'Your session has expired. Please sign in again.',
       authDurationMs: Date.now() - startedAt
     };
   }
@@ -168,7 +168,7 @@ export async function verifySupabaseSessionToken(
     if (!response.ok) {
       return {
         valid: false,
-        reason: 'Your session is invalid or expired. Please sign in again.',
+        reason: 'Your session has expired. Please sign in again.',
         authDurationMs: Date.now() - startedAt
       };
     }
@@ -177,7 +177,7 @@ export async function verifySupabaseSessionToken(
     if (!userJson?.id) {
       return {
         valid: false,
-        reason: 'Unable to verify authenticated user.',
+        reason: 'Your session has expired. Please sign in again.',
         authDurationMs: Date.now() - startedAt
       };
     }
@@ -192,7 +192,7 @@ export async function verifySupabaseSessionToken(
       valid: false,
       timedOut,
       reason: timedOut
-        ? 'Session verification timed out. Please try again.'
+        ? 'AI is taking longer than expected. Please try again.'
         : 'Unable to verify your session right now. Please try again.',
       authDurationMs: Date.now() - startedAt
     };
@@ -327,7 +327,7 @@ export async function handleAssistantRequest(
     return {
       status: 503,
       body: buildErrorBody({
-        error: 'Gemini AI backend key is not configured on the server.',
+        error: 'AI service is temporarily unavailable.',
         category: 'invalid_api_key',
         stage: 'config',
         requestId,
@@ -489,14 +489,14 @@ ${serializedContext}`;
         totalDurationMs,
         model: activeModel,
         status: 502,
-        errorCategory: 'server_error',
+        errorCategory: 'invalid_response',
         geminiErrorCode: 'EMPTY_RESPONSE'
       });
       return {
         status: 502,
         body: buildErrorBody({
-          error: 'AI returned an empty response. Please try again.',
-          category: 'server_error',
+          error: 'Received an unexpected response from the AI service. Please try again.',
+          category: 'invalid_response',
           stage: 'response',
           requestId,
           durationMs: totalDurationMs,
@@ -599,7 +599,7 @@ export async function handleTranscribeRequest(
     return {
       status: 503,
       body: buildErrorBody({
-        error: 'Gemini AI backend key is not configured for voice transcription.',
+        error: 'AI service is temporarily unavailable.',
         category: 'invalid_api_key',
         stage: 'config',
         requestId,
@@ -796,7 +796,7 @@ export async function handleSpeakRequest(
     return {
       status: 503,
       body: buildErrorBody({
-        error: 'Gemini AI backend key is not configured for voice playback.',
+        error: 'AI service is temporarily unavailable.',
         category: 'invalid_api_key',
         stage: 'config',
         requestId,
@@ -888,14 +888,14 @@ export async function handleSpeakRequest(
         totalDurationMs,
         model: TTS_MODEL,
         status: 502,
-        errorCategory: 'server_error',
+        errorCategory: 'invalid_response',
         geminiErrorCode: 'EMPTY_AUDIO'
       });
       return {
         status: 502,
         body: buildErrorBody({
-          error: 'Speech audio was not generated.',
-          category: 'server_error',
+          error: 'Received an unexpected response from the AI service. Please try again.',
+          category: 'invalid_response',
           stage: 'response',
           requestId,
           durationMs: totalDurationMs,

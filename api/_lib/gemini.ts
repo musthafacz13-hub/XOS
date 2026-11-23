@@ -17,6 +17,7 @@ export type AiErrorCategory =
   | 'timeout'
   | 'model_unavailable'
   | 'invalid_request'
+  | 'invalid_response'
   | 'server_error'
   | 'network_error';
 
@@ -114,7 +115,7 @@ export function classifyGeminiError(
       status: 504,
       category: 'timeout',
       geminiErrorCode: causeCode || 'DEADLINE_EXCEEDED',
-      userMessage: 'The AI service took too long to respond. Please try again.'
+      userMessage: 'AI is taking longer than expected. Please try again.'
     };
   }
 
@@ -130,7 +131,7 @@ export function classifyGeminiError(
       status: 502,
       category: 'invalid_api_key',
       geminiErrorCode: status === 403 ? 'PERMISSION_DENIED' : 'API_KEY_INVALID',
-      userMessage: 'AI service credentials are invalid or lack permission. Check the server Gemini API key configuration.'
+      userMessage: 'AI service is temporarily unavailable.'
     };
   }
 
@@ -143,7 +144,7 @@ export function classifyGeminiError(
       status: 502,
       category: 'model_unavailable',
       geminiErrorCode: 'MODEL_NOT_FOUND',
-      userMessage: 'The configured AI model is temporarily unavailable.'
+      userMessage: 'AI service is temporarily unavailable.'
     };
   }
 
@@ -159,7 +160,7 @@ export function classifyGeminiError(
         status: 429,
         category: 'quota_exceeded',
         geminiErrorCode: 'QUOTA_EXCEEDED',
-        userMessage: 'Gemini API quota has been exceeded for this project. Check API billing or quota limits.'
+        userMessage: 'AI service is temporarily unavailable.'
       };
     }
 
@@ -167,7 +168,7 @@ export function classifyGeminiError(
       status: 429,
       category: 'rate_limited',
       geminiErrorCode: 'RESOURCE_EXHAUSTED',
-      userMessage: 'AI request rate limit reached. Please wait a moment and try again.'
+      userMessage: 'AI service is busy right now. Please wait a moment and try again.'
     };
   }
 
@@ -176,7 +177,7 @@ export function classifyGeminiError(
       status: 400,
       category: 'invalid_request',
       geminiErrorCode: 'INVALID_ARGUMENT',
-      userMessage: 'The AI request format was rejected. Please rephrase your question and try again.'
+      userMessage: 'Could not process that request. Please rephrase and try again.'
     };
   }
 
@@ -193,7 +194,7 @@ export function classifyGeminiError(
       status: 502,
       category: 'network_error',
       geminiErrorCode: causeCode || 'NETWORK_FAILURE',
-      userMessage: 'Unable to connect to the Gemini API upstream network. Please try again shortly.'
+      userMessage: 'AI service is temporarily unavailable. Please try again.'
     };
   }
 
@@ -201,6 +202,6 @@ export function classifyGeminiError(
     status: status >= 500 && status <= 599 ? status : 502,
     category: 'server_error',
     geminiErrorCode: status ? `HTTP_${status}` : 'UPSTREAM_ERROR',
-    userMessage: 'The AI service encountered an upstream error. Please try again shortly.'
+    userMessage: 'AI service is temporarily unavailable. Please try again.'
   };
 }

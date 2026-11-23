@@ -1,4 +1,4 @@
-import { handleTranscribeRequest } from '../_lib/aiHandler.ts';
+import { handleTranscribeRequest } from '../_lib/aiHandler.js';
 
 interface VercelReq {
   method?: string;
@@ -13,6 +13,13 @@ interface VercelRes {
 }
 
 function normalizeBody(raw: unknown): unknown {
+  if (Buffer.isBuffer(raw)) {
+    try {
+      return JSON.parse(raw.toString('utf8'));
+    } catch {
+      return null;
+    }
+  }
   if (typeof raw === 'string') {
     try {
       return JSON.parse(raw);
@@ -45,7 +52,7 @@ export default async function handler(req: VercelReq, res: VercelRes): Promise<v
       error: err instanceof Error ? err.message : 'Unhandled error'
     }));
     res.status(500).json({
-      error: 'Unexpected server error while transcribing voice audio.',
+      error: 'AI service is temporarily unavailable. Please try again.',
       code: 'server_error',
       category: 'server_error',
       stage: 'vercel'

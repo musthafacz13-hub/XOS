@@ -6,7 +6,7 @@ import {
   handleAssistantRequest,
   handleSpeakRequest,
   handleTranscribeRequest
-} from './api/_lib/aiHandler.ts';
+} from './api/_lib/aiHandler.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -66,7 +66,18 @@ async function startServer() {
 
   // Explicit 404 JSON for unknown /api/* routes
   app.use('/api', (_req, res) => {
-    res.status(404).json({ error: 'API endpoint not found.', code: 'not_found' });
+    res.status(404).json({ error: 'API endpoint not found.', code: 'not_found', category: 'server_error' });
+  });
+
+  // Ensure JSON parse/body errors on /api/* return structured JSON instead of HTML
+  app.use('/api', (err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    const status = typeof (err as { status?: unknown })?.status === 'number' ? (err as { status: number }).status : 400;
+    res.status(status).json({
+      error: 'Invalid request payload.',
+      code: 'invalid_request',
+      category: 'invalid_request',
+      stage: 'validation'
+    });
   });
 
   if (!IS_PRODUCTION) {
