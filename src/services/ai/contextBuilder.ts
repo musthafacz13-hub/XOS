@@ -81,7 +81,8 @@ const MODULE_KEYWORDS: Record<XosModuleKey, string[]> = {
   debt: [
     'debt', 'debts', 'owe', 'owed', 'owes', 'lend', 'lent', 'borrow', 'borrowed', 'repay',
     'repayment', 'repayments', 'payable', 'receivable', 'loan', 'loans', 'credit',
-    'kadam', 'kadangal', 'kodukkan', 'tharan', 'baaki', 'thirichu', 'kittanund', 'kittanundu', 'kittanulla',
+    'kadam', 'kadangal', 'kodukkan', 'kodukkan ulla', 'kodukkan und', 'tharan', 'tharan ulla', 'tharan und',
+    'baaki', 'thirichu', 'kittanund', 'kittanundu', 'kittanulla', 'kittan ulla', 'kittan und', 'kittan undu', 'kittaan',
     'കടം', 'കടമ', 'കടങ്ങൾ', 'തരാൻ', 'തരാനുണ്ട്', 'കൊടുക്കാൻ', 'കൊടുക്കാനുണ്ട്',
     'കിട്ടാനുണ്ട്', 'കിട്ടാൻ', 'കിട്ടാനുള്ള', 'ബാക്കി', 'തിരിച്ചു', 'ലോൺ'
   ],

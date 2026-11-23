@@ -186,11 +186,6 @@ interface GroqChatResponseJson {
   error?: { message?: string; code?: string; type?: string };
 }
 
-interface GroqTranscribeResponseJson {
-  text?: unknown;
-  error?: { message?: string; code?: string; type?: string };
-}
-
 function safeParseJsonObject<T>(rawText: string): T | null {
   if (!rawText.trim()) return null;
   try {
@@ -271,11 +266,48 @@ const MIME_TO_EXT: Record<string, string> = {
   'audio/webm': 'webm',
   'audio/ogg': 'ogg',
   'audio/mp4': 'mp4',
+  'audio/m4a': 'm4a',
+  'audio/x-m4a': 'm4a',
+  'audio/aac': 'm4a',
   'audio/mpeg': 'mp3',
   'audio/mp3': 'mp3',
   'audio/wav': 'wav',
-  'audio/x-wav': 'wav'
+  'audio/x-wav': 'wav',
+  'audio/flac': 'flac',
+  'audio/x-flac': 'flac'
 };
+
+const WHISPER_PROMPTS: Record<'auto' | 'ml-IN' | 'en-IN', string> = {
+  'ml-IN':
+    'Kerala Malayalam and Manglish personal finance question about expense, income, debt, savings, salary, attendance, goals, ചെലവ്, വരവ്, കടം, ശമ്പളം, പൈസ.',
+  'en-IN':
+    'Indian English personal finance question about expenses, income, debt, savings, salary, attendance, and financial goals.',
+  auto:
+    'Malayalam, Manglish, or Indian English personal finance question: expense, income, debt, savings, salary, attendance, ചെലവ്, വരവ്, കടം, ശമ്പളം.'
+};
+
+const ALLOWED_AUTO_WHISPER_LANGUAGES = new Set([
+  'ml',
+  'malayalam',
+  'en',
+  'english'
+]);
+
+const WHISPER_SILENCE_HALLUCINATIONS = [
+  'thank you for watching',
+  'thanks for watching',
+  'subtitles by',
+  'amara.org',
+  'please subscribe',
+  'you'
+];
+
+export interface GroqTranscriptionResult {
+  transcript: string;
+  model: string;
+  detectedLanguage?: string;
+  rejectionReason?: 'no_speech' | 'unsupported_detected_language';
+}
 
 export async function callGroqTranscription(params: {
   apiKey: string;
@@ -284,10 +316,11 @@ export async function callGroqTranscription(params: {
   preferredLanguage?: 'auto' | 'ml-IN' | 'en-IN';
   abortSignal: AbortSignal;
   fetchImpl?: typeof fetch;
-}): Promise<{ transcript: string; model: string }> {
+}): Promise<GroqTranscriptionResult> {
   const fetchFn = params.fetchImpl ?? fetch;
   const baseMime = params.mimeType.split(';')[0].trim().toLowerCase() || 'audio/webm';
   const ext = MIME_TO_EXT[baseMime] || 'webm';
+  const prefLang = params.preferredLanguage || 'ml-IN';
 
   const buffer = Buffer.from(params.audioBase64, 'base64');
   const blob = new Blob([buffer], { type: baseMime });
@@ -295,11 +328,12 @@ export async function callGroqTranscription(params: {
   const form = new FormData();
   form.append('file', blob, `voice-query.${ext}`);
   form.append('model', GROQ_TRANSCRIBE_MODEL);
-  form.append('response_format', 'json');
+  form.append('response_format', 'verbose_json');
   form.append('temperature', '0');
-  if (params.preferredLanguage === 'ml-IN') {
+  form.append('prompt', WHISPER_PROMPTS[prefLang] || WHISPER_PROMPTS['ml-IN']);
+  if (prefLang === 'ml-IN') {
     form.append('language', 'ml');
-  } else if (params.preferredLanguage === 'en-IN') {
+  } else if (prefLang === 'en-IN') {
     form.append('language', 'en');
   }
 
@@ -317,10 +351,22 @@ export async function callGroqTranscription(params: {
     throw new GroqApiError(classifyGroqError(err, params.abortSignal.aborted));
   }
 
-  let parsed: GroqTranscribeResponseJson | null = null;
+  interface GroqVerboseTranscribeJson {
+    text?: unknown;
+    language?: unknown;
+    duration?: unknown;
+    segments?: Array<{
+      no_speech_prob?: unknown;
+      avg_logprob?: unknown;
+      text?: unknown;
+    }>;
+    error?: { message?: string; code?: string; type?: string };
+  }
+
+  let parsed: GroqVerboseTranscribeJson | null = null;
   try {
     const rawText = await response.text();
-    parsed = safeParseJsonObject<GroqTranscribeResponseJson>(rawText);
+    parsed = safeParseJsonObject<GroqVerboseTranscribeJson>(rawText);
   } catch {
     parsed = null;
   }
@@ -336,9 +382,50 @@ export async function callGroqTranscription(params: {
     );
   }
 
-  const transcript = typeof parsed?.text === 'string' ? parsed.text.trim() : '';
+  const rawTranscript = typeof parsed?.text === 'string' ? parsed.text.trim() : '';
+  const detectedLanguage =
+    typeof parsed?.language === 'string' ? parsed.language.trim().toLowerCase() : undefined;
+  const segments = Array.isArray(parsed?.segments) ? parsed.segments : [];
+
+  const avgNoSpeechProb =
+    segments.length > 0
+      ? segments.reduce((acc, seg) => acc + (typeof seg.no_speech_prob === 'number' ? seg.no_speech_prob : 0), 0) /
+        segments.length
+      : 0;
+
+  // Reject pure silence or known Whisper silent boilerplate hallucinations
+  if (
+    !rawTranscript ||
+    (segments.length > 0 && segments.every(seg => typeof seg.no_speech_prob === 'number' && seg.no_speech_prob >= 0.88)) ||
+    (avgNoSpeechProb >= 0.6 &&
+      WHISPER_SILENCE_HALLUCINATIONS.some(phrase => rawTranscript.toLowerCase().replace(/[.!,?]/g, '').trim() === phrase))
+  ) {
+    return {
+      transcript: '',
+      model: GROQ_TRANSCRIBE_MODEL,
+      detectedLanguage,
+      rejectionReason: 'no_speech'
+    };
+  }
+
+  // Prevent unrelated languages (e.g., Spanish/French) in 'auto' mode
+  if (
+    prefLang === 'auto' &&
+    detectedLanguage &&
+    !ALLOWED_AUTO_WHISPER_LANGUAGES.has(detectedLanguage) &&
+    !/[\u0D00-\u0D7F]/.test(rawTranscript)
+  ) {
+    return {
+      transcript: '',
+      model: GROQ_TRANSCRIBE_MODEL,
+      detectedLanguage,
+      rejectionReason: 'unsupported_detected_language'
+    };
+  }
+
   return {
-    transcript,
-    model: GROQ_TRANSCRIBE_MODEL
+    transcript: rawTranscript,
+    model: GROQ_TRANSCRIBE_MODEL,
+    detectedLanguage
   };
 }

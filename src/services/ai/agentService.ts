@@ -76,6 +76,9 @@ export interface AssistantReplyResult {
 
 export interface TranscribeResult {
   transcript: string;
+  provider?: 'groq' | 'gemini';
+  fallbackUsed?: boolean;
+  detectedLanguage?: string;
   requestId?: string;
   model?: string;
   durationMs?: number;
@@ -84,6 +87,7 @@ export interface TranscribeResult {
 export interface SpeakResult {
   audioBase64: string;
   mimeType: string;
+  provider?: string;
   requestId?: string;
   model?: string;
   durationMs?: number;
@@ -118,7 +122,7 @@ function normalizeErrorCategory(rawCode: unknown, status: number): AiServiceErro
   if (status === 429) return 'rate_limited';
   if (status === 504 || status === 524 || status === 408) return 'timeout';
   if (status === 404) return 'model_unavailable';
-  if (status === 400 || status === 413) return 'invalid_request';
+  if (status === 400 || status === 413 || status === 422) return 'invalid_request';
   if (status === 503) return 'invalid_api_key';
   return 'server_error';
 }
@@ -412,6 +416,16 @@ let inFlightAssistantRequest: {
   promise: Promise<AssistantReplyResult>;
 } | null = null;
 
+let inFlightTranscribeRequest: {
+  key: string;
+  promise: Promise<TranscribeResult>;
+} | null = null;
+
+let inFlightSpeakRequest: {
+  key: string;
+  promise: Promise<SpeakResult>;
+} | null = null;
+
 export const agentService = {
   async sendMessage(params: {
     message: string;
@@ -478,29 +492,45 @@ export const agentService = {
     timeoutMs?: number;
     signal?: AbortSignal;
   }): Promise<TranscribeResult> {
-    const data = await postAiEndpoint<TranscribeResult>(
-      '/api/ai/transcribe',
-      {
-        audioBase64: params.audioBase64,
-        mimeType: params.mimeType,
-        preferredLanguage: params.preferredLanguage
-      },
-      params.accessToken,
-      {
-        fetchImpl: params.fetchImpl,
-        timeoutMs: params.timeoutMs ?? FRONTEND_TRANSCRIBE_TIMEOUT_MS,
-        externalSignal: params.signal
-      }
-    );
-
-    if (!data || typeof data.transcript !== 'string') {
-      throw new AiServiceError(
-        getHumanReadableErrorMessage('invalid_response'),
-        'invalid_response',
-        { status: 502, stage: 'response', requestId: data?.requestId }
-      );
+    const requestKey = `${params.preferredLanguage}:${params.mimeType}:${params.audioBase64.length}:${params.audioBase64.slice(0, 48)}`;
+    if (inFlightTranscribeRequest && inFlightTranscribeRequest.key === requestKey) {
+      return inFlightTranscribeRequest.promise;
     }
-    return data;
+
+    const requestPromise = (async () => {
+      const data = await postAiEndpoint<TranscribeResult>(
+        '/api/ai/transcribe',
+        {
+          audioBase64: params.audioBase64,
+          mimeType: params.mimeType,
+          preferredLanguage: params.preferredLanguage
+        },
+        params.accessToken,
+        {
+          fetchImpl: params.fetchImpl,
+          timeoutMs: params.timeoutMs ?? FRONTEND_TRANSCRIBE_TIMEOUT_MS,
+          externalSignal: params.signal
+        }
+      );
+
+      if (!data || typeof data.transcript !== 'string') {
+        throw new AiServiceError(
+          getHumanReadableErrorMessage('invalid_response'),
+          'invalid_response',
+          { status: 502, stage: 'response', requestId: data?.requestId }
+        );
+      }
+      return data;
+    })();
+
+    inFlightTranscribeRequest = { key: requestKey, promise: requestPromise };
+    try {
+      return await requestPromise;
+    } finally {
+      if (inFlightTranscribeRequest?.promise === requestPromise) {
+        inFlightTranscribeRequest = null;
+      }
+    }
   },
 
   async synthesizeSpeech(params: {
@@ -511,27 +541,43 @@ export const agentService = {
     timeoutMs?: number;
     signal?: AbortSignal;
   }): Promise<SpeakResult> {
-    const data = await postAiEndpoint<SpeakResult>(
-      '/api/ai/speak',
-      {
-        text: params.text,
-        languageHint: params.languageHint
-      },
-      params.accessToken,
-      {
-        fetchImpl: params.fetchImpl,
-        timeoutMs: params.timeoutMs ?? FRONTEND_SPEAK_TIMEOUT_MS,
-        externalSignal: params.signal
-      }
-    );
-
-    if (!data || typeof data.audioBase64 !== 'string' || !data.audioBase64.trim()) {
-      throw new AiServiceError(
-        getHumanReadableErrorMessage('invalid_response'),
-        'invalid_response',
-        { status: 502, stage: 'response', requestId: data?.requestId }
-      );
+    const requestKey = `${params.languageHint || 'auto'}:${params.text.trim()}`;
+    if (inFlightSpeakRequest && inFlightSpeakRequest.key === requestKey) {
+      return inFlightSpeakRequest.promise;
     }
-    return data;
+
+    const requestPromise = (async () => {
+      const data = await postAiEndpoint<SpeakResult>(
+        '/api/ai/speak',
+        {
+          text: params.text,
+          languageHint: params.languageHint
+        },
+        params.accessToken,
+        {
+          fetchImpl: params.fetchImpl,
+          timeoutMs: params.timeoutMs ?? FRONTEND_SPEAK_TIMEOUT_MS,
+          externalSignal: params.signal
+        }
+      );
+
+      if (!data || typeof data.audioBase64 !== 'string' || !data.audioBase64.trim()) {
+        throw new AiServiceError(
+          getHumanReadableErrorMessage('invalid_response'),
+          'invalid_response',
+          { status: 502, stage: 'response', requestId: data?.requestId }
+        );
+      }
+      return data;
+    })();
+
+    inFlightSpeakRequest = { key: requestKey, promise: requestPromise };
+    try {
+      return await requestPromise;
+    } finally {
+      if (inFlightSpeakRequest?.promise === requestPromise) {
+        inFlightSpeakRequest = null;
+      }
+    }
   }
 };

@@ -95,10 +95,16 @@ const ALLOWED_AUDIO_MIME_TYPES = new Set([
   'audio/ogg',
   'audio/ogg;codecs=opus',
   'audio/mp4',
+  'audio/mp4;codecs=mp4a.40.2',
+  'audio/m4a',
+  'audio/x-m4a',
+  'audio/aac',
   'audio/mpeg',
   'audio/mp3',
   'audio/wav',
-  'audio/x-wav'
+  'audio/x-wav',
+  'audio/flac',
+  'audio/x-flac'
 ]);
 
 function createRequestId(): string {
@@ -857,6 +863,8 @@ export async function handleTranscribeRequest(
   const audioBase64 = typeof body.audioBase64 === 'string' ? body.audioBase64.trim() : '';
   const mimeTypeRaw = typeof body.mimeType === 'string' ? body.mimeType.trim().toLowerCase() : 'audio/webm';
   const baseMime = mimeTypeRaw.split(';')[0].trim();
+  const preferredLanguage: 'auto' | 'ml-IN' | 'en-IN' =
+    body.preferredLanguage === 'en-IN' || body.preferredLanguage === 'auto' ? body.preferredLanguage : 'ml-IN';
 
   if (!audioBase64) {
     return {
@@ -874,7 +882,7 @@ export async function handleTranscribeRequest(
     return {
       status: 400,
       body: buildErrorBody({
-        error: 'Audio clip is too large. Keep voice queries under 40 seconds.',
+        error: 'Audio clip is too large. Keep voice queries concise.',
         category: 'invalid_request',
         stage: 'validation',
         requestId,
@@ -895,12 +903,31 @@ export async function handleTranscribeRequest(
     };
   }
 
+  let decodedByteLength = 0;
+  try {
+    decodedByteLength = Buffer.from(audioBase64, 'base64').byteLength;
+  } catch {
+    decodedByteLength = 0;
+  }
+  if (decodedByteLength < 64) {
+    return {
+      status: 400,
+      body: buildErrorBody({
+        error: 'Audio recording is invalid or too short.',
+        category: 'invalid_request',
+        stage: 'validation',
+        requestId,
+        durationMs: Date.now() - startTime
+      })
+    };
+  }
+
   const langHint =
-    body.preferredLanguage === 'ml-IN'
-      ? 'The speaker is likely speaking Malayalam (or Malayalam mixed with English finance terms).'
-      : body.preferredLanguage === 'en-IN'
-        ? 'The speaker is likely speaking English (Indian English) or mixed Malayalam-English.'
-        : 'The speaker may be speaking English, Malayalam, or natural Malayalam-English code-mixed speech.';
+    preferredLanguage === 'ml-IN'
+      ? 'The speaker is likely speaking Malayalam or Manglish (preserve Malayalam words in Malayalam script or Manglish, and keep English finance words like expense, income, debt, savings, salary as spoken; never translate into English or unrelated languages).'
+      : preferredLanguage === 'en-IN'
+        ? 'The speaker is likely speaking Indian English (or Malayalam-English finance terms). Transcribe strictly in English/Malayalam; never output unrelated languages like Spanish or French.'
+        : 'The speaker is speaking Malayalam, Manglish, or Indian English. Preserve spoken Malayalam/Manglish/English accurately; never output unrelated languages like Spanish or French.';
 
   const clientFactory = deps.createClient ?? ((k: string, t: number) => createGeminiClient(k, t));
   const groqFetchFn = deps.groqFetchImpl ?? deps.fetchImpl;
@@ -932,7 +959,7 @@ export async function handleTranscribeRequest(
             }
           },
           {
-            text: `Transcribe the spoken audio verbatim into text. ${langHint} Use Malayalam script for Malayalam words and English letters for English words. Output ONLY the clean transcript text with no explanation, labels, or quotes. If there is only silence or noise, return an empty string.`
+            text: `Transcribe the spoken audio verbatim into text. ${langHint} Output ONLY the clean transcript text with no explanation, labels, or quotes. If there is only silence or noise, return an empty string.`
           }
         ]
       },
@@ -945,17 +972,22 @@ export async function handleTranscribeRequest(
 
   try {
     let transcript = '';
+    let detectedLanguage: string | undefined;
+    let rejectionReason: 'no_speech' | 'unsupported_detected_language' | undefined;
+
     if (groqApiKey) {
       try {
         const res = await callGroqTranscription({
           apiKey: groqApiKey,
           audioBase64,
           mimeType: baseMime,
-          preferredLanguage: body.preferredLanguage,
+          preferredLanguage,
           abortSignal: serverController.signal,
           fetchImpl: groqFetchFn
         });
         transcript = res.transcript;
+        detectedLanguage = res.detectedLanguage;
+        rejectionReason = res.rejectionReason;
       } catch (groqErr) {
         const groqClassified =
           groqErr instanceof GroqApiError
@@ -982,6 +1014,35 @@ export async function handleTranscribeRequest(
     const geminiDurationMs = Date.now() - geminiStart;
     const totalDurationMs = Date.now() - startTime;
 
+    if (rejectionReason === 'unsupported_detected_language') {
+      logDiagnostic('warn', {
+        event: 'ai_transcribe_language_rejected',
+        requestId,
+        endpoint,
+        stage: 'response',
+        provider: activeProvider,
+        fallbackUsed,
+        authDurationMs: authCheck.authDurationMs,
+        providerDurationMs: geminiDurationMs,
+        totalDurationMs,
+        model: activeModel,
+        status: 422,
+        errorCategory: 'invalid_request'
+      });
+      return {
+        status: 422,
+        body: buildErrorBody({
+          error: 'Could not recognize Malayalam or English speech clearly. Select Malayalam or English and try again.',
+          category: 'invalid_request',
+          stage: activeProvider,
+          provider: activeProvider,
+          requestId,
+          durationMs: totalDurationMs,
+          model: activeModel
+        })
+      };
+    }
+
     logDiagnostic('info', {
       event: 'ai_transcribe_success',
       requestId,
@@ -1002,6 +1063,7 @@ export async function handleTranscribeRequest(
         transcript,
         provider: activeProvider,
         fallbackUsed,
+        ...(detectedLanguage ? { detectedLanguage } : {}),
         requestId,
         model: activeModel,
         durationMs: totalDurationMs

@@ -2,10 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUp,
   Mic,
+  Pause,
+  Play,
   RotateCcw,
   Square,
   Volume2,
-  VolumeX
+  VolumeX,
+  X
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { JarvisVoiceState, useJarvisVoice } from '../../hooks/useJarvisVoice';
@@ -20,6 +23,7 @@ import {
   SessionTurnMemory,
   XOSReadOnlySnapshot
 } from '../../services/ai/contextBuilder';
+import { formatRecordingDuration } from '../../services/ai/voiceUtils';
 import { XosModuleKey } from '../../services/ai/xosKnowledge';
 import { repository } from '../../services/repository';
 import { isSupabaseConfigured } from '../../services/supabase';
@@ -60,9 +64,9 @@ const QUICK_PROMPTS: Array<{ label: string; query: string }> = [
 ];
 
 const LANGUAGE_OPTIONS: Array<{ id: PreferredVoiceLanguage; label: string }> = [
-  { id: 'auto', label: 'Auto' },
+  { id: 'ml-IN', label: 'മലയാളം' },
   { id: 'en-IN', label: 'English' },
-  { id: 'ml-IN', label: 'മലയാളം' }
+  { id: 'auto', label: 'Auto' }
 ];
 
 function createMessageId(): string {
@@ -112,14 +116,17 @@ export const AiAgentView: React.FC = () => {
   }, [inputText, syncTextareaHeight]);
 
   const handleSubmitQuery = useCallback(
-    async (rawQuery: string, viaVoice: boolean = false, isRetry: boolean = false) => {
+    async (rawQuery: string, isRetry: boolean = false) => {
       const cleanQuery = rawQuery.trim();
       if (!cleanQuery || isSubmittingRef.current) return;
+
+      // Prime audio element & AudioContext synchronously while user gesture is active
+      voiceRef.current?.unlockAudioFromUserGesture();
+      voiceRef.current?.clearVoiceReview();
 
       isSubmittingRef.current = true;
       setIsSubmitting(true);
       setErrorNotice(null);
-      voiceRef.current?.setVoiceNotice(null);
       voiceRef.current?.stopSpeaking();
       voiceRef.current?.setVoiceState('thinking');
 
@@ -153,9 +160,7 @@ export const AiAgentView: React.FC = () => {
         setMessages(prev => [...prev, userMessage]);
       }
 
-      if (!viaVoice) {
-        setInputText('');
-      }
+      setInputText('');
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -213,7 +218,7 @@ export const AiAgentView: React.FC = () => {
           message: cleanQuery,
           history: recentHistory,
           groundedContext: selective.groundedContext,
-          preferredLanguage: voiceRef.current?.voiceLanguage || 'auto',
+          preferredLanguage: voiceRef.current?.voiceLanguage || 'ml-IN',
           accessToken,
           signal: controller.signal
         });
@@ -230,6 +235,7 @@ export const AiAgentView: React.FC = () => {
         };
 
         setMessages(prev => [...prev, assistantMessage]);
+        voiceRef.current?.setVoiceState('idle');
         await voiceRef.current?.speakResponse(
           result.reply,
           assistantMsgId,
@@ -237,9 +243,9 @@ export const AiAgentView: React.FC = () => {
         );
       } catch (err) {
         if (!mountedRef.current) return;
+        voiceRef.current?.setVoiceState('idle');
         if (err instanceof AiServiceError) {
           if (err.code === 'cancelled') {
-            voiceRef.current?.setVoiceState('idle');
             return;
           }
           setErrorNotice({
@@ -255,7 +261,6 @@ export const AiAgentView: React.FC = () => {
             retryable: true
           });
         }
-        voiceRef.current?.setVoiceState('error');
       } finally {
         if (abortControllerRef.current === controller) {
           abortControllerRef.current = null;
@@ -269,10 +274,14 @@ export const AiAgentView: React.FC = () => {
     [accessToken, user?.id]
   );
 
+  // Never auto-submit unreviewed voice transcription; place into editable composer for review
   const voice = useJarvisVoice({
     accessToken,
-    onTranscriptReady: async (transcript) => {
-      await handleSubmitQuery(transcript, true);
+    onTranscriptReady: (transcript) => {
+      setInputText(transcript);
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+      });
     }
   });
 
@@ -286,9 +295,9 @@ export const AiAgentView: React.FC = () => {
 
   const handleResetSession = () => {
     abortControllerRef.current?.abort();
+    voice.cancelRecording();
     voice.clearCachedAudio();
     voice.setVoiceState('idle');
-    voice.setVoiceNotice(null);
     setErrorNotice(null);
     setMessages([]);
     setInputText('');
@@ -296,7 +305,7 @@ export const AiAgentView: React.FC = () => {
 
   const handleRetryFailedQuery = () => {
     if (!errorNotice?.failedQuery || isSubmitting) return;
-    void handleSubmitQuery(errorNotice.failedQuery, false, true);
+    void handleSubmitQuery(errorNotice.failedQuery, true);
   };
 
   const submitTextMessage = () => {
@@ -317,25 +326,40 @@ export const AiAgentView: React.FC = () => {
     }
   };
 
+  const isRecordingOrListening =
+    voice.inputPhase === 'listening' || voice.inputPhase === 'recording';
+  const isTranscribing = voice.inputPhase === 'processing';
+
   const effectiveVoiceState: JarvisVoiceState = useMemo(() => {
     if (errorNotice && voice.voiceState === 'idle') return 'error';
     return voice.voiceState;
   }, [errorNotice, voice.voiceState]);
 
   const statusText = useMemo(() => {
-    switch (effectiveVoiceState) {
-      case 'listening':
-        return voice.liveTranscript || 'Listening…';
-      case 'thinking':
-        return 'Processing…';
-      case 'speaking':
-        return voice.isMuted ? 'Muted' : 'Speaking…';
-      case 'error':
-        return 'Tap to try again';
-      default:
-        return 'Tap to speak';
+    if (voice.inputPhase === 'listening') return 'Starting mic…';
+    if (voice.inputPhase === 'recording') {
+      return voice.liveTranscript
+        ? voice.liveTranscript
+        : `Recording ${formatRecordingDuration(voice.recordingDurationMs)}`;
     }
-  }, [effectiveVoiceState, voice.isMuted, voice.liveTranscript]);
+    if (voice.inputPhase === 'processing') return 'Transcribing…';
+    if (voice.inputPhase === 'completed') return 'Review transcript & Send';
+    if (voice.inputPhase === 'failed') return 'Tap to try again';
+    if (isSubmitting || voice.playbackPhase === 'generating') return 'Preparing audio…';
+    if (voice.playbackPhase === 'playing') return voice.isMuted ? 'Muted' : 'Playing response';
+    if (voice.playbackPhase === 'paused') return 'Audio paused';
+    if (voice.playbackPhase === 'blocked') return 'Tap Play to hear Jarvis';
+    if (errorNotice) return 'Tap to try again';
+    return 'Tap to speak';
+  }, [
+    errorNotice,
+    isSubmitting,
+    voice.inputPhase,
+    voice.isMuted,
+    voice.liveTranscript,
+    voice.playbackPhase,
+    voice.recordingDurationMs
+  ]);
 
   const latestAssistantMessage = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -344,7 +368,12 @@ export const AiAgentView: React.FC = () => {
     return null;
   }, [messages]);
 
-  const activeErrorMessage = errorNotice?.message || voice.voiceNotice || null;
+  const activeBannerMessage =
+    errorNotice?.message ||
+    voice.voiceError ||
+    voice.playbackError ||
+    voice.playbackNotice ||
+    null;
   const activeErrorRefId = errorNotice?.requestId;
 
   return (
@@ -368,8 +397,8 @@ export const AiAgentView: React.FC = () => {
                   key={opt.id}
                   type="button"
                   onClick={() => voice.setVoiceLanguage(opt.id)}
-                  disabled={voice.voiceState === 'listening' || isSubmitting}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap min-h-[30px] disabled:opacity-60 ${
+                  disabled={isRecordingOrListening || isTranscribing || isSubmitting}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap min-h-[32px] disabled:opacity-60 ${
                     active
                       ? 'bg-white text-[#111111] shadow-2xs'
                       : 'text-neutral-500 hover:text-[#111111]'
@@ -384,7 +413,7 @@ export const AiAgentView: React.FC = () => {
           <button
             type="button"
             onClick={voice.toggleMute}
-            className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-neutral-500 hover:text-[#111111] hover:bg-neutral-100 transition-colors cursor-pointer"
+            className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-neutral-500 hover:text-[#111111] hover:bg-neutral-100 transition-colors cursor-pointer"
             aria-label={voice.isMuted ? 'Unmute voice output' : 'Mute voice output'}
             title={voice.isMuted ? 'Voice muted' : 'Voice enabled'}
           >
@@ -400,7 +429,7 @@ export const AiAgentView: React.FC = () => {
               type="button"
               onClick={handleResetSession}
               disabled={isSubmitting}
-              className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-neutral-500 hover:text-[#111111] hover:bg-neutral-100 transition-colors cursor-pointer disabled:opacity-40"
+              className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-neutral-500 hover:text-[#111111] hover:bg-neutral-100 transition-colors cursor-pointer disabled:opacity-40"
               aria-label="New conversation"
               title="New conversation"
             >
@@ -417,14 +446,14 @@ export const AiAgentView: React.FC = () => {
             state={effectiveVoiceState}
             audioLevel={voice.audioLevel}
             onPress={voice.toggleMicrophone}
-            disabled={isSubmitting && voice.voiceState === 'thinking'}
+            disabled={(isSubmitting || isTranscribing) && voice.voiceState === 'thinking'}
             size="md"
           />
 
-          <div className="space-y-1.5 max-w-sm px-2">
+          <div className="space-y-2 max-w-sm px-2">
             <p
-              className={`text-sm font-medium transition-colors ${
-                effectiveVoiceState === 'listening' || effectiveVoiceState === 'speaking'
+              className={`text-sm font-medium tabular-nums transition-colors ${
+                isRecordingOrListening || voice.playbackPhase === 'playing'
                   ? 'text-[#0284C7]'
                   : effectiveVoiceState === 'error'
                     ? 'text-rose-600'
@@ -434,15 +463,46 @@ export const AiAgentView: React.FC = () => {
               {statusText}
             </p>
 
-            {effectiveVoiceState === 'speaking' && (
-              <button
-                type="button"
-                onClick={voice.stopSpeaking}
-                className="inline-flex items-center gap-1 text-xs font-medium text-[#0284C7] hover:text-[#0369A1] cursor-pointer py-1"
-              >
-                <Square className="w-3 h-3 fill-current" />
-                <span>Stop</span>
-              </button>
+            {(isRecordingOrListening || isTranscribing) && (
+              <div className="flex items-center justify-center gap-2">
+                {isRecordingOrListening && (
+                  <button
+                    type="button"
+                    onClick={voice.stopListening}
+                    className="px-3 py-1.5 rounded-lg bg-[#0284C7] text-white text-xs font-medium hover:bg-[#0369A1] cursor-pointer min-h-[36px]"
+                  >
+                    Stop & Transcribe
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={voice.cancelRecording}
+                  className="px-3 py-1.5 rounded-lg border border-black/[0.08] text-xs font-medium text-neutral-600 hover:text-[#111111] cursor-pointer min-h-[36px]"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {voice.playbackPhase === 'playing' && (
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={voice.pausePlayback}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#0284C7] hover:bg-sky-50 cursor-pointer min-h-[36px]"
+                >
+                  <Pause className="w-3.5 h-3.5" />
+                  <span>Pause</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={voice.stopSpeaking}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-600 hover:bg-neutral-100 cursor-pointer min-h-[36px]"
+                >
+                  <Square className="w-3 h-3 fill-current" />
+                  <span>Stop</span>
+                </button>
+              </div>
             )}
           </div>
 
@@ -452,7 +512,7 @@ export const AiAgentView: React.FC = () => {
               <button
                 key={item.label}
                 type="button"
-                disabled={isSubmitting}
+                disabled={isSubmitting || isRecordingOrListening || isTranscribing}
                 onClick={() => void handleSubmitQuery(item.query, false)}
                 className="px-3.5 py-2 rounded-full border border-black/[0.08] bg-white hover:border-[#0284C7]/50 hover:text-[#0284C7] text-xs font-medium text-neutral-700 transition-colors cursor-pointer disabled:opacity-50 min-h-[38px]"
               >
@@ -470,12 +530,12 @@ export const AiAgentView: React.FC = () => {
                 state={effectiveVoiceState}
                 audioLevel={voice.audioLevel}
                 onPress={voice.toggleMicrophone}
-                disabled={isSubmitting && voice.voiceState === 'thinking'}
+                disabled={(isSubmitting || isTranscribing) && voice.voiceState === 'thinking'}
                 size="sm"
               />
               <span
-                className={`text-xs font-medium truncate ${
-                  effectiveVoiceState === 'listening' || effectiveVoiceState === 'speaking'
+                className={`text-xs font-medium truncate tabular-nums ${
+                  isRecordingOrListening || voice.playbackPhase === 'playing'
                     ? 'text-[#0284C7]'
                     : effectiveVoiceState === 'error'
                       ? 'text-rose-600'
@@ -487,32 +547,72 @@ export const AiAgentView: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
-              {effectiveVoiceState === 'speaking' && (
+              {isRecordingOrListening && (
+                <>
+                  <button
+                    type="button"
+                    onClick={voice.stopListening}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#0284C7] hover:bg-sky-50 cursor-pointer min-h-[36px]"
+                  >
+                    Done
+                  </button>
+                  <button
+                    type="button"
+                    onClick={voice.cancelRecording}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-500 hover:bg-neutral-100 cursor-pointer min-h-[36px]"
+                  >
+                    Cancel
+                  </button>
+                </>
+              )}
+              {isTranscribing && (
                 <button
                   type="button"
-                  onClick={voice.stopSpeaking}
-                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#0284C7] hover:bg-sky-50 cursor-pointer min-h-[34px]"
+                  onClick={voice.cancelRecording}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-500 hover:bg-neutral-100 cursor-pointer min-h-[36px]"
                 >
-                  Stop
+                  Cancel
                 </button>
               )}
-              {effectiveVoiceState === 'listening' && (
-                <button
-                  type="button"
-                  onClick={voice.stopListening}
-                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#0284C7] hover:bg-sky-50 cursor-pointer min-h-[34px]"
-                >
-                  Done
-                </button>
+              {voice.playbackPhase === 'playing' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={voice.pausePlayback}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#0284C7] hover:bg-sky-50 cursor-pointer min-h-[36px]"
+                  >
+                    Pause
+                  </button>
+                  <button
+                    type="button"
+                    onClick={voice.stopSpeaking}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-500 hover:bg-neutral-100 cursor-pointer min-h-[36px]"
+                  >
+                    Stop
+                  </button>
+                </>
               )}
-              {effectiveVoiceState !== 'speaking' &&
-                effectiveVoiceState !== 'listening' &&
+              {(voice.playbackPhase === 'paused' || voice.playbackPhase === 'blocked') &&
+                latestAssistantMessage && (
+                  <button
+                    type="button"
+                    onClick={() => void voice.playOrResume()}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#0284C7] hover:bg-sky-50 cursor-pointer min-h-[36px]"
+                  >
+                    {voice.playbackPhase === 'paused' ? 'Resume' : 'Play'}
+                  </button>
+                )}
+              {voice.playbackPhase !== 'playing' &&
+                voice.playbackPhase !== 'paused' &&
+                voice.playbackPhase !== 'blocked' &&
+                !isRecordingOrListening &&
+                !isTranscribing &&
                 voice.canReplay &&
                 latestAssistantMessage && (
                   <button
                     type="button"
                     onClick={() => void voice.replayLastResponse()}
-                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-500 hover:text-[#0284C7] hover:bg-neutral-50 cursor-pointer min-h-[34px]"
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-500 hover:text-[#0284C7] hover:bg-neutral-50 cursor-pointer min-h-[36px]"
                   >
                     Replay
                   </button>
@@ -522,57 +622,123 @@ export const AiAgentView: React.FC = () => {
 
           {/* Clean Messaging Feed */}
           <div className="flex-1 py-4 space-y-4">
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'}
-              >
-                {msg.role === 'user' ? (
-                  <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-neutral-100 px-4 py-2.5 text-[15px] text-[#111111] leading-relaxed whitespace-pre-line break-words">
-                    {msg.text}
-                  </div>
-                ) : (
-                  <div className="max-w-[94%] space-y-1">
-                    <p className="text-[15px] text-[#111111] leading-relaxed whitespace-pre-line break-words">
+            {messages.map((msg) => {
+              const isPlayingThis =
+                voice.playbackPhase === 'playing' && voice.speakingMessageId === msg.id;
+              const isPausedThis =
+                voice.playbackPhase === 'paused' && voice.readyMessageId === msg.id;
+              const isBlockedThis =
+                voice.playbackPhase === 'blocked' && voice.readyMessageId === msg.id;
+              const isGeneratingThis =
+                voice.playbackPhase === 'generating' && voice.speakingMessageId === msg.id;
+
+              return (
+                <div
+                  key={msg.id}
+                  className={msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'}
+                >
+                  {msg.role === 'user' ? (
+                    <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-neutral-100 px-4 py-2.5 text-[15px] text-[#111111] leading-relaxed whitespace-pre-line break-words">
                       {msg.text}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (voice.speakingMessageId === msg.id) {
-                          voice.stopSpeaking();
-                        } else {
-                          void voice.speakResponse(
-                            msg.text,
-                            msg.id,
-                            msg.langHint || 'en',
-                            true
-                          );
-                        }
-                      }}
-                      className="inline-flex items-center gap-1 py-1 text-xs font-medium text-neutral-400 hover:text-[#0284C7] transition-colors cursor-pointer min-h-[32px]"
-                      aria-label={
-                        voice.speakingMessageId === msg.id
-                          ? 'Stop audio playback'
-                          : 'Listen to response'
-                      }
-                    >
-                      {voice.speakingMessageId === msg.id ? (
-                        <>
-                          <Square className="w-3 h-3 fill-current text-[#0284C7]" />
-                          <span className="text-[#0284C7]">Stop</span>
-                        </>
-                      ) : (
-                        <>
-                          <Volume2 className="w-3.5 h-3.5" />
-                          <span>Listen</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
+                    </div>
+                  ) : (
+                    <div className="max-w-[94%] space-y-1">
+                      <p className="text-[15px] text-[#111111] leading-relaxed whitespace-pre-line break-words">
+                        {msg.text}
+                      </p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {isPlayingThis ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={voice.pausePlayback}
+                              className="inline-flex items-center gap-1 py-1 text-xs font-medium text-[#0284C7] hover:text-[#0369A1] cursor-pointer min-h-[34px]"
+                            >
+                              <Pause className="w-3.5 h-3.5" />
+                              <span>Pause</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={voice.stopSpeaking}
+                              className="inline-flex items-center gap-1 py-1 text-xs font-medium text-neutral-500 hover:text-[#111111] cursor-pointer min-h-[34px]"
+                            >
+                              <Square className="w-3 h-3 fill-current" />
+                              <span>Stop</span>
+                            </button>
+                          </>
+                        ) : isPausedThis ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void voice.playOrResume({
+                                  id: msg.id,
+                                  text: msg.text,
+                                  langHint: msg.langHint || 'en'
+                                })
+                              }
+                              className="inline-flex items-center gap-1 py-1 text-xs font-semibold text-[#0284C7] hover:text-[#0369A1] cursor-pointer min-h-[34px]"
+                            >
+                              <Play className="w-3.5 h-3.5 fill-current" />
+                              <span>Resume</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={voice.stopSpeaking}
+                              className="inline-flex items-center gap-1 py-1 text-xs font-medium text-neutral-500 hover:text-[#111111] cursor-pointer min-h-[34px]"
+                            >
+                              <Square className="w-3 h-3 fill-current" />
+                              <span>Stop</span>
+                            </button>
+                          </>
+                        ) : isBlockedThis ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void voice.playOrResume({
+                                id: msg.id,
+                                text: msg.text,
+                                langHint: msg.langHint || 'en'
+                              })
+                            }
+                            className="inline-flex items-center gap-1 py-1 text-xs font-semibold text-[#0284C7] hover:text-[#0369A1] cursor-pointer min-h-[34px]"
+                          >
+                            <Play className="w-3.5 h-3.5 fill-current" />
+                            <span>Play</span>
+                          </button>
+                        ) : isGeneratingThis ? (
+                          <button
+                            type="button"
+                            onClick={voice.stopSpeaking}
+                            className="inline-flex items-center gap-1 py-1 text-xs font-medium text-neutral-500 hover:text-[#111111] cursor-pointer min-h-[34px]"
+                          >
+                            <Square className="w-3 h-3 fill-current" />
+                            <span>Generating audio…</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              voice.unlockAudioFromUserGesture();
+                              void voice.playOrResume({
+                                id: msg.id,
+                                text: msg.text,
+                                langHint: msg.langHint || 'en'
+                              });
+                            }}
+                            className="inline-flex items-center gap-1 py-1 text-xs font-medium text-neutral-400 hover:text-[#0284C7] transition-colors cursor-pointer min-h-[34px]"
+                            aria-label="Play audio response"
+                          >
+                            <Volume2 className="w-3.5 h-3.5" />
+                            <span>{voice.readyMessageId === msg.id ? 'Replay' : 'Listen'}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
             {isSubmitting && (
               <div className="text-sm text-neutral-400 py-1">
@@ -584,16 +750,55 @@ export const AiAgentView: React.FC = () => {
         </>
       )}
 
-      {/* Concise Inline Error Notice */}
-      {activeErrorMessage && (
+      {/* Editable Transcript Review Bar (prevents silent auto-submit of uncertain voice recognition) */}
+      {voice.inputPhase === 'completed' && inputText.trim() && (
+        <div className="mb-2 px-3.5 py-2 rounded-xl border border-sky-200/80 bg-sky-50/40 flex items-center justify-between gap-2">
+          <p className="text-xs text-sky-900 leading-snug">
+            {voice.usingBrowserFallback
+              ? 'Browser voice transcript ready — edit if needed and tap Send.'
+              : 'Transcript ready — review or edit below, then tap Send.'}
+          </p>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={voice.retryRecording}
+              className="px-2.5 py-1 rounded-lg text-xs font-medium text-[#0284C7] hover:bg-sky-100/60 cursor-pointer min-h-[32px]"
+            >
+              Re-record
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                voice.clearVoiceReview();
+                setInputText('');
+              }}
+              aria-label="Discard transcript"
+              className="min-h-[32px] min-w-[32px] flex items-center justify-center rounded-lg text-neutral-500 hover:text-[#111111] cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Contextual Error / Playback Blocked Notice */}
+      {activeBannerMessage && (
         <div
-          role={errorNotice ? 'alert' : 'status'}
+          role={errorNotice || voice.voiceError ? 'alert' : 'status'}
           data-request-id={activeErrorRefId || undefined}
-          className="mb-2.5 px-3.5 py-2.5 rounded-xl border border-rose-200/80 bg-rose-50/40 flex items-center justify-between gap-3"
+          className={`mb-2.5 px-3.5 py-2.5 rounded-xl border flex items-center justify-between gap-3 ${
+            voice.playbackPhase === 'blocked'
+              ? 'border-sky-200/80 bg-sky-50/40'
+              : 'border-rose-200/80 bg-rose-50/40'
+          }`}
         >
           <div className="min-w-0">
-            <p className="text-xs text-rose-800 leading-snug">
-              {activeErrorMessage}
+            <p
+              className={`text-xs leading-snug ${
+                voice.playbackPhase === 'blocked' ? 'text-sky-900' : 'text-rose-800'
+              }`}
+            >
+              {activeBannerMessage}
             </p>
             {activeErrorRefId && (
               <p className="text-[10px] text-neutral-400 mt-0.5 select-all truncate">
@@ -602,16 +807,66 @@ export const AiAgentView: React.FC = () => {
             )}
           </div>
 
-          {errorNotice?.retryable && errorNotice.failedQuery && (
-            <button
-              type="button"
-              onClick={handleRetryFailedQuery}
-              disabled={isSubmitting}
-              className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0284C7] hover:bg-sky-50 transition-colors cursor-pointer disabled:opacity-50 min-h-[34px]"
-            >
-              Retry
-            </button>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {voice.playbackPhase === 'blocked' && latestAssistantMessage && (
+              <button
+                type="button"
+                onClick={() => void voice.playOrResume()}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0284C7] hover:bg-sky-100/70 transition-colors cursor-pointer min-h-[34px]"
+              >
+                Play
+              </button>
+            )}
+
+            {voice.playbackPhase === 'failed' && latestAssistantMessage && !voice.voiceError && !errorNotice && (
+              <button
+                type="button"
+                onClick={() => {
+                  voice.unlockAudioFromUserGesture();
+                  void voice.speakResponse(
+                    latestAssistantMessage.text,
+                    latestAssistantMessage.id,
+                    latestAssistantMessage.langHint || 'en',
+                    true
+                  );
+                }}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0284C7] hover:bg-sky-50 transition-colors cursor-pointer min-h-[34px]"
+              >
+                Retry audio
+              </button>
+            )}
+
+            {voice.voiceError && voice.usingBrowserFallback && (
+              <button
+                type="button"
+                onClick={voice.startBrowserFallbackRecording}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#0284C7] hover:bg-sky-50 transition-colors cursor-pointer min-h-[34px]"
+              >
+                Browser mic
+              </button>
+            )}
+
+            {voice.voiceError && (
+              <button
+                type="button"
+                onClick={voice.retryRecording}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0284C7] hover:bg-sky-50 transition-colors cursor-pointer min-h-[34px]"
+              >
+                Retry
+              </button>
+            )}
+
+            {errorNotice?.retryable && errorNotice.failedQuery && (
+              <button
+                type="button"
+                onClick={handleRetryFailedQuery}
+                disabled={isSubmitting}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0284C7] hover:bg-sky-50 transition-colors cursor-pointer disabled:opacity-50 min-h-[34px]"
+              >
+                Retry
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -641,15 +896,15 @@ export const AiAgentView: React.FC = () => {
           <button
             type="button"
             onClick={voice.toggleMicrophone}
-            disabled={isSubmitting && voice.voiceState === 'thinking'}
-            aria-label={voice.voiceState === 'listening' ? 'Stop microphone' : 'Speak a message'}
+            disabled={(isSubmitting || isTranscribing) && voice.voiceState === 'thinking'}
+            aria-label={isRecordingOrListening ? 'Stop microphone' : 'Speak a message'}
             className={`min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center transition-colors cursor-pointer shrink-0 disabled:opacity-40 ${
-              voice.voiceState === 'listening'
+              isRecordingOrListening
                 ? 'bg-[#0284C7] text-white'
                 : 'text-neutral-500 hover:text-[#0284C7] hover:bg-neutral-50'
             }`}
           >
-            {voice.voiceState === 'listening' ? (
+            {isRecordingOrListening ? (
               <Square className="w-4 h-4 fill-current" />
             ) : (
               <Mic className="w-4 h-4" />

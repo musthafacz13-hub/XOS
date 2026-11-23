@@ -788,11 +788,12 @@ async function runAiAgentTests() {
     assert(emptyReplyResp.status === 502 && emptyReplyResp.body.category === 'invalid_response', 'Rejects empty Groq response with 502 invalid_response');
 
     // 6h. Transcribe (Groq whisper-large-v3-turbo primary + optional Gemini fallback) & Speak (Gemini TTS)
+    const sampleAudioB64 = Buffer.alloc(128, 3).toString('base64');
     let capturedSttUrl = '';
     let capturedSttModel: FormDataEntryValue | null = null;
     let capturedSttLang: FormDataEntryValue | null = null;
     const transcribeOkResp = await handleTranscribeRequest(
-      { audioBase64: 'dGVzdA==', mimeType: 'audio/webm', preferredLanguage: 'ml-IN' },
+      { audioBase64: sampleAudioB64, mimeType: 'audio/webm', preferredLanguage: 'ml-IN' },
       undefined,
       {
         groqFetchImpl: async (url, init) => {
@@ -819,7 +820,7 @@ async function runAiAgentTests() {
     );
 
     const transcribeTimeoutResp = await handleTranscribeRequest(
-      { audioBase64: 'dGVzdA==', mimeType: 'audio/webm' },
+      { audioBase64: sampleAudioB64, mimeType: 'audio/webm' },
       undefined,
       {
         transcribeTimeoutMs: 30,
@@ -841,7 +842,7 @@ async function runAiAgentTests() {
     );
 
     const transcribeFallbackOk = await handleTranscribeRequest(
-      { audioBase64: 'dGVzdA==', mimeType: 'audio/webm' },
+      { audioBase64: sampleAudioB64, mimeType: 'audio/webm' },
       undefined,
       {
         groqFetchImpl: async () => new Response(JSON.stringify({ error: { message: 'Upstream 503' } }), { status: 503 }),
