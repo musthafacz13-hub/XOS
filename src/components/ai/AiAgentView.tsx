@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUp,
   Mic,
+  PanelLeft,
   Pause,
   Play,
   RotateCcw,
@@ -17,6 +18,14 @@ import {
   AiServiceError,
   PreferredVoiceLanguage
 } from '../../services/ai/agentService';
+import { chatHistoryService } from '../../services/ai/chatHistoryService';
+import { AiChatMessage, AiConversation } from '../../services/ai/chatHistoryTypes';
+import {
+  createClientMessageId,
+  generateConversationTitleFromMessage,
+  organizeConversations,
+  sortConversationsNewestFirst
+} from '../../services/ai/chatHistoryUtils';
 import {
   buildEntryCatalog,
   buildSelectiveXosContext,
@@ -45,6 +54,8 @@ import { formatRecordingDuration } from '../../services/ai/voiceUtils';
 import { XosModuleKey } from '../../services/ai/xosKnowledge';
 import { repository } from '../../services/repository';
 import { isSupabaseConfigured } from '../../services/supabase';
+import { ChatHistoryPanel } from './ChatHistoryPanel';
+import { NewChatButton } from './NewChatButton';
 import { TransactionPreviewCard } from './TransactionPreviewCard';
 import { VoiceOrb } from './VoiceOrb';
 
@@ -54,12 +65,14 @@ interface AgentMessage {
   text: string;
   modules?: XosModuleKey[];
   langHint?: 'ml' | 'en' | 'mixed';
+  clientMessageId?: string;
 }
 
 interface AgentErrorState {
   message: string;
   requestId?: string;
   failedQuery?: string;
+  userClientMessageId?: string;
   retryable: boolean;
 }
 
@@ -107,11 +120,39 @@ function readCurrentSnapshot(): XOSReadOnlySnapshot {
   };
 }
 
+function mapDbMessageToAgentMessage(msg: AiChatMessage): AgentMessage {
+  return {
+    id: msg.id,
+    role: msg.role,
+    text: msg.content,
+    modules: msg.modules,
+    langHint: msg.langHint,
+    clientMessageId: msg.clientMessageId
+  };
+}
+
 export const AiAgentView: React.FC = () => {
   const { session, user } = useAuth();
   const accessToken = session?.access_token || null;
 
-  // Strictly active-session in-memory conversation & proposal state (zero browser persistence)
+  // Persistent database-backed conversations & strictly isolated active thread state (zero browser storage)
+  const [conversations, setConversations] = useState<AiConversation[]>([]);
+  const [isLoadingConversations, setIsLoadingConversations] = useState<boolean>(Boolean(isSupabaseConfigured));
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+
+  const [isHistoryDesktopOpen, setIsHistoryDesktopOpen] = useState(true);
+  const [isHistoryMobileOpen, setIsHistoryMobileOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [busyConversationId, setBusyConversationId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AiConversation | null>(null);
+  const [isDeletingConversation, setIsDeletingConversation] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? navigator.onLine === false : false
+  );
+
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [errorNotice, setErrorNotice] = useState<AgentErrorState | null>(null);
@@ -129,6 +170,7 @@ export const AiAgentView: React.FC = () => {
   } | null>(null);
 
   const messagesRef = useRef<AgentMessage[]>([]);
+  const activeConversationIdRef = useRef<string | null>(null);
   const pendingProposalRef = useRef<PendingTransactionProposal | null>(null);
   const isSubmittingRef = useRef(false);
   const isSavingTransactionRef = useRef(false);
@@ -138,22 +180,92 @@ export const AiAgentView: React.FC = () => {
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const voiceRef = useRef<ReturnType<typeof useJarvisVoice> | null>(null);
+  const listLoadSeqRef = useRef(0);
+  const conversationLoadSeqRef = useRef(0);
+  const requestEpochRef = useRef(0);
 
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
 
   useEffect(() => {
+    activeConversationIdRef.current = activeConversationId;
+  }, [activeConversationId]);
+
+  useEffect(() => {
     pendingProposalRef.current = pendingProposal;
   }, [pendingProposal]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const goOnline = () => setIsOffline(false);
+    const goOffline = () => setIsOffline(true);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
+
+  const upsertConversationInList = useCallback((updated: AiConversation) => {
+    setConversations(prev => {
+      const filtered = prev.filter(item => item.id !== updated.id);
+      return sortConversationsNewestFirst([updated, ...filtered]);
+    });
+  }, []);
+
+  const loadConversations = useCallback(async () => {
+    if (isSupabaseConfigured && !user?.id) {
+      setConversations([]);
+      setIsLoadingConversations(false);
+      setHistoryError(null);
+      return;
+    }
+
+    const seq = ++listLoadSeqRef.current;
+    setIsLoadingConversations(true);
+    setHistoryError(null);
+    try {
+      const list = await chatHistoryService.listConversations();
+      if (!mountedRef.current || listLoadSeqRef.current !== seq) return;
+      setConversations(list);
+    } catch (err) {
+      if (!mountedRef.current || listLoadSeqRef.current !== seq) return;
+      const msg =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not load conversation history.';
+      setHistoryError(msg);
+    } finally {
+      if (mountedRef.current && listLoadSeqRef.current === seq) {
+        setIsLoadingConversations(false);
+      }
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    void loadConversations();
+  }, [loadConversations]);
+
+  useEffect(() => {
     if (lastUserIdRef.current !== user?.id) {
       lastUserIdRef.current = user?.id;
+      requestEpochRef.current += 1;
+      conversationLoadSeqRef.current += 1;
+      abortControllerRef.current?.abort();
+      activeConversationIdRef.current = null;
+      setActiveConversationId(null);
+      setMessages([]);
+      setInputText('');
+      setErrorNotice(null);
       setPendingProposal(null);
       setIsEditingProposal(false);
       setProposalEditError(null);
       setClarificationOptions(null);
+      setDeleteTarget(null);
+      setDeleteError(null);
+      setShowArchived(false);
       resetTransactionExecutorState();
     }
   }, [user?.id]);
@@ -260,21 +372,46 @@ export const AiAgentView: React.FC = () => {
         setEntryCatalog(buildEntryCatalog(readCurrentSnapshot()));
 
         const confirmMsgId = createMessageId();
-        setMessages(prev => [
-          ...prev,
-          {
-            id: confirmMsgId,
-            role: 'model',
-            text: result.confirmationMessage,
-            langHint: activeProposal.detectedLanguage
+        const confirmLang = activeProposal.detectedLanguage;
+        const activeConvId = activeConversationIdRef.current;
+
+        let savedMsgId = confirmMsgId;
+        if (activeConvId) {
+          try {
+            const saved = await chatHistoryService.saveMessage({
+              conversationId: activeConvId,
+              role: 'model',
+              content: result.confirmationMessage,
+              clientMessageId: createClientMessageId(),
+              metadata: { langHint: confirmLang }
+            });
+            savedMsgId = saved.message.id;
+            if (mountedRef.current) {
+              upsertConversationInList(saved.conversation);
+            }
+          } catch {
+            // Keep transaction confirmation visible even if history save had a transient issue
           }
-        ]);
+        }
+
+        if (!mountedRef.current) return;
+        if (!activeConvId || activeConversationIdRef.current === activeConvId) {
+          setMessages(prev => [
+            ...prev,
+            {
+              id: savedMsgId,
+              role: 'model',
+              text: result.confirmationMessage,
+              langHint: confirmLang
+            }
+          ]);
+        }
 
         voiceRef.current?.setVoiceState('idle');
         await voiceRef.current?.speakResponse(
           result.confirmationMessage,
-          confirmMsgId,
-          activeProposal.detectedLanguage
+          savedMsgId,
+          confirmLang
         );
       } catch (err) {
         if (!mountedRef.current) return;
@@ -297,33 +434,59 @@ export const AiAgentView: React.FC = () => {
         }
       }
     },
-    [accessToken, user?.id]
+    [accessToken, upsertConversationInList, user?.id]
   );
 
-  const handleCancelPendingTransaction = useCallback((_source: 'button' | 'voice') => {
-    const activeProposal = pendingProposalRef.current;
-    if (!activeProposal || isSavingTransactionRef.current) return;
-    const lang = activeProposal.detectedLanguage;
-    setPendingProposal(null);
-    setIsEditingProposal(false);
-    setProposalEditError(null);
-    setErrorNotice(null);
-
-    const isMl = lang === 'ml' || lang === 'mixed';
-    const cancelText = isMl
-      ? 'ശരി, ഈ ഇടപാട് സേവ് ചെയ്യാതെ റദ്ദാക്കി.'
-      : 'Cancelled — no transaction was saved.';
-
-    setMessages(prev => [
-      ...prev,
-      {
-        id: createMessageId(),
-        role: 'model',
-        text: cancelText,
-        langHint: lang
+  const persistSystemAssistantMessage = useCallback(
+    async (text: string, langHint: 'ml' | 'en' | 'mixed', conversationId: string | null) => {
+      if (!conversationId) return;
+      try {
+        const saved = await chatHistoryService.saveMessage({
+          conversationId,
+          role: 'model',
+          content: text,
+          clientMessageId: createClientMessageId(),
+          metadata: { langHint }
+        });
+        if (mountedRef.current) {
+          upsertConversationInList(saved.conversation);
+        }
+      } catch {
+        // Non-fatal for local cancellation notice
       }
-    ]);
-  }, []);
+    },
+    [upsertConversationInList]
+  );
+
+  const handleCancelPendingTransaction = useCallback(
+    (_source: 'button' | 'voice') => {
+      const activeProposal = pendingProposalRef.current;
+      if (!activeProposal || isSavingTransactionRef.current) return;
+      const lang = activeProposal.detectedLanguage;
+      const activeConvId = activeConversationIdRef.current;
+      setPendingProposal(null);
+      setIsEditingProposal(false);
+      setProposalEditError(null);
+      setErrorNotice(null);
+
+      const isMl = lang === 'ml' || lang === 'mixed';
+      const cancelText = isMl
+        ? 'ശരി, ഈ ഇടപാട് സേവ് ചെയ്യാതെ റദ്ദാക്കി.'
+        : 'Cancelled — no transaction was saved.';
+
+      setMessages(prev => [
+        ...prev,
+        {
+          id: createMessageId(),
+          role: 'model',
+          text: cancelText,
+          langHint: lang
+        }
+      ]);
+      void persistSystemAssistantMessage(cancelText, lang, activeConvId);
+    },
+    [persistSystemAssistantMessage]
+  );
 
   const handleApplyEditProposal = useCallback(
     (updatedTx: ValidatedTransactionProposal) => {
@@ -450,7 +613,7 @@ export const AiAgentView: React.FC = () => {
   );
 
   const handleSubmitQuery = useCallback(
-    async (rawQuery: string, isRetry: boolean = false) => {
+    async (rawQuery: string, isRetry: boolean = false, retryClientMessageId?: string) => {
       const cleanQuery = rawQuery.trim();
       if (!cleanQuery || isSubmittingRef.current || isSavingTransactionRef.current) return;
 
@@ -460,6 +623,7 @@ export const AiAgentView: React.FC = () => {
         const voiceCmd = matchPendingConfirmationVoiceCommand(cleanQuery);
         if (voiceCmd === 'confirm' && Date.now() <= activeProp.expiresAtMs) {
           setInputText('');
+          const convId = activeConversationIdRef.current;
           setMessages(prev => [
             ...prev,
             {
@@ -469,11 +633,26 @@ export const AiAgentView: React.FC = () => {
               langHint: activeProp.detectedLanguage
             }
           ]);
+          if (convId) {
+            void chatHistoryService
+              .saveMessage({
+                conversationId: convId,
+                role: 'user',
+                content: cleanQuery,
+                clientMessageId: createClientMessageId(),
+                metadata: { langHint: activeProp.detectedLanguage }
+              })
+              .then(saved => {
+                if (mountedRef.current) upsertConversationInList(saved.conversation);
+              })
+              .catch(() => {});
+          }
           void handleConfirmPendingTransaction('voice');
           return;
         }
         if (voiceCmd === 'cancel') {
           setInputText('');
+          const convId = activeConversationIdRef.current;
           setMessages(prev => [
             ...prev,
             {
@@ -483,6 +662,20 @@ export const AiAgentView: React.FC = () => {
               langHint: activeProp.detectedLanguage
             }
           ]);
+          if (convId) {
+            void chatHistoryService
+              .saveMessage({
+                conversationId: convId,
+                role: 'user',
+                content: cleanQuery,
+                clientMessageId: createClientMessageId(),
+                metadata: { langHint: activeProp.detectedLanguage }
+              })
+              .then(saved => {
+                if (mountedRef.current) upsertConversationInList(saved.conversation);
+              })
+              .catch(() => {});
+          }
           handleCancelPendingTransaction('voice');
           return;
         }
@@ -504,6 +697,7 @@ export const AiAgentView: React.FC = () => {
       voiceRef.current?.stopSpeaking();
       voiceRef.current?.setVoiceState('thinking');
 
+      const currentEpoch = requestEpochRef.current;
       const lastMsg = messagesRef.current[messagesRef.current.length - 1];
       const alreadyAppendedSamePendingTurn =
         Boolean(lastMsg && lastMsg.role === 'user' && lastMsg.text.trim() === cleanQuery);
@@ -523,13 +717,20 @@ export const AiAgentView: React.FC = () => {
         .find(t => t.role === 'user' && Array.isArray(t.modules) && t.modules.length > 0);
       const preliminaryIntent = detectQueryIntent(cleanQuery, lastTurnWithModules?.modules || []);
 
-      if (!isRetry && !alreadyAppendedSamePendingTurn) {
+      const userClientMsgId =
+        retryClientMessageId ||
+        (alreadyAppendedSamePendingTurn ? lastMsg?.clientMessageId : undefined) ||
+        createClientMessageId();
+      const optimisticUserMsgId = alreadyAppendedSamePendingTurn && lastMsg ? lastMsg.id : createMessageId();
+
+      if (!alreadyAppendedSamePendingTurn) {
         const userMessage: AgentMessage = {
-          id: createMessageId(),
+          id: optimisticUserMsgId,
           role: 'user',
           text: cleanQuery,
           modules: preliminaryIntent.modules,
-          langHint: preliminaryIntent.detectedLanguage
+          langHint: preliminaryIntent.detectedLanguage,
+          clientMessageId: userClientMsgId
         };
         setMessages(prev => [...prev, userMessage]);
       }
@@ -540,7 +741,50 @@ export const AiAgentView: React.FC = () => {
       abortControllerRef.current = controller;
 
       try {
-        // Ensure authenticated Supabase records are hydrated before building grounded AI context
+        // 1. Ensure an owned persistent conversation exists before sending/persisting messages
+        let targetConversationId = activeConversationIdRef.current;
+        if (!targetConversationId) {
+          const createdConv = await chatHistoryService.createConversation({
+            title: generateConversationTitleFromMessage(cleanQuery),
+            languagePreference: voiceRef.current?.voiceLanguage || 'ml-IN'
+          });
+          if (!mountedRef.current || requestEpochRef.current !== currentEpoch || controller.signal.aborted) {
+            voiceRef.current?.setVoiceState('idle');
+            return;
+          }
+          targetConversationId = createdConv.id;
+          activeConversationIdRef.current = targetConversationId;
+          setActiveConversationId(targetConversationId);
+          upsertConversationInList(createdConv);
+        }
+
+        // 2. Persist the user message first with idempotent clientMessageId (safe on retries)
+        const savedUser = await chatHistoryService.saveMessage({
+          conversationId: targetConversationId,
+          role: 'user',
+          content: cleanQuery,
+          clientMessageId: userClientMsgId,
+          metadata: {
+            langHint: preliminaryIntent.detectedLanguage,
+            modules: preliminaryIntent.modules
+          }
+        });
+
+        if (!mountedRef.current || requestEpochRef.current !== currentEpoch || controller.signal.aborted) {
+          voiceRef.current?.setVoiceState('idle');
+          return;
+        }
+
+        upsertConversationInList(savedUser.conversation);
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === optimisticUserMsgId || m.clientMessageId === userClientMsgId
+              ? { ...m, id: savedUser.message.id, clientMessageId: userClientMsgId }
+              : m
+          )
+        );
+
+        // 3. Ensure authenticated Supabase financial records are hydrated before building grounded AI context
         const hydrationBefore = repository.getHydrationState();
         const needsHydration =
           isSupabaseConfigured &&
@@ -555,7 +799,7 @@ export const AiAgentView: React.FC = () => {
           } catch {
             // Non-fatal: proceed with current repository state and report fetchErrorTables cleanly
           }
-          if (!mountedRef.current || controller.signal.aborted) {
+          if (!mountedRef.current || controller.signal.aborted || requestEpochRef.current !== currentEpoch) {
             voiceRef.current?.setVoiceState('idle');
             return;
           }
@@ -589,18 +833,66 @@ export const AiAgentView: React.FC = () => {
           signal: controller.signal
         });
 
-        if (!mountedRef.current) return;
+        if (
+          !mountedRef.current ||
+          requestEpochRef.current !== currentEpoch ||
+          activeConversationIdRef.current !== targetConversationId
+        ) {
+          voiceRef.current?.setVoiceState('idle');
+          return;
+        }
 
-        const assistantMsgId = createMessageId();
+        const assistantClientMsgId = createClientMessageId();
+        let assistantMsgId = createMessageId();
+        let persistenceWarning: string | null = null;
+
+        try {
+          const savedAssistant = await chatHistoryService.saveMessage({
+            conversationId: targetConversationId,
+            role: 'model',
+            content: result.reply,
+            clientMessageId: assistantClientMsgId,
+            metadata: {
+              langHint: result.detectedLanguage,
+              modules: selective.selectedModules,
+              actionType: result.actionType
+            }
+          });
+          assistantMsgId = savedAssistant.message.id;
+          if (mountedRef.current && requestEpochRef.current === currentEpoch) {
+            upsertConversationInList(savedAssistant.conversation);
+          }
+        } catch (saveErr) {
+          persistenceWarning =
+            saveErr instanceof Error && saveErr.message
+              ? saveErr.message
+              : 'Response could not be saved to chat history.';
+        }
+
+        if (
+          !mountedRef.current ||
+          requestEpochRef.current !== currentEpoch ||
+          activeConversationIdRef.current !== targetConversationId
+        ) {
+          return;
+        }
+
         const assistantMessage: AgentMessage = {
           id: assistantMsgId,
           role: 'model',
           text: result.reply,
           modules: selective.selectedModules,
-          langHint: result.detectedLanguage
+          langHint: result.detectedLanguage,
+          clientMessageId: assistantClientMsgId
         };
 
         setMessages(prev => [...prev, assistantMessage]);
+        if (persistenceWarning) {
+          setErrorNotice({
+            message: persistenceWarning,
+            retryable: false
+          });
+        }
 
         if (result.actionType === 'transaction_proposal' && result.pendingTransaction) {
           setPendingProposal(result.pendingTransaction);
@@ -630,7 +922,7 @@ export const AiAgentView: React.FC = () => {
           result.detectedLanguage
         );
       } catch (err) {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || requestEpochRef.current !== currentEpoch) return;
         voiceRef.current?.setVoiceState('idle');
         if (err instanceof AiServiceError) {
           if (err.code === 'cancelled') {
@@ -640,12 +932,18 @@ export const AiAgentView: React.FC = () => {
             message: err.message,
             requestId: err.requestId,
             failedQuery: cleanQuery,
+            userClientMessageId: userClientMsgId,
             retryable: err.retryable
           });
         } else {
+          const message =
+            err instanceof Error && err.message
+              ? err.message
+              : 'Could not reach the AI service. Please try again.';
           setErrorNotice({
-            message: 'Could not reach the AI service. Please try again.',
+            message,
             failedQuery: cleanQuery,
+            userClientMessageId: userClientMsgId,
             retryable: true
           });
         }
@@ -659,7 +957,13 @@ export const AiAgentView: React.FC = () => {
         }
       }
     },
-    [accessToken, handleCancelPendingTransaction, handleConfirmPendingTransaction, user?.id]
+    [
+      accessToken,
+      handleCancelPendingTransaction,
+      handleConfirmPendingTransaction,
+      upsertConversationInList,
+      user?.id
+    ]
   );
 
   // Voice confirmation/cancellation triggers ONLY when an active non-expired preview exists;
@@ -721,11 +1025,17 @@ export const AiAgentView: React.FC = () => {
     }
   }, [messages.length, isSubmitting, pendingProposal]);
 
-  const handleResetSession = () => {
+  const handleResetSession = useCallback(() => {
+    requestEpochRef.current += 1;
+    conversationLoadSeqRef.current += 1;
     abortControllerRef.current?.abort();
     voice.cancelRecording();
     voice.clearCachedAudio();
     voice.setVoiceState('idle');
+    activeConversationIdRef.current = null;
+    setActiveConversationId(null);
+    setShowArchived(false);
+    setIsLoadingMessages(false);
     setErrorNotice(null);
     setPendingProposal(null);
     setIsEditingProposal(false);
@@ -734,11 +1044,205 @@ export const AiAgentView: React.FC = () => {
     resetTransactionExecutorState();
     setMessages([]);
     setInputText('');
-  };
+  }, [voice]);
+
+  const handleSelectConversation = useCallback(
+    async (conv: AiConversation) => {
+      if (conv.archived) return;
+      if (conv.id === activeConversationIdRef.current && !isLoadingMessages) {
+        setIsHistoryMobileOpen(false);
+        return;
+      }
+
+      requestEpochRef.current += 1;
+      const loadSeq = ++conversationLoadSeqRef.current;
+      abortControllerRef.current?.abort();
+      voice.cancelRecording();
+      voice.clearCachedAudio();
+      voice.setVoiceState('idle');
+
+      activeConversationIdRef.current = conv.id;
+      setActiveConversationId(conv.id);
+      setShowArchived(false);
+      setErrorNotice(null);
+      setPendingProposal(null);
+      setIsEditingProposal(false);
+      setProposalEditError(null);
+      setClarificationOptions(null);
+      resetTransactionExecutorState();
+      setMessages([]);
+      setInputText('');
+      setIsLoadingMessages(true);
+      voice.setVoiceLanguage(conv.languagePreference);
+
+      try {
+        const loaded = await chatHistoryService.getMessages(conv.id);
+        if (
+          !mountedRef.current ||
+          conversationLoadSeqRef.current !== loadSeq ||
+          activeConversationIdRef.current !== conv.id
+        ) {
+          return;
+        }
+        setMessages(loaded.map(mapDbMessageToAgentMessage));
+      } catch (err) {
+        if (
+          !mountedRef.current ||
+          conversationLoadSeqRef.current !== loadSeq ||
+          activeConversationIdRef.current !== conv.id
+        ) {
+          return;
+        }
+        setErrorNotice({
+          message:
+            err instanceof Error && err.message
+              ? err.message
+              : 'Could not load messages for this conversation.',
+          retryable: false
+        });
+      } finally {
+        if (mountedRef.current && conversationLoadSeqRef.current === loadSeq) {
+          setIsLoadingMessages(false);
+        }
+      }
+    },
+    [isLoadingMessages, voice]
+  );
+
+  const handleLanguageChange = useCallback(
+    (nextLang: PreferredVoiceLanguage) => {
+      voice.setVoiceLanguage(nextLang);
+      const activeId = activeConversationIdRef.current;
+      if (!activeId) return;
+      void chatHistoryService
+        .updateConversationLanguage(activeId, nextLang)
+        .then(updated => {
+          if (mountedRef.current) upsertConversationInList(updated);
+        })
+        .catch(() => {});
+    },
+    [upsertConversationInList, voice]
+  );
+
+  const handleRenameConversation = useCallback(
+    async (conversationId: string, nextTitle: string) => {
+      setBusyConversationId(conversationId);
+      try {
+        const updated = await chatHistoryService.updateConversationTitle(conversationId, nextTitle);
+        if (mountedRef.current) {
+          upsertConversationInList(updated);
+        }
+      } catch (err) {
+        if (mountedRef.current) {
+          setErrorNotice({
+            message:
+              err instanceof Error && err.message ? err.message : 'Could not rename conversation.',
+            retryable: false
+          });
+        }
+        throw err;
+      } finally {
+        if (mountedRef.current) {
+          setBusyConversationId(null);
+        }
+      }
+    },
+    [upsertConversationInList]
+  );
+
+  const handleTogglePinConversation = useCallback(
+    async (conv: AiConversation) => {
+      setBusyConversationId(conv.id);
+      try {
+        const updated = await chatHistoryService.setConversationPinned(conv.id, !conv.pinned);
+        if (mountedRef.current) {
+          upsertConversationInList(updated);
+        }
+      } catch (err) {
+        if (mountedRef.current) {
+          setErrorNotice({
+            message:
+              err instanceof Error && err.message ? err.message : 'Could not update pinned status.',
+            retryable: false
+          });
+        }
+      } finally {
+        if (mountedRef.current) {
+          setBusyConversationId(null);
+        }
+      }
+    },
+    [upsertConversationInList]
+  );
+
+  const handleToggleArchiveConversation = useCallback(
+    async (conv: AiConversation) => {
+      const nextArchived = !conv.archived;
+      setBusyConversationId(conv.id);
+      try {
+        const updated = await chatHistoryService.setConversationArchived(conv.id, nextArchived);
+        if (!mountedRef.current) return;
+        upsertConversationInList(updated);
+        if (nextArchived && activeConversationIdRef.current === conv.id) {
+          handleResetSession();
+        }
+      } catch (err) {
+        if (mountedRef.current) {
+          setErrorNotice({
+            message:
+              err instanceof Error && err.message ? err.message : 'Could not update archive status.',
+            retryable: false
+          });
+        }
+      } finally {
+        if (mountedRef.current) {
+          setBusyConversationId(null);
+        }
+      }
+    },
+    [handleResetSession, upsertConversationInList]
+  );
+
+  const handleConfirmDeleteConversation = useCallback(async () => {
+    const target = deleteTarget;
+    if (!target || isDeletingConversation) return;
+    setIsDeletingConversation(true);
+    setDeleteError(null);
+    try {
+      await chatHistoryService.deleteConversation(target.id);
+      if (!mountedRef.current) return;
+      setConversations(prev => prev.filter(c => c.id !== target.id));
+      if (activeConversationIdRef.current === target.id) {
+        handleResetSession();
+      }
+      setDeleteTarget(null);
+    } catch (err) {
+      if (!mountedRef.current) return;
+      setDeleteError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not delete conversation. Please try again.'
+      );
+    } finally {
+      if (mountedRef.current) {
+        setIsDeletingConversation(false);
+      }
+    }
+  }, [deleteTarget, handleResetSession, isDeletingConversation]);
+
+  const organizedConversations = useMemo(
+    () => organizeConversations(conversations),
+    [conversations]
+  );
+
+  const activeConversation = useMemo(
+    () => conversations.find(c => c.id === activeConversationId) || null,
+    [activeConversationId, conversations]
+  );
 
   const handleRetryFailedQuery = () => {
     if (!errorNotice?.failedQuery || isSubmitting) return;
-    void handleSubmitQuery(errorNotice.failedQuery, true);
+    void handleSubmitQuery(errorNotice.failedQuery, true, errorNotice.userClientMessageId);
   };
 
   const submitTextMessage = () => {
@@ -810,74 +1314,159 @@ export const AiAgentView: React.FC = () => {
   const activeErrorRefId = errorNotice?.requestId;
 
   return (
-    <div className="max-w-2xl mx-auto flex flex-col min-h-[calc(100dvh-13.75rem)] sm:min-h-[calc(100dvh-15rem)] md:min-h-[calc(100dvh-10rem)]">
-      {/* Compact Utility Bar (Read-only until confirmed indicator, Language selector, Audio & Reset) */}
-      <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-black/[0.06]">
-        <span className="text-xs text-neutral-400 whitespace-nowrap">
-          Read-only until confirmed
-        </span>
+    <div className="max-w-5xl mx-auto flex gap-4 min-h-[calc(100dvh-13.75rem)] sm:min-h-[calc(100dvh-15rem)] md:min-h-[calc(100dvh-10rem)]">
+      <ChatHistoryPanel
+        isDesktopOpen={isHistoryDesktopOpen}
+        isMobileOpen={isHistoryMobileOpen}
+        showArchived={showArchived}
+        onSetShowArchived={setShowArchived}
+        onCloseDesktop={() => setIsHistoryDesktopOpen(false)}
+        onCloseMobile={() => setIsHistoryMobileOpen(false)}
+        pinned={organizedConversations.pinned}
+        recentGroups={organizedConversations.recentGroups}
+        archived={organizedConversations.archived}
+        activeConversationId={activeConversationId}
+        busyConversationId={busyConversationId}
+        isLoading={isLoadingConversations}
+        error={historyError}
+        isOffline={isOffline}
+        isNewChatDisabled={isSubmitting || isRecordingOrListening || isTranscribing}
+        deleteTarget={deleteTarget}
+        isDeleting={isDeletingConversation}
+        deleteError={deleteError}
+        onRetryLoad={() => void loadConversations()}
+        onNewChat={handleResetSession}
+        onSelectConversation={(conv) => void handleSelectConversation(conv)}
+        onRenameConversation={handleRenameConversation}
+        onTogglePinConversation={(conv) => void handleTogglePinConversation(conv)}
+        onToggleArchiveConversation={(conv) => void handleToggleArchiveConversation(conv)}
+        onRequestDeleteConversation={(conv) => {
+          setDeleteError(null);
+          setDeleteTarget(conv);
+        }}
+        onConfirmDeleteConversation={handleConfirmDeleteConversation}
+        onCancelDeleteConversation={() => {
+          if (!isDeletingConversation) {
+            setDeleteError(null);
+            setDeleteTarget(null);
+          }
+        }}
+      />
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          <div
-            role="group"
-            aria-label="Voice language"
-            className="inline-flex items-center bg-neutral-100 p-0.5 rounded-lg"
-          >
-            {LANGUAGE_OPTIONS.map((opt) => {
-              const active = voice.voiceLanguage === opt.id;
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => voice.setVoiceLanguage(opt.id)}
-                  disabled={isRecordingOrListening || isTranscribing || isSubmitting}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap min-h-[32px] disabled:opacity-60 ${
-                    active
-                      ? 'bg-white text-[#111111] shadow-2xs'
-                      : 'text-neutral-500 hover:text-[#111111]'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <button
-            type="button"
-            onClick={voice.toggleMute}
-            className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-neutral-500 hover:text-[#111111] hover:bg-neutral-100 transition-colors cursor-pointer"
-            aria-label={voice.isMuted ? 'Unmute voice output' : 'Mute voice output'}
-            title={voice.isMuted ? 'Voice muted' : 'Voice enabled'}
-          >
-            {voice.isMuted ? (
-              <VolumeX className="w-4 h-4 text-neutral-400" />
-            ) : (
-              <Volume2 className="w-4 h-4 text-[#0284C7]" />
-            )}
-          </button>
-
-          {messages.length > 0 && (
+      <div className="flex-1 min-w-0 max-w-2xl mx-auto flex flex-col min-h-[calc(100dvh-13.75rem)] sm:min-h-[calc(100dvh-15rem)] md:min-h-[calc(100dvh-10rem)]">
+        {/* Compact Utility Bar (History Drawer/Sidebar Toggle, New Chat, Language selector, Audio & Reset) */}
+        <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-black/[0.06]">
+          <div className="flex items-center gap-1.5 min-w-0">
             <button
               type="button"
-              onClick={handleResetSession}
-              disabled={isSubmitting}
-              className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-neutral-500 hover:text-[#111111] hover:bg-neutral-100 transition-colors cursor-pointer disabled:opacity-40"
-              aria-label="New conversation"
-              title="New conversation"
+              onClick={() => setIsHistoryMobileOpen(true)}
+              aria-label="Open chat history"
+              data-testid="mobile-history-toggle"
+              className="lg:hidden min-h-[38px] px-2.5 inline-flex items-center gap-1.5 rounded-lg text-xs font-medium text-neutral-600 hover:text-[#111111] hover:bg-neutral-100 cursor-pointer shrink-0"
             >
-              <RotateCcw className="w-4 h-4" />
+              <PanelLeft className="w-4 h-4" />
+              <span>Chats</span>
             </button>
-          )}
-        </div>
-      </div>
 
-      {/* Main Content Area: Centered Minimal Voice Stage (empty) OR Active Strip + Messaging Feed */}
-      {messages.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center py-6 sm:py-10 gap-5 text-center">
-          <VoiceOrb
-            state={effectiveVoiceState}
-            audioLevel={voice.audioLevel}
+            {!isHistoryDesktopOpen && (
+              <button
+                type="button"
+                onClick={() => setIsHistoryDesktopOpen(true)}
+                aria-label="Open chat history"
+                data-testid="desktop-history-toggle"
+                className="hidden lg:inline-flex min-h-[38px] px-2.5 items-center gap-1.5 rounded-lg text-xs font-medium text-neutral-600 hover:text-[#111111] hover:bg-neutral-100 cursor-pointer shrink-0"
+              >
+                <PanelLeft className="w-4 h-4" />
+                <span>Chats</span>
+              </button>
+            )}
+
+            <div className={isHistoryDesktopOpen ? 'lg:hidden' : ''}>
+              <NewChatButton
+                compact
+                onClick={handleResetSession}
+                disabled={isSubmitting || isRecordingOrListening || isTranscribing}
+              />
+            </div>
+
+            <span className="hidden sm:inline text-xs text-neutral-400 truncate pl-1">
+              {activeConversation ? activeConversation.title : 'Read-only until confirmed'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div
+              role="group"
+              aria-label="Voice language"
+              className="inline-flex items-center bg-neutral-100 p-0.5 rounded-lg"
+            >
+              {LANGUAGE_OPTIONS.map((opt) => {
+                const active = voice.voiceLanguage === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => handleLanguageChange(opt.id)}
+                    disabled={isRecordingOrListening || isTranscribing || isSubmitting}
+                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap min-h-[32px] disabled:opacity-60 ${
+                      active
+                        ? 'bg-white text-[#111111] shadow-2xs'
+                        : 'text-neutral-500 hover:text-[#111111]'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={voice.toggleMute}
+              className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-neutral-500 hover:text-[#111111] hover:bg-neutral-100 transition-colors cursor-pointer"
+              aria-label={voice.isMuted ? 'Unmute voice output' : 'Mute voice output'}
+              title={voice.isMuted ? 'Voice muted' : 'Voice enabled'}
+            >
+              {voice.isMuted ? (
+                <VolumeX className="w-4 h-4 text-neutral-400" />
+              ) : (
+                <Volume2 className="w-4 h-4 text-[#0284C7]" />
+              )}
+            </button>
+
+            {messages.length > 0 && (
+              <button
+                type="button"
+                onClick={handleResetSession}
+                disabled={isSubmitting}
+                className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-neutral-500 hover:text-[#111111] hover:bg-neutral-100 transition-colors cursor-pointer disabled:opacity-40"
+                aria-label="New conversation"
+                title="New conversation"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Main Content Area: Loading Messages OR Centered Minimal Voice Stage (empty) OR Active Strip + Messaging Feed */}
+        {isLoadingMessages ? (
+          <div className="flex-1 py-6 space-y-4" aria-label="Loading conversation messages">
+            <div className="flex justify-end">
+              <div className="h-10 w-48 rounded-2xl bg-neutral-100 animate-pulse" />
+            </div>
+            <div className="flex justify-start">
+              <div className="h-16 w-72 rounded-2xl bg-neutral-100/70 animate-pulse" />
+            </div>
+            <div className="flex justify-end">
+              <div className="h-10 w-36 rounded-2xl bg-neutral-100 animate-pulse" />
+            </div>
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center py-6 sm:py-10 gap-5 text-center">
+            <VoiceOrb
+              state={effectiveVoiceState}
+              audioLevel={voice.audioLevel}
             onPress={voice.toggleMicrophone}
             disabled={(isSubmitting || isTranscribing) && voice.voiceState === 'thinking'}
             size="md"
@@ -1394,6 +1983,7 @@ export const AiAgentView: React.FC = () => {
           </button>
         </div>
       </form>
+      </div>
     </div>
   );
 };
