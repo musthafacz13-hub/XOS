@@ -23,6 +23,7 @@ import {
   resolveGoalsWithSavings
 } from '../../utils/calculations';
 import { formatCurrency, getIstTodayString, getMonthString } from '../../utils/formatters';
+import { EntryCatalog } from './transactionSchemas';
 import { XosModuleKey } from './xosKnowledge';
 
 export interface XOSReadOnlySnapshot {
@@ -933,5 +934,67 @@ export function buildSelectiveXosContext(params: {
     selectedModules: intent.modules,
     intent,
     groundedContext: payload
+  };
+}
+
+export function buildEntryCatalog(
+  data: XOSReadOnlySnapshot,
+  now: Date = new Date()
+): EntryCatalog {
+  const todayIst = getIstTodayString(now);
+  const currency = data.settings.currency || 'INR';
+
+  const expenseCategories = Array.from(
+    new Set((data.settings.customExpenseCategories || []).map(c => c.trim()).filter(Boolean))
+  );
+  const incomeSources = Array.from(
+    new Set((data.settings.customIncomeSources || []).map(s => s.trim()).filter(Boolean))
+  );
+
+  const activeDebts = data.debts
+    .map(d => {
+      const remaining = calculateDebtOutstanding(d, data.debtRepayments);
+      return {
+        id: d.id,
+        personName: d.person_name.trim(),
+        direction: (d.direction === 'pay' ? 'pay' : 'receive') as 'receive' | 'pay',
+        originalAmount: Number(d.original_amount) || 0,
+        remainingAmount: remaining,
+        date: d.lent_date,
+        ...(d.description ? { description: d.description.slice(0, 120) } : {})
+      };
+    })
+    .filter(d => d.remainingAmount > 0.001)
+    .slice(0, 30);
+
+  const archivedGoalSavingsIds = new Set(
+    data.goals
+      .filter(g => g.status === 'Archived' && g.savingsGoalId)
+      .map(g => g.savingsGoalId as string)
+  );
+
+  const activeSavingsGoals = data.savingsGoals
+    .filter(sg => sg && sg.id && !sg.isArchived && !archivedGoalSavingsIds.has(sg.id))
+    .slice(0, 30)
+    .map(sg => ({
+      id: sg.id,
+      name: sg.name.trim(),
+      currentAmount: Number(sg.currentAmount) || 0,
+      targetAmount: Number(sg.targetAmount) || 0
+    }));
+
+  return {
+    currency,
+    todayIst,
+    expenseCategories:
+      expenseCategories.length > 0
+        ? expenseCategories
+        : ['Food & Dining', 'Transport', 'Utilities', 'Shopping', 'Other'],
+    incomeSources:
+      incomeSources.length > 0
+        ? incomeSources
+        : ['Salary', 'Freelance', 'Business', 'Gifts', 'Investments', 'Other'],
+    activeDebts,
+    activeSavingsGoals
   };
 }

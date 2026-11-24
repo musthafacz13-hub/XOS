@@ -18,15 +18,34 @@ import {
   PreferredVoiceLanguage
 } from '../../services/ai/agentService';
 import {
+  buildEntryCatalog,
   buildSelectiveXosContext,
   detectQueryIntent,
   SessionTurnMemory,
   XOSReadOnlySnapshot
 } from '../../services/ai/contextBuilder';
+import {
+  executeConfirmedTransaction,
+  resetTransactionExecutorState
+} from '../../services/ai/transactionExecutor';
+import {
+  buildConfirmationQuestion,
+  createIdempotencyKey,
+  createProposalId,
+  DisambiguationOption,
+  EntryCatalog,
+  formatRupeesSimple,
+  matchPendingConfirmationVoiceCommand,
+  PENDING_TRANSACTION_TTL_MS,
+  PendingTransactionProposal,
+  ValidatedTransactionProposal,
+  ValidatedTransactionProposalSchema
+} from '../../services/ai/transactionSchemas';
 import { formatRecordingDuration } from '../../services/ai/voiceUtils';
 import { XosModuleKey } from '../../services/ai/xosKnowledge';
 import { repository } from '../../services/repository';
 import { isSupabaseConfigured } from '../../services/supabase';
+import { TransactionPreviewCard } from './TransactionPreviewCard';
 import { VoiceOrb } from './VoiceOrb';
 
 interface AgentMessage {
@@ -73,19 +92,48 @@ function createMessageId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function readCurrentSnapshot(): XOSReadOnlySnapshot {
+  return {
+    settings: repository.getSettings(),
+    goals: repository.getGoals(),
+    expenses: repository.getExpenses(),
+    incomes: repository.getIncomes(),
+    attendance: repository.getAttendance(),
+    savingsGoals: repository.getSavingsGoals(),
+    savingsTransactions: repository.getSavingsTransactions(),
+    salaryPayouts: repository.getSalaryPayouts(),
+    debts: repository.getDebts(),
+    debtRepayments: repository.getDebtRepayments()
+  };
+}
+
 export const AiAgentView: React.FC = () => {
   const { session, user } = useAuth();
   const accessToken = session?.access_token || null;
 
-  // Strictly active-session in-memory conversation state (zero browser persistence)
+  // Strictly active-session in-memory conversation & proposal state (zero browser persistence)
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [errorNotice, setErrorNotice] = useState<AgentErrorState | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [pendingProposal, setPendingProposal] = useState<PendingTransactionProposal | null>(null);
+  const [entryCatalog, setEntryCatalog] = useState<EntryCatalog | null>(null);
+  const [isEditingProposal, setIsEditingProposal] = useState(false);
+  const [proposalEditError, setProposalEditError] = useState<string | null>(null);
+  const [isSavingTransaction, setIsSavingTransaction] = useState(false);
+  const [clarificationOptions, setClarificationOptions] = useState<{
+    messageId: string;
+    options: DisambiguationOption[];
+    detectedLanguage: 'ml' | 'en' | 'mixed';
+  } | null>(null);
+
   const messagesRef = useRef<AgentMessage[]>([]);
+  const pendingProposalRef = useRef<PendingTransactionProposal | null>(null);
   const isSubmittingRef = useRef(false);
+  const isSavingTransactionRef = useRef(false);
   const mountedRef = useRef(true);
+  const lastUserIdRef = useRef<string | undefined>(user?.id);
   const abortControllerRef = useRef<AbortController | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -96,6 +144,21 @@ export const AiAgentView: React.FC = () => {
   }, [messages]);
 
   useEffect(() => {
+    pendingProposalRef.current = pendingProposal;
+  }, [pendingProposal]);
+
+  useEffect(() => {
+    if (lastUserIdRef.current !== user?.id) {
+      lastUserIdRef.current = user?.id;
+      setPendingProposal(null);
+      setIsEditingProposal(false);
+      setProposalEditError(null);
+      setClarificationOptions(null);
+      resetTransactionExecutorState();
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
@@ -103,6 +166,43 @@ export const AiAgentView: React.FC = () => {
       abortControllerRef.current = null;
     };
   }, []);
+
+  // Automatically expire unconfirmed pending transaction previews after 2 minutes
+  useEffect(() => {
+    if (!pendingProposal) return;
+    const targetProposalId = pendingProposal.proposalId;
+    const targetLang = pendingProposal.detectedLanguage;
+    const remainingMs = pendingProposal.expiresAtMs - Date.now();
+
+    const expireNow = () => {
+      if (!mountedRef.current || isSavingTransactionRef.current) return;
+      if (pendingProposalRef.current?.proposalId !== targetProposalId) return;
+      setPendingProposal(null);
+      setIsEditingProposal(false);
+      setProposalEditError(null);
+      const isMl = targetLang === 'ml' || targetLang === 'mixed';
+      const expiredText = isMl
+        ? 'ഈ ഇടപാട് പ്രിവ്യൂ 2 മിനിറ്റ് കഴിഞ്ഞ് കാലഹരണപ്പെട്ടു (സേവ് ചെയ്തിട്ടില്ല). വേണമെങ്കിൽ വീണ്ടും പറയൂ.'
+        : 'This transaction preview expired after 2 minutes without confirmation and was not saved.';
+      setMessages(prev => [
+        ...prev,
+        {
+          id: createMessageId(),
+          role: 'model',
+          text: expiredText,
+          langHint: targetLang
+        }
+      ]);
+    };
+
+    if (remainingMs <= 0) {
+      expireNow();
+      return;
+    }
+
+    const timer = setTimeout(expireNow, remainingMs);
+    return () => clearTimeout(timer);
+  }, [pendingProposal]);
 
   const syncTextareaHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -115,10 +215,284 @@ export const AiAgentView: React.FC = () => {
     syncTextareaHeight();
   }, [inputText, syncTextareaHeight]);
 
+  const handleConfirmPendingTransaction = useCallback(
+    async (source: 'button' | 'voice') => {
+      const activeProposal = pendingProposalRef.current;
+      if (!activeProposal || isSavingTransactionRef.current) return;
+
+      voiceRef.current?.unlockAudioFromUserGesture();
+      setErrorNotice(null);
+
+      if (Date.now() > activeProposal.expiresAtMs) {
+        setPendingProposal(null);
+        setIsEditingProposal(false);
+        setProposalEditError(null);
+        setErrorNotice({
+          message: 'This transaction preview has expired. Please speak or type it again to review before saving.',
+          retryable: false
+        });
+        return;
+      }
+
+      if (isSupabaseConfigured && (!user?.id || !accessToken)) {
+        setErrorNotice({
+          message: 'Your session has expired. Please sign in again.',
+          retryable: false
+        });
+        return;
+      }
+
+      isSavingTransactionRef.current = true;
+      setIsSavingTransaction(true);
+
+      try {
+        const result = await executeConfirmedTransaction({
+          proposal: activeProposal,
+          confirmedByUser: true,
+          confirmationSource: source
+        });
+        if (!mountedRef.current) return;
+
+        setPendingProposal(null);
+        setIsEditingProposal(false);
+        setProposalEditError(null);
+        setClarificationOptions(null);
+        setEntryCatalog(buildEntryCatalog(readCurrentSnapshot()));
+
+        const confirmMsgId = createMessageId();
+        setMessages(prev => [
+          ...prev,
+          {
+            id: confirmMsgId,
+            role: 'model',
+            text: result.confirmationMessage,
+            langHint: activeProposal.detectedLanguage
+          }
+        ]);
+
+        voiceRef.current?.setVoiceState('idle');
+        await voiceRef.current?.speakResponse(
+          result.confirmationMessage,
+          confirmMsgId,
+          activeProposal.detectedLanguage
+        );
+      } catch (err) {
+        if (!mountedRef.current) return;
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : 'Could not save transaction. Please try again.';
+        if (/expired/i.test(message)) {
+          setPendingProposal(null);
+          setIsEditingProposal(false);
+        }
+        setErrorNotice({
+          message,
+          retryable: false
+        });
+      } finally {
+        isSavingTransactionRef.current = false;
+        if (mountedRef.current) {
+          setIsSavingTransaction(false);
+        }
+      }
+    },
+    [accessToken, user?.id]
+  );
+
+  const handleCancelPendingTransaction = useCallback((_source: 'button' | 'voice') => {
+    const activeProposal = pendingProposalRef.current;
+    if (!activeProposal || isSavingTransactionRef.current) return;
+    const lang = activeProposal.detectedLanguage;
+    setPendingProposal(null);
+    setIsEditingProposal(false);
+    setProposalEditError(null);
+    setErrorNotice(null);
+
+    const isMl = lang === 'ml' || lang === 'mixed';
+    const cancelText = isMl
+      ? 'ശരി, ഈ ഇടപാട് സേവ് ചെയ്യാതെ റദ്ദാക്കി.'
+      : 'Cancelled — no transaction was saved.';
+
+    setMessages(prev => [
+      ...prev,
+      {
+        id: createMessageId(),
+        role: 'model',
+        text: cancelText,
+        langHint: lang
+      }
+    ]);
+  }, []);
+
+  const handleApplyEditProposal = useCallback(
+    (updatedTx: ValidatedTransactionProposal) => {
+      const current = pendingProposalRef.current;
+      if (!current) return;
+      const nowMs = Date.now();
+      const proposalId = createProposalId();
+      const idempotencyKey = createIdempotencyKey(proposalId, updatedTx);
+      const currency = entryCatalog?.currency || repository.getSettings().currency || 'INR';
+
+      setPendingProposal({
+        ...current,
+        proposalId,
+        idempotencyKey,
+        createdAtMs: nowMs,
+        expiresAtMs: nowMs + PENDING_TRANSACTION_TTL_MS,
+        summaryReply: buildConfirmationQuestion(updatedTx, current.detectedLanguage, currency),
+        transaction: updatedTx
+      });
+      setIsEditingProposal(false);
+      setProposalEditError(null);
+    },
+    [entryCatalog?.currency]
+  );
+
+  const handleSelectDisambiguationOption = useCallback(
+    (option: DisambiguationOption) => {
+      if (isSavingTransactionRef.current || isSubmittingRef.current) return;
+      const catalog = entryCatalog || buildEntryCatalog(readCurrentSnapshot());
+      const lang = clarificationOptions?.detectedLanguage || 'en';
+      const nowMs = Date.now();
+
+      let candidateTx: ValidatedTransactionProposal | null = null;
+      if (option.kind === 'debt') {
+        if (option.proposedAmount > option.remainingAmount + 0.001) {
+          setErrorNotice({
+            message: `Repayment of ${formatRupeesSimple(option.proposedAmount, catalog.currency)} exceeds ${option.personName}'s remaining debt (${formatRupeesSimple(option.remainingAmount, catalog.currency)}).`,
+            retryable: false
+          });
+          return;
+        }
+        const remainingAfter = Math.max(
+          0,
+          Number((option.remainingAmount - option.proposedAmount).toFixed(2))
+        );
+        candidateTx = {
+          intent: 'record_debt_repayment',
+          debtId: option.id,
+          personName: option.personName,
+          direction: option.direction,
+          amount: option.proposedAmount,
+          remainingBefore: option.remainingAmount,
+          remainingAfter,
+          date: option.proposedDate,
+          paymentMethod: option.paymentMethod,
+          ...(option.notes ? { notes: option.notes } : {})
+        };
+      } else {
+        if (
+          option.transactionType === 'withdrawal' &&
+          option.proposedAmount > option.currentAmount + 0.001
+        ) {
+          setErrorNotice({
+            message: `Withdrawal exceeds ${option.name}'s current balance (${formatRupeesSimple(option.currentAmount, catalog.currency)}).`,
+            retryable: false
+          });
+          return;
+        }
+        const balanceAfter =
+          option.transactionType === 'deposit'
+            ? Number((option.currentAmount + option.proposedAmount).toFixed(2))
+            : Math.max(0, Number((option.currentAmount - option.proposedAmount).toFixed(2)));
+        candidateTx = {
+          intent: 'create_savings_transaction',
+          savingsGoalId: option.id,
+          savingsGoalName: option.name,
+          transactionType: option.transactionType,
+          amount: option.proposedAmount,
+          currentBalanceBefore: option.currentAmount,
+          balanceAfter,
+          date: option.proposedDate,
+          ...(option.note ? { note: option.note } : {})
+        };
+      }
+
+      const validated = ValidatedTransactionProposalSchema.safeParse(candidateTx);
+      if (!validated.success) {
+        setErrorNotice({
+          message: validated.error.issues[0]?.message || 'Could not prepare this transaction.',
+          retryable: false
+        });
+        return;
+      }
+
+      const proposalId = createProposalId();
+      const idempotencyKey = createIdempotencyKey(proposalId, validated.data);
+      const summaryReply = buildConfirmationQuestion(validated.data, lang, catalog.currency);
+
+      setClarificationOptions(null);
+      setIsEditingProposal(false);
+      setProposalEditError(null);
+      setErrorNotice(null);
+      setPendingProposal({
+        proposalId,
+        idempotencyKey,
+        createdAtMs: nowMs,
+        expiresAtMs: nowMs + PENDING_TRANSACTION_TTL_MS,
+        confidence: 1,
+        summaryReply,
+        detectedLanguage: lang,
+        transaction: validated.data
+      });
+      setMessages(prev => [
+        ...prev,
+        {
+          id: createMessageId(),
+          role: 'model',
+          text: summaryReply,
+          langHint: lang
+        }
+      ]);
+    },
+    [clarificationOptions?.detectedLanguage, entryCatalog]
+  );
+
   const handleSubmitQuery = useCallback(
     async (rawQuery: string, isRetry: boolean = false) => {
       const cleanQuery = rawQuery.trim();
-      if (!cleanQuery || isSubmittingRef.current) return;
+      if (!cleanQuery || isSubmittingRef.current || isSavingTransactionRef.current) return;
+
+      // If an active non-expired proposal awaits confirmation, inspect typed/spoken confirmation or cancel first
+      if (!isRetry && pendingProposalRef.current) {
+        const activeProp = pendingProposalRef.current;
+        const voiceCmd = matchPendingConfirmationVoiceCommand(cleanQuery);
+        if (voiceCmd === 'confirm' && Date.now() <= activeProp.expiresAtMs) {
+          setInputText('');
+          setMessages(prev => [
+            ...prev,
+            {
+              id: createMessageId(),
+              role: 'user',
+              text: cleanQuery,
+              langHint: activeProp.detectedLanguage
+            }
+          ]);
+          void handleConfirmPendingTransaction('voice');
+          return;
+        }
+        if (voiceCmd === 'cancel') {
+          setInputText('');
+          setMessages(prev => [
+            ...prev,
+            {
+              id: createMessageId(),
+              role: 'user',
+              text: cleanQuery,
+              langHint: activeProp.detectedLanguage
+            }
+          ]);
+          handleCancelPendingTransaction('voice');
+          return;
+        }
+        // Any unrelated new message invalidates the old unconfirmed proposal
+        setPendingProposal(null);
+        setIsEditingProposal(false);
+        setProposalEditError(null);
+      }
+
+      setClarificationOptions(null);
 
       // Prime audio element & AudioContext synchronously while user gesture is active
       voiceRef.current?.unlockAudioFromUserGesture();
@@ -188,20 +562,11 @@ export const AiAgentView: React.FC = () => {
         }
 
         // Read fresh read-only snapshot directly from repository (never stale React closure state)
-        const freshSnapshot: XOSReadOnlySnapshot = {
-          settings: repository.getSettings(),
-          goals: repository.getGoals(),
-          expenses: repository.getExpenses(),
-          incomes: repository.getIncomes(),
-          attendance: repository.getAttendance(),
-          savingsGoals: repository.getSavingsGoals(),
-          savingsTransactions: repository.getSavingsTransactions(),
-          salaryPayouts: repository.getSalaryPayouts(),
-          debts: repository.getDebts(),
-          debtRepayments: repository.getDebtRepayments()
-        };
+        const freshSnapshot = readCurrentSnapshot();
         const hydrationAfter = repository.getHydrationState();
         const fetchErrorTables = repository.getFetchErrors().map(err => err.table);
+        const catalog = buildEntryCatalog(freshSnapshot);
+        setEntryCatalog(catalog);
 
         const selective = buildSelectiveXosContext({
           query: cleanQuery,
@@ -218,6 +583,7 @@ export const AiAgentView: React.FC = () => {
           message: cleanQuery,
           history: recentHistory,
           groundedContext: selective.groundedContext,
+          entryCatalog: catalog,
           preferredLanguage: voiceRef.current?.voiceLanguage || 'ml-IN',
           accessToken,
           signal: controller.signal
@@ -235,6 +601,28 @@ export const AiAgentView: React.FC = () => {
         };
 
         setMessages(prev => [...prev, assistantMessage]);
+
+        if (result.actionType === 'transaction_proposal' && result.pendingTransaction) {
+          setPendingProposal(result.pendingTransaction);
+          setIsEditingProposal(false);
+          setProposalEditError(null);
+          setClarificationOptions(null);
+        } else if (
+          result.actionType === 'clarification_needed' &&
+          result.clarification?.disambiguationOptions &&
+          result.clarification.disambiguationOptions.length > 0
+        ) {
+          setPendingProposal(null);
+          setClarificationOptions({
+            messageId: assistantMsgId,
+            options: result.clarification.disambiguationOptions,
+            detectedLanguage: result.detectedLanguage
+          });
+        } else {
+          setPendingProposal(null);
+          setClarificationOptions(null);
+        }
+
         voiceRef.current?.setVoiceState('idle');
         await voiceRef.current?.speakResponse(
           result.reply,
@@ -271,13 +659,53 @@ export const AiAgentView: React.FC = () => {
         }
       }
     },
-    [accessToken, user?.id]
+    [accessToken, handleCancelPendingTransaction, handleConfirmPendingTransaction, user?.id]
   );
 
-  // Never auto-submit unreviewed voice transcription; place into editable composer for review
+  // Voice confirmation/cancellation triggers ONLY when an active non-expired preview exists;
+  // all other transcripts go safely to the editable review composer.
   const voice = useJarvisVoice({
     accessToken,
     onTranscriptReady: (transcript) => {
+      const activeProp = pendingProposalRef.current;
+      if (
+        activeProp &&
+        Date.now() <= activeProp.expiresAtMs &&
+        !isSavingTransactionRef.current
+      ) {
+        const cmd = matchPendingConfirmationVoiceCommand(transcript);
+        if (cmd === 'confirm') {
+          voiceRef.current?.clearVoiceReview();
+          setInputText('');
+          setMessages(prev => [
+            ...prev,
+            {
+              id: createMessageId(),
+              role: 'user',
+              text: transcript,
+              langHint: activeProp.detectedLanguage
+            }
+          ]);
+          void handleConfirmPendingTransaction('voice');
+          return;
+        }
+        if (cmd === 'cancel') {
+          voiceRef.current?.clearVoiceReview();
+          setInputText('');
+          setMessages(prev => [
+            ...prev,
+            {
+              id: createMessageId(),
+              role: 'user',
+              text: transcript,
+              langHint: activeProp.detectedLanguage
+            }
+          ]);
+          handleCancelPendingTransaction('voice');
+          return;
+        }
+      }
+
       setInputText(transcript);
       requestAnimationFrame(() => {
         textareaRef.current?.focus();
@@ -288,10 +716,10 @@ export const AiAgentView: React.FC = () => {
   voiceRef.current = voice;
 
   useEffect(() => {
-    if (messages.length > 0) {
+    if (messages.length > 0 || pendingProposal) {
       transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
-  }, [messages.length, isSubmitting]);
+  }, [messages.length, isSubmitting, pendingProposal]);
 
   const handleResetSession = () => {
     abortControllerRef.current?.abort();
@@ -299,6 +727,11 @@ export const AiAgentView: React.FC = () => {
     voice.clearCachedAudio();
     voice.setVoiceState('idle');
     setErrorNotice(null);
+    setPendingProposal(null);
+    setIsEditingProposal(false);
+    setProposalEditError(null);
+    setClarificationOptions(null);
+    resetTransactionExecutorState();
     setMessages([]);
     setInputText('');
   };
@@ -378,10 +811,10 @@ export const AiAgentView: React.FC = () => {
 
   return (
     <div className="max-w-2xl mx-auto flex flex-col min-h-[calc(100dvh-13.75rem)] sm:min-h-[calc(100dvh-15rem)] md:min-h-[calc(100dvh-10rem)]">
-      {/* Compact Utility Bar (Read-only indicator, Language selector, Audio & Reset) */}
+      {/* Compact Utility Bar (Read-only until confirmed indicator, Language selector, Audio & Reset) */}
       <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-black/[0.06]">
         <span className="text-xs text-neutral-400 whitespace-nowrap">
-          Read-only
+          Read-only until confirmed
         </span>
 
         <div className="flex items-center gap-1.5 shrink-0">
@@ -642,10 +1075,28 @@ export const AiAgentView: React.FC = () => {
                       {msg.text}
                     </div>
                   ) : (
-                    <div className="max-w-[94%] space-y-1">
+                    <div className="max-w-[94%] space-y-1.5">
                       <p className="text-[15px] text-[#111111] leading-relaxed whitespace-pre-line break-words">
                         {msg.text}
                       </p>
+                      {clarificationOptions?.messageId === msg.id && (
+                        <div
+                          data-testid="disambiguation-options"
+                          className="flex flex-col sm:flex-row sm:flex-wrap gap-1.5 pt-1"
+                        >
+                          {clarificationOptions.options.map((opt) => (
+                            <button
+                              key={`${opt.kind}:${opt.id}`}
+                              type="button"
+                              disabled={isSavingTransaction || isSubmitting}
+                              onClick={() => handleSelectDisambiguationOption(opt)}
+                              className="text-left px-3 py-2 rounded-xl border border-[#0284C7]/30 bg-sky-50/50 hover:bg-sky-100/70 text-xs font-medium text-[#111111] transition-colors cursor-pointer disabled:opacity-50 min-h-[38px]"
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <div className="flex items-center gap-2 flex-wrap">
                         {isPlayingThis ? (
                           <>
@@ -748,6 +1199,28 @@ export const AiAgentView: React.FC = () => {
             <div ref={transcriptEndRef} />
           </div>
         </>
+      )}
+
+      {/* Interactive Confirmation Preview Card (never auto-saved without confirmation) */}
+      {pendingProposal && (
+        <TransactionPreviewCard
+          proposal={pendingProposal}
+          catalog={entryCatalog || buildEntryCatalog(readCurrentSnapshot())}
+          isEditing={isEditingProposal}
+          isSaving={isSavingTransaction}
+          editError={proposalEditError}
+          onStartEdit={() => {
+            setProposalEditError(null);
+            setIsEditingProposal(true);
+          }}
+          onCancelEdit={() => {
+            setProposalEditError(null);
+            setIsEditingProposal(false);
+          }}
+          onApplyEdit={handleApplyEditProposal}
+          onConfirm={() => void handleConfirmPendingTransaction('button')}
+          onCancel={() => handleCancelPendingTransaction('button')}
+        />
       )}
 
       {/* Editable Transcript Review Bar (prevents silent auto-submit of uncertain voice recognition) */}

@@ -2164,24 +2164,68 @@ export const repository = {
 
     if (ctx.mode === 'supabase') {
       const formattedTime = normalizeDbTime(expense.time || currentTime);
+      const knownIds = new Set(memoryState.expenses.map(e => e.id));
+      const trimmedTitle = expense.title.trim();
+      const trimmedNotes = expense.notes?.trim() ? expense.notes.trim() : null;
+      const requestStartedMs = Date.now();
 
-      const { data, error } = await ctx.client
-        .from('expenses')
-        .insert({
-          user_id: ctx.user.id,
-          title: expense.title.trim(),
-          amount: expense.amount,
-          category: expense.category,
-          expense_date: expense.date,
-          expense_time: formattedTime,
-          payment_method: expense.paymentMethod || 'Cash',
-          notes: expense.notes?.trim() ? expense.notes.trim() : null,
-          is_recurring: isRecurring,
-          recurrence_frequency: dbRecurrenceFrequency,
-          recurrence_end_date: isRecurring && expense.recurrenceEndDate ? expense.recurrenceEndDate : null
-        })
-        .select()
-        .single();
+      let data: any = null;
+      let error: any = null;
+      try {
+        const res = await ctx.client
+          .from('expenses')
+          .insert({
+            user_id: ctx.user.id,
+            title: trimmedTitle,
+            amount: expense.amount,
+            category: expense.category,
+            expense_date: expense.date,
+            expense_time: formattedTime,
+            payment_method: expense.paymentMethod || 'Cash',
+            notes: trimmedNotes,
+            is_recurring: isRecurring,
+            recurrence_frequency: dbRecurrenceFrequency,
+            recurrence_end_date: isRecurring && expense.recurrenceEndDate ? expense.recurrenceEndDate : null
+          })
+          .select()
+          .single();
+        data = res.data;
+        error = res.error;
+      } catch (thrown) {
+        error = thrown;
+      }
+
+      if ((error || !data) && ['abort', 'timeout'].includes(classifyFetchError(error))) {
+        try {
+          let checkQuery: any = ctx.client
+            .from('expenses')
+            .select('*')
+            .eq('user_id', ctx.user.id)
+            .eq('expense_date', expense.date)
+            .order('created_at', { ascending: false });
+          if (typeof checkQuery.limit === 'function') {
+            checkQuery = checkQuery.limit(10);
+          }
+          const { data: recentRows, error: checkErr } = await checkQuery;
+          if (!checkErr && Array.isArray(recentRows)) {
+            const matched = recentRows.find((row: any) => {
+              if (!row || !row.id || knownIds.has(row.id)) return false;
+              const titleMatch = String(row.title || '').trim() === trimmedTitle;
+              const amtMatch = Math.abs(Number(row.amount) - expense.amount) < 0.005;
+              const catMatch = row.category === expense.category;
+              const createdMs = row.created_at ? Date.parse(row.created_at) : NaN;
+              const recentEnough = !Number.isFinite(createdMs) || createdMs >= requestStartedMs - 60000;
+              return titleMatch && amtMatch && catMatch && recentEnough;
+            });
+            if (matched) {
+              data = matched;
+              error = null;
+            }
+          }
+        } catch {
+          // Keep original abort/timeout error
+        }
+      }
 
       if (error || !data) {
         throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not save expense.'));
@@ -2192,7 +2236,10 @@ export const repository = {
         confirmedExpense.time = expense.time || currentTime;
       }
 
-      memoryState.expenses = [confirmedExpense, ...memoryState.expenses];
+      memoryState.expenses = [
+        confirmedExpense,
+        ...memoryState.expenses.filter(e => e.id !== confirmedExpense.id)
+      ];
       notifyListeners();
       return confirmedExpense;
     }
@@ -2358,21 +2405,64 @@ export const repository = {
 
     if (ctx.mode === 'supabase') {
       const formattedTime = normalizeDbTime(income.time || currentTime);
+      const knownIds = new Set(memoryState.incomes.map(i => i.id));
+      const trimmedTitle = income.title.trim();
+      const requestStartedMs = Date.now();
 
-      const { data, error } = await ctx.client
-        .from('incomes')
-        .insert({
-          user_id: ctx.user.id,
-          title: income.title.trim(),
-          amount: income.amount,
-          source: income.source,
-          income_date: income.date,
-          income_time: formattedTime,
-          notes: income.notes?.trim() ? income.notes.trim() : null,
-          salary_payout_id: income.salaryPayoutId || null
-        })
-        .select()
-        .single();
+      let data: any = null;
+      let error: any = null;
+      try {
+        const res = await ctx.client
+          .from('incomes')
+          .insert({
+            user_id: ctx.user.id,
+            title: trimmedTitle,
+            amount: income.amount,
+            source: income.source,
+            income_date: income.date,
+            income_time: formattedTime,
+            notes: income.notes?.trim() ? income.notes.trim() : null,
+            salary_payout_id: income.salaryPayoutId || null
+          })
+          .select()
+          .single();
+        data = res.data;
+        error = res.error;
+      } catch (thrown) {
+        error = thrown;
+      }
+
+      if ((error || !data) && ['abort', 'timeout'].includes(classifyFetchError(error))) {
+        try {
+          let checkQuery: any = ctx.client
+            .from('incomes')
+            .select('*')
+            .eq('user_id', ctx.user.id)
+            .eq('income_date', income.date)
+            .order('created_at', { ascending: false });
+          if (typeof checkQuery.limit === 'function') {
+            checkQuery = checkQuery.limit(10);
+          }
+          const { data: recentRows, error: checkErr } = await checkQuery;
+          if (!checkErr && Array.isArray(recentRows)) {
+            const matched = recentRows.find((row: any) => {
+              if (!row || !row.id || knownIds.has(row.id)) return false;
+              const titleMatch = String(row.title || '').trim() === trimmedTitle;
+              const amtMatch = Math.abs(Number(row.amount) - income.amount) < 0.005;
+              const srcMatch = row.source === income.source;
+              const createdMs = row.created_at ? Date.parse(row.created_at) : NaN;
+              const recentEnough = !Number.isFinite(createdMs) || createdMs >= requestStartedMs - 60000;
+              return titleMatch && amtMatch && srcMatch && recentEnough;
+            });
+            if (matched) {
+              data = matched;
+              error = null;
+            }
+          }
+        } catch {
+          // Keep original abort/timeout error
+        }
+      }
 
       if (error || !data) {
         throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not save income.'));
@@ -2383,7 +2473,10 @@ export const repository = {
         confirmedIncome.time = income.time || currentTime;
       }
 
-      memoryState.incomes = [confirmedIncome, ...memoryState.incomes];
+      memoryState.incomes = [
+        confirmedIncome,
+        ...memoryState.incomes.filter(i => i.id !== confirmedIncome.id)
+      ];
       notifyListeners();
       return confirmedIncome;
     }
@@ -2947,25 +3040,72 @@ export const repository = {
     const ctx = await requirePersistenceContext();
 
     if (ctx.mode === 'supabase') {
-      const { data: dbTx, error } = await ctx.client
-        .from('savings_transactions')
-        .insert({
-          savings_goal_id: tx.savingsGoalId,
-          user_id: ctx.user.id,
-          transaction_type: normalizedTxType,
-          amount: tx.amount,
-          transaction_date: tx.date,
-          notes: tx.note?.trim() ? tx.note.trim() : null
-        })
-        .select()
-        .single();
+      const knownTxIds = new Set(memoryState.savingsTransactions.map(t => t.id));
+      const trimmedNote = tx.note?.trim() ? tx.note.trim() : null;
+      const requestStartedMs = Date.now();
+
+      let dbTx: any = null;
+      let error: any = null;
+      try {
+        const res = await ctx.client
+          .from('savings_transactions')
+          .insert({
+            savings_goal_id: tx.savingsGoalId,
+            user_id: ctx.user.id,
+            transaction_type: normalizedTxType,
+            amount: tx.amount,
+            transaction_date: tx.date,
+            notes: trimmedNote
+          })
+          .select()
+          .single();
+        dbTx = res.data;
+        error = res.error;
+      } catch (thrown) {
+        error = thrown;
+      }
+
+      if ((error || !dbTx) && ['abort', 'timeout'].includes(classifyFetchError(error))) {
+        try {
+          let checkQuery: any = ctx.client
+            .from('savings_transactions')
+            .select('*')
+            .eq('user_id', ctx.user.id)
+            .eq('savings_goal_id', tx.savingsGoalId)
+            .eq('transaction_date', tx.date)
+            .order('created_at', { ascending: false });
+          if (typeof checkQuery.limit === 'function') {
+            checkQuery = checkQuery.limit(10);
+          }
+          const { data: recentRows, error: checkErr } = await checkQuery;
+          if (!checkErr && Array.isArray(recentRows)) {
+            const matched = recentRows.find((row: any) => {
+              if (!row || !row.id || knownTxIds.has(row.id)) return false;
+              const amtMatch = Math.abs(Number(row.amount) - tx.amount) < 0.005;
+              const typeMatch = String(row.transaction_type || '').toLowerCase() === normalizedTxType;
+              const createdMs = row.created_at ? Date.parse(row.created_at) : NaN;
+              const recentEnough = !Number.isFinite(createdMs) || createdMs >= requestStartedMs - 60000;
+              return amtMatch && typeMatch && recentEnough;
+            });
+            if (matched) {
+              dbTx = matched;
+              error = null;
+            }
+          }
+        } catch {
+          // Keep original abort/timeout error
+        }
+      }
 
       if (error || !dbTx) {
         throw new Error(sanitizeDatabaseErrorMessage(error, 'Database error: Could not record savings transaction.'));
       }
 
       const confirmedTx = mapSavingsTxRow(dbTx);
-      memoryState.savingsTransactions = [confirmedTx, ...memoryState.savingsTransactions];
+      memoryState.savingsTransactions = [
+        confirmedTx,
+        ...memoryState.savingsTransactions.filter(t => t.id !== confirmedTx.id)
+      ];
 
       // Reconcile balance and linked Goal trigger state (current_balance, progress_percentage, status, completed_at)
       const [sgRefresh, goalRefresh] = await Promise.all([

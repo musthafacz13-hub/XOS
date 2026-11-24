@@ -1,5 +1,19 @@
 import { XOS_SYSTEM_SPECIFICATION } from '../../src/services/ai/xosKnowledge.js';
 import {
+  AssistantActionType,
+  ClarificationResult,
+  detectExplicitInvalidDateInText,
+  EntryCatalog,
+  EntryCatalogSchema,
+  hasPotentialTransactionIntent,
+  isExplicitReadOnlyQuestion,
+  isUnsupportedDeleteOrEditRequest,
+  parseMalayalamManglishAmount,
+  parseStructuredLlmJson,
+  PendingTransactionProposal,
+  validateAndNormalizeProposal
+} from '../../src/services/ai/transactionSchemas.js';
+import {
   AiErrorCategory,
   AiRequestStage,
   ASSISTANT_FALLBACK_MODEL,
@@ -32,6 +46,7 @@ export interface AssistantRequestPayload {
   message: string;
   history?: ConversationHistoryTurn[];
   groundedContext?: Record<string, unknown>;
+  entryCatalog?: EntryCatalog;
   preferredLanguage?: 'auto' | 'ml-IN' | 'en-IN';
 }
 
@@ -225,6 +240,92 @@ export function detectResponseLanguage(text: string): 'ml' | 'en' | 'mixed' {
   if (hasMalayalamScript && hasLatin) return 'mixed';
   if (hasMalayalamScript) return 'ml';
   return 'en';
+}
+
+function getServerIstTodayString(): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date());
+  const year = parts.find(p => p.type === 'year')?.value || '2026';
+  const month = parts.find(p => p.type === 'month')?.value || '01';
+  const day = parts.find(p => p.type === 'day')?.value || '01';
+  return `${year}-${month}-${day}`;
+}
+
+function buildDefaultEntryCatalog(): EntryCatalog {
+  return {
+    currency: 'INR',
+    todayIst: getServerIstTodayString(),
+    expenseCategories: [
+      'Food & Dining',
+      'Housing',
+      'Utilities',
+      'Transport',
+      'Entertainment',
+      'Shopping',
+      'Health & Fitness',
+      'Education',
+      'Debt & Bills',
+      'Subscriptions',
+      'Other'
+    ],
+    incomeSources: ['Salary', 'Freelance', 'Business', 'Gifts', 'Investments', 'Other'],
+    activeDebts: [],
+    activeSavingsGoals: []
+  };
+}
+
+function resolveEntryCatalog(rawCatalog: unknown): EntryCatalog {
+  const parsed = EntryCatalogSchema.safeParse(rawCatalog);
+  if (parsed.success) {
+    return parsed.data;
+  }
+  return buildDefaultEntryCatalog();
+}
+
+function buildVoiceEntrySystemInstructions(catalog: EntryCatalog): string {
+  const catalogJson = JSON.stringify({
+    todayIst: catalog.todayIst,
+    currency: catalog.currency,
+    expenseCategories: catalog.expenseCategories,
+    incomeSources: catalog.incomeSources,
+    activeDebts: catalog.activeDebts.slice(0, 20),
+    activeSavingsGoals: catalog.activeSavingsGoals.slice(0, 20)
+  });
+
+  return `VOICE-TO-DATA PREPARATION PROTOCOL (NEVER WRITE TO DB DIRECTLY):
+You are preparing a structured transaction preview for explicit user confirmation. You NEVER write to the database yourself.
+
+CATALOG & TODAY (IST):
+${catalogJson}
+
+ALLOWED ACTIONS (respond with ONE valid JSON object and NO extra prose outside JSON):
+1) If the user is asking a read-only question, summary, or calculation (NOT adding a new transaction):
+{"action":"read_only_query","reply":"<concise natural answer grounded in context>"}
+
+2) If the user asks to delete, edit, update, or reset existing records:
+{"action":"unsupported_mutation","reply":"<politely explain voice assistant only prepares new entries and guide them to edit/delete in the relevant XOS module>"}
+
+3) If the user wants to record a NEW transaction, pick the exact matching intent and return:
+{"action":"transaction_proposal","confidence":0.95,"reply":"<short confirmation question in user's language>","transaction":{...}}
+Supported transaction shapes:
+- create_expense: {"intent":"create_expense","amount":150,"category":"<must be from expenseCategories>","title":"<short description>","date":"YYYY-MM-DD","paymentMethod":"Cash|Credit Card|Debit Card|Bank Transfer|Digital Wallet","notes":"optional"}
+- create_income: {"intent":"create_income","amount":5000,"source":"<must be from incomeSources>","title":"<short description>","date":"YYYY-MM-DD","notes":"optional"}
+- create_debt_receivable ("Money to Receive" - user gave/lent money): {"intent":"create_debt_receivable","direction":"receive","personName":"<name>","amount":1000,"date":"YYYY-MM-DD","dueDate":"optional YYYY-MM-DD","description":"optional"}
+- create_debt_payable ("Money to Pay" - user borrowed/owes money): {"intent":"create_debt_payable","direction":"pay","personName":"<name>","amount":2000,"date":"YYYY-MM-DD","dueDate":"optional YYYY-MM-DD","description":"optional"}
+- record_debt_repayment (repaying/collecting existing debt ONLY): {"intent":"record_debt_repayment","debtId":"<matching id from activeDebts if known>","personName":"<name>","direction":"pay|receive","amount":500,"date":"YYYY-MM-DD","paymentMethod":"Bank Transfer|Cash|Digital Wallet|Credit Card|Debit Card","notes":"optional"}
+- create_savings_transaction: {"intent":"create_savings_transaction","savingsGoalId":"<matching id from activeSavingsGoals if known>","savingsGoalName":"<goal name>","transactionType":"deposit|withdrawal","amount":1000,"date":"YYYY-MM-DD","note":"optional"}
+
+4) If amount is vague ("some money", "കുറച്ചു പണം"), <= 0, date is invalid, category/source/savings goal is unclear, multiple matching debts exist, or confidence < 0.7:
+{"action":"clarification_needed","reason":"ambiguous_amount|invalid_amount|invalid_date|unclear_category|unclear_source|unclear_person|multiple_debts|debt_not_found|unclear_savings_goal|low_confidence|missing_details","reply":"<concise clarification question in user's language>","transaction":{}}
+
+MALAYALAM / MANGLISH / ENGLISH RULES:
+- Dates: "ഇന്ന്"/"innu"/"today" -> ${catalog.todayIst}; "ഇന്നലെ"/"innale"/"yesterday" -> 1 day before ${catalog.todayIst}.
+- Debt direction MUST NEVER be swapped: "കടം കൊടുത്തു"/"കിട്ടാനുണ്ട്"/"lent"/"owes me" => create_debt_receivable; "കടം വാങ്ങി"/"കൊടുക്കാനുണ്ട്"/"തരാനുണ്ട്"/"borrowed"/"I owe" => create_debt_payable; "തിരിച്ചു കൊടുത്തു"/"തിരിച്ചു തന്നു"/"repaid"/"paid back" => record_debt_repayment.
+- NEVER invent categories or savingsGoalIds not in CATALOG.`;
 }
 
 function sanitizeTextForSpeech(raw: string): string {
@@ -543,6 +644,89 @@ export async function handleAssistantRequest(
       text: turn.text.trim().slice(0, MAX_HISTORY_TURN_CHARS)
     }));
 
+  const resolvedCatalog = resolveEntryCatalog(body.entryCatalog);
+  const queryIsExplicitReadOnly = isExplicitReadOnlyQuestion(message);
+  const queryIsUnsupportedMutation = !queryIsExplicitReadOnly && isUnsupportedDeleteOrEditRequest(message);
+  const queryHasTransactionIntent = !queryIsExplicitReadOnly && !queryIsUnsupportedMutation && hasPotentialTransactionIntent(message);
+  const detectedMsgLang = detectResponseLanguage(message);
+
+  // Fast, zero-hallucination safety block for unsupported DB delete/edit requests
+  if (queryIsUnsupportedMutation) {
+    const totalDurationMs = Date.now() - startTime;
+    const isMl = detectedMsgLang === 'ml' || body.preferredLanguage === 'ml-IN';
+    const reply = isMl
+      ? 'വോയ്‌സ് അസിസ്റ്റന്റ് വഴി പുതിയ ഇടപാടുകൾ ചേർക്കാൻ തയ്യാറാക്കാൻ മാത്രമേ കഴിയൂ. നിലവിലുള്ള രേഖകൾ മാറ്റാനോ ഡിലീറ്റ് ചെയ്യാനോ ദയവായി ബന്ധപ്പെട്ട XOS വിഭാഗം ഉപയോഗിക്കൂ.'
+      : 'I can only help prepare new transactions for confirmation. To edit or delete existing records, please open the corresponding XOS module.';
+    return {
+      status: 200,
+      body: {
+        reply,
+        actionType: 'unsupported_mutation' as AssistantActionType,
+        pendingTransaction: null,
+        clarification: null,
+        detectedLanguage: detectResponseLanguage(reply),
+        provider: 'groq',
+        fallbackUsed: false,
+        model: GROQ_PRIMARY_MODEL,
+        requestId,
+        durationMs: totalDurationMs
+      }
+    };
+  }
+
+  // Deterministic pre-validation for obvious invalid calendar dates or non-positive amounts on transaction entries
+  if (queryHasTransactionIntent) {
+    const invalidDateText = detectExplicitInvalidDateInText(message);
+    if (invalidDateText) {
+      const totalDurationMs = Date.now() - startTime;
+      const isMl = detectedMsgLang === 'ml' || body.preferredLanguage === 'ml-IN';
+      const msg = isMl
+        ? `"${invalidDateText}" സാധുവായ കലണ്ടർ തീയതിയല്ല. ദയവായി ശരിയായ തീയതി നൽകാമോ?`
+        : `"${invalidDateText}" is not a valid calendar date. Please provide a valid date.`;
+      const clarification: ClarificationResult = { reason: 'invalid_date', message: msg };
+      return {
+        status: 200,
+        body: {
+          reply: msg,
+          actionType: 'clarification_needed' as AssistantActionType,
+          pendingTransaction: null,
+          clarification,
+          detectedLanguage: detectResponseLanguage(msg),
+          provider: 'groq',
+          fallbackUsed: false,
+          model: GROQ_PRIMARY_MODEL,
+          requestId,
+          durationMs: totalDurationMs
+        }
+      };
+    }
+
+    const parsedAmt = parseMalayalamManglishAmount(message);
+    if (parsedAmt.explicitNonPositive) {
+      const totalDurationMs = Date.now() - startTime;
+      const isMl = detectedMsgLang === 'ml' || body.preferredLanguage === 'ml-IN';
+      const msg = isMl
+        ? 'തുക പൂജ്യത്തേക്കാൾ കൂടുതൽ ആയിരിക്കണം. ദയവായി ശരിയായ തുക പറയാമോ?'
+        : 'The transaction amount must be greater than zero. Please provide a valid positive amount.';
+      const clarification: ClarificationResult = { reason: 'invalid_amount', message: msg };
+      return {
+        status: 200,
+        body: {
+          reply: msg,
+          actionType: 'clarification_needed' as AssistantActionType,
+          pendingTransaction: null,
+          clarification,
+          detectedLanguage: detectResponseLanguage(msg),
+          provider: 'groq',
+          fallbackUsed: false,
+          model: GROQ_PRIMARY_MODEL,
+          requestId,
+          durationMs: totalDurationMs
+        }
+      };
+    }
+  }
+
   const serializedContextResult = serializeGroundedContextSafely(body.groundedContext, MAX_CONTEXT_JSON_CHARS);
 
   const languageDirective =
@@ -552,7 +736,14 @@ export async function handleAssistantRequest(
         ? 'User prefers English (understand and respond in Malayalam if user speaks/writes Malayalam).'
         : 'Auto-detect language from user message: natural Malayalam for Malayalam/Manglish, crisp English for English.';
 
-  const systemInstruction = `${XOS_SYSTEM_SPECIFICATION}
+  const systemInstruction = queryHasTransactionIntent
+    ? `${XOS_SYSTEM_SPECIFICATION}
+
+LANGUAGE:
+${languageDirective}
+
+${buildVoiceEntrySystemInstructions(resolvedCatalog)}`
+    : `${XOS_SYSTEM_SPECIFICATION}
 
 LANGUAGE:
 ${languageDirective}`;
@@ -728,6 +919,69 @@ ${serializedContextResult.json}`;
       };
     }
 
+    let finalReply = reply;
+    let actionType: AssistantActionType = 'read_only_query';
+    let pendingTransaction: PendingTransactionProposal | null = null;
+    let clarification: ClarificationResult | null = null;
+
+    if (!queryIsExplicitReadOnly) {
+      const structured = parseStructuredLlmJson(reply);
+      if (structured) {
+        if (structured.action === 'read_only_query') {
+          actionType = 'read_only_query';
+          finalReply = structured.reply;
+        } else if (structured.action === 'unsupported_mutation') {
+          actionType = 'unsupported_mutation';
+          finalReply = structured.reply;
+        } else if (structured.action === 'transaction_proposal') {
+          const validated = validateAndNormalizeProposal({
+            candidate: structured.candidate,
+            confidence: structured.confidence,
+            catalog: resolvedCatalog,
+            rawUserText: message,
+            detectedLanguage: detectedMsgLang
+          });
+          if (validated.status === 'valid') {
+            actionType = 'transaction_proposal';
+            pendingTransaction = validated.proposal;
+            finalReply = validated.proposal.summaryReply;
+          } else {
+            actionType = 'clarification_needed';
+            clarification = validated.clarification;
+            finalReply = validated.clarification.message;
+          }
+        } else if (structured.action === 'clarification_needed') {
+          actionType = 'clarification_needed';
+          // Check if candidate triggers deterministic disambiguation options (e.g., multiple matching debts or savings goals)
+          if (structured.candidate && structured.candidate.intent) {
+            const disambigAttempt = validateAndNormalizeProposal({
+              candidate: structured.candidate,
+              confidence: 0.9,
+              catalog: resolvedCatalog,
+              rawUserText: message,
+              detectedLanguage: detectedMsgLang
+            });
+            if (disambigAttempt.status === 'clarification' && disambigAttempt.clarification.disambiguationOptions) {
+              clarification = disambigAttempt.clarification;
+              finalReply = disambigAttempt.clarification.message;
+            } else {
+              clarification = {
+                reason: structured.reason || 'missing_details',
+                message: structured.reply
+              };
+              finalReply = structured.reply;
+            }
+          } else {
+            clarification = {
+              reason: structured.reason || 'missing_details',
+              message: structured.reply
+            };
+            finalReply = structured.reply;
+          }
+        }
+      }
+    }
+
     logDiagnostic('info', {
       event: 'ai_request_success',
       requestId,
@@ -747,8 +1001,11 @@ ${serializedContextResult.json}`;
     return {
       status: 200,
       body: {
-        reply,
-        detectedLanguage: detectResponseLanguage(reply),
+        reply: finalReply,
+        actionType,
+        pendingTransaction,
+        clarification,
+        detectedLanguage: detectResponseLanguage(finalReply),
         provider: activeProvider,
         fallbackUsed,
         model: activeModel,

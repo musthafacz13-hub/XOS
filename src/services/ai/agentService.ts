@@ -5,6 +5,12 @@
  */
 import { supabase, isSupabaseConfigured } from '../supabase';
 import { SessionTurnMemory } from './contextBuilder';
+import {
+  AssistantActionType,
+  ClarificationResult,
+  EntryCatalog,
+  PendingTransactionProposal
+} from './transactionSchemas';
 
 export type PreferredVoiceLanguage = 'auto' | 'ml-IN' | 'en-IN';
 
@@ -67,6 +73,9 @@ export class AiServiceError extends Error {
 export interface AssistantReplyResult {
   reply: string;
   detectedLanguage: 'ml' | 'en' | 'mixed';
+  actionType?: AssistantActionType;
+  pendingTransaction?: PendingTransactionProposal | null;
+  clarification?: ClarificationResult | null;
   provider?: string;
   fallbackUsed?: boolean;
   model?: string;
@@ -432,6 +441,7 @@ export const agentService = {
     history: SessionTurnMemory[];
     groundedContext: Record<string, unknown>;
     preferredLanguage: PreferredVoiceLanguage;
+    entryCatalog?: EntryCatalog;
     accessToken?: string | null;
     fetchImpl?: typeof fetch;
     timeoutMs?: number;
@@ -453,7 +463,8 @@ export const agentService = {
           message: params.message,
           history: params.history.map(h => ({ role: h.role, text: h.text })),
           groundedContext: params.groundedContext,
-          preferredLanguage: params.preferredLanguage
+          preferredLanguage: params.preferredLanguage,
+          ...(params.entryCatalog ? { entryCatalog: params.entryCatalog } : {})
         },
         params.accessToken,
         {
