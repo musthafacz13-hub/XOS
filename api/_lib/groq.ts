@@ -8,7 +8,7 @@ import type { AiErrorCategory, ClassifiedGeminiError } from './gemini.js';
 export const GROQ_API_BASE_URL = 'https://api.groq.com/openai/v1';
 export const GROQ_PRIMARY_MODEL = 'openai/gpt-oss-20b';
 export const GROQ_TRANSCRIBE_MODEL = 'whisper-large-v3-turbo';
-export const GROQ_MAX_COMPLETION_TOKENS = 480;
+export const GROQ_MAX_COMPLETION_TOKENS = 1536;
 export const GROQ_TEMPERATURE = 0.2;
 
 export function getGroqApiKey(): string | null {
@@ -130,7 +130,34 @@ export function classifyGroqError(
     };
   }
 
-  if (status === 400 || status === 413 || status === 422 || code === 'INVALID_REQUEST_ERROR') {
+  if (
+    code === 'JSON_VALIDATE_FAILED' ||
+    lowerMsg.includes('json_validate_failed') ||
+    lowerMsg.includes('failed to generate json')
+  ) {
+    return {
+      status: 502,
+      category: 'invalid_response',
+      geminiErrorCode: 'GROQ_JSON_VALIDATE_FAILED',
+      userMessage: 'Received an unexpected response from the AI service. Please try again.'
+    };
+  }
+
+  if (
+    status === 413 ||
+    lowerMsg.includes('request too large') ||
+    lowerMsg.includes('reduce the length') ||
+    lowerMsg.includes('context_length_exceeded')
+  ) {
+    return {
+      status: 413,
+      category: 'server_error',
+      geminiErrorCode: 'GROQ_CONTEXT_TOO_LARGE',
+      userMessage: 'AI service is temporarily unavailable. Please try again.'
+    };
+  }
+
+  if (status === 400 || status === 422 || code === 'INVALID_REQUEST_ERROR') {
     return {
       status: 400,
       category: 'invalid_request',
@@ -165,7 +192,14 @@ export function classifyGroqError(
 }
 
 export function isFallbackEligibleCategory(category: AiErrorCategory): boolean {
-  return category === 'server_error' || category === 'network_error' || category === 'model_unavailable';
+  return (
+    category === 'server_error' ||
+    category === 'network_error' ||
+    category === 'model_unavailable' ||
+    category === 'rate_limited' ||
+    category === 'quota_exceeded' ||
+    category === 'invalid_response'
+  );
 }
 
 export class GroqApiError extends Error {
@@ -205,9 +239,22 @@ export async function callGroqChatCompletion(params: {
   maxCompletionTokens?: number;
   temperature?: number;
   reasoningEffort?: 'low' | 'medium' | 'high';
+  responseFormat?: 'json_object';
 }): Promise<GroqChatCompletionResult> {
   const fetchFn = params.fetchImpl ?? fetch;
   const model = params.model ?? GROQ_PRIMARY_MODEL;
+
+  const requestBody: Record<string, unknown> = {
+    model,
+    messages: params.messages,
+    reasoning_effort: params.reasoningEffort ?? 'low',
+    max_completion_tokens: params.maxCompletionTokens ?? GROQ_MAX_COMPLETION_TOKENS,
+    temperature: params.temperature ?? GROQ_TEMPERATURE,
+    stream: false
+  };
+  if (params.responseFormat === 'json_object') {
+    requestBody.response_format = { type: 'json_object' };
+  }
 
   let response: Response;
   try {
@@ -218,14 +265,7 @@ export async function callGroqChatCompletion(params: {
         'Content-Type': 'application/json',
         Accept: 'application/json'
       },
-      body: JSON.stringify({
-        model,
-        messages: params.messages,
-        reasoning_effort: params.reasoningEffort ?? 'low',
-        max_completion_tokens: params.maxCompletionTokens ?? GROQ_MAX_COMPLETION_TOKENS,
-        temperature: params.temperature ?? GROQ_TEMPERATURE,
-        stream: false
-      }),
+      body: JSON.stringify(requestBody),
       signal: params.abortSignal
     });
   } catch (err) {

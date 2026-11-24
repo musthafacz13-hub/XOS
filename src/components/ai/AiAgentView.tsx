@@ -981,6 +981,7 @@ export const AiAgentView: React.FC = () => {
         if (cmd === 'confirm') {
           voiceRef.current?.clearVoiceReview();
           setInputText('');
+          const convId = activeConversationIdRef.current;
           setMessages(prev => [
             ...prev,
             {
@@ -990,12 +991,27 @@ export const AiAgentView: React.FC = () => {
               langHint: activeProp.detectedLanguage
             }
           ]);
+          if (convId) {
+            void chatHistoryService
+              .saveMessage({
+                conversationId: convId,
+                role: 'user',
+                content: transcript,
+                clientMessageId: createClientMessageId(),
+                metadata: { langHint: activeProp.detectedLanguage }
+              })
+              .then(saved => {
+                if (mountedRef.current) upsertConversationInList(saved.conversation);
+              })
+              .catch(() => {});
+          }
           void handleConfirmPendingTransaction('voice');
           return;
         }
         if (cmd === 'cancel') {
           voiceRef.current?.clearVoiceReview();
           setInputText('');
+          const convId = activeConversationIdRef.current;
           setMessages(prev => [
             ...prev,
             {
@@ -1005,6 +1021,20 @@ export const AiAgentView: React.FC = () => {
               langHint: activeProp.detectedLanguage
             }
           ]);
+          if (convId) {
+            void chatHistoryService
+              .saveMessage({
+                conversationId: convId,
+                role: 'user',
+                content: transcript,
+                clientMessageId: createClientMessageId(),
+                metadata: { langHint: activeProp.detectedLanguage }
+              })
+              .then(saved => {
+                if (mountedRef.current) upsertConversationInList(saved.conversation);
+              })
+              .catch(() => {});
+          }
           handleCancelPendingTransaction('voice');
           return;
         }

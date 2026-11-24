@@ -476,19 +476,34 @@ async function runAiAgentTests() {
     const unauthResp = await handleAssistantRequest({ message: 'Hi' }, undefined);
     assert(unauthResp.status === 401, `Assistant endpoint rejects unauthenticated call with 401 (got ${unauthResp.status})`);
 
-    // Unconfigured Supabase + missing GROQ_API_KEY returns honest 503 unavailable (even if GEMINI_API_KEY is present)
+    // Unconfigured Supabase + missing BOTH keys returns honest 503 unavailable
     delete process.env.VITE_SUPABASE_URL;
     delete process.env.VITE_SUPABASE_ANON_KEY;
     delete process.env.GROQ_API_KEY;
     delete process.env.GEMINI_API_KEY;
     const unavailNoKeysResp = await handleAssistantRequest({ message: 'Hi' }, undefined);
-    assert(unavailNoKeysResp.status === 503, `Returns honest 503 when keys are absent (got ${unavailNoKeysResp.status})`);
+    assert(unavailNoKeysResp.status === 503, `Returns honest 503 when both keys are absent (got ${unavailNoKeysResp.status})`);
 
+    // When GROQ_API_KEY is absent but GEMINI_API_KEY is configured, assistant seamlessly runs Gemini
     process.env.GEMINI_API_KEY = 'test-gemini-key-present';
-    const unavailNoGroqResp = await handleAssistantRequest({ message: 'Hi' }, undefined);
+    const geminiOnlyResp = await handleAssistantRequest(
+      { message: 'Hi' },
+      undefined,
+      {
+        createClient: () => ({
+          models: {
+            generateContent: async () => ({ text: 'Gemini primary fallback reply.' })
+          }
+        })
+      }
+    );
     assert(
-      unavailNoGroqResp.status === 503 && unavailNoGroqResp.body.provider === 'groq',
-      `Returns 503 when primary GROQ_API_KEY is absent instead of silently switching providers (got ${unavailNoGroqResp.status})`
+      geminiOnlyResp.status === 200 &&
+        geminiOnlyResp.body.provider === 'gemini' &&
+        geminiOnlyResp.body.fallbackUsed === true &&
+        geminiOnlyResp.body.model === 'gemini-4-hydrogen' &&
+        geminiOnlyResp.body.reply === 'Gemini primary fallback reply.',
+      `Uses Gemini directly when GROQ_API_KEY is absent and GEMINI_API_KEY is configured (got status=${geminiOnlyResp.status})`
     );
 
     process.env.GROQ_API_KEY = 'test-groq-key-present';
@@ -547,7 +562,7 @@ async function runAiAgentTests() {
     const groqBody = capturedGroqBody as Record<string, unknown> | null;
     assert(groqBody !== null && groqBody.model === 'openai/gpt-oss-20b', 'Uses openai/gpt-oss-20b primary model');
     assert(groqBody?.reasoning_effort === 'low', 'Configures reasoning_effort=low');
-    assert(groqBody?.max_completion_tokens === 480, 'Uses bounded max_completion_tokens=480');
+    assert(groqBody?.max_completion_tokens === 1536, 'Uses bounded max_completion_tokens=1536 sufficient for reasoning and Malayalam');
     assert(groqBody?.temperature === 0.2, 'Uses low temperature=0.2');
     assert(groqBody?.stream === false, 'Disables streaming for reliable serverless JSON response');
     const capturedMessages = (groqBody?.messages || []) as Array<{ role: string; content: string }>;
@@ -663,28 +678,19 @@ async function runAiAgentTests() {
     assert(!fallbackCalledOnBadKey, 'Never falls back to Gemini on invalid Groq API key');
     assert(badKeyResp.status === 502 && badKeyResp.body.category === 'invalid_api_key', 'Maps Groq 401/invalid key to invalid_api_key');
 
-    // 6e. Rate limit (429) vs Quota exhaustion (429) vs Bad request (400) — NO Gemini fallback
-    let fallbackCalledOn429 = false;
-    const rateResp = await handleAssistantRequest(
+    // 6e. Rate limit (429), Quota (429), and 413 payload/context errors without vs with Gemini fallback; 400 NEVER falls back
+    delete process.env.GEMINI_API_KEY;
+    const rateNoFallbackResp = await handleAssistantRequest(
       { message: 'Hi' },
       undefined,
       {
         groqFetchImpl: async () =>
-          new Response(JSON.stringify({ error: { message: 'Too many requests', code: 'rate_limit_exceeded' } }), { status: 429 }),
-        createClient: () => ({
-          models: {
-            generateContent: async () => {
-              fallbackCalledOn429 = true;
-              return { text: 'Should not run' };
-            }
-          }
-        })
+          new Response(JSON.stringify({ error: { message: 'Too many requests', code: 'rate_limit_exceeded' } }), { status: 429 })
       }
     );
-    assert(!fallbackCalledOn429, 'Never falls back to Gemini on Groq rate limit');
-    assert(rateResp.status === 429 && rateResp.body.category === 'rate_limited', 'Maps transient Groq 429 to rate_limited');
+    assert(rateNoFallbackResp.status === 429 && rateNoFallbackResp.body.category === 'rate_limited', 'Maps transient Groq 429 to rate_limited when Gemini is unconfigured');
 
-    const quotaResp = await handleAssistantRequest(
+    const quotaNoFallbackResp = await handleAssistantRequest(
       { message: 'Hi' },
       undefined,
       {
@@ -692,7 +698,48 @@ async function runAiAgentTests() {
           new Response(JSON.stringify({ error: { message: 'You exceeded your current quota, please check billing' } }), { status: 429 })
       }
     );
-    assert(quotaResp.status === 429 && quotaResp.body.category === 'quota_exceeded', 'Distinguishes Groq quota exhaustion from transient rate limit');
+    assert(quotaNoFallbackResp.status === 429 && quotaNoFallbackResp.body.category === 'quota_exceeded', 'Distinguishes Groq quota exhaustion from transient rate limit');
+
+    process.env.GEMINI_API_KEY = 'test-gemini-key-present';
+    const rateWithFallbackResp = await handleAssistantRequest(
+      { message: 'How much did I spend?' },
+      undefined,
+      {
+        groqFetchImpl: async () =>
+          new Response(JSON.stringify({ error: { message: 'Too many requests', code: 'rate_limit_exceeded' } }), { status: 429 }),
+        createClient: () => ({
+          models: {
+            generateContent: async () => ({ text: 'Recovered via Gemini after Groq 429.' })
+          }
+        })
+      }
+    );
+    assert(
+      rateWithFallbackResp.status === 200 &&
+        rateWithFallbackResp.body.provider === 'gemini' &&
+        rateWithFallbackResp.body.fallbackUsed === true,
+      'Recovers via Gemini fallback on Groq 429 when GEMINI_API_KEY is configured'
+    );
+
+    const payload413FallbackResp = await handleAssistantRequest(
+      { message: 'Hi' },
+      undefined,
+      {
+        groqFetchImpl: async () =>
+          new Response(JSON.stringify({ error: { message: 'Request too large for model', type: 'invalid_request_error' } }), { status: 413 }),
+        createClient: () => ({
+          models: {
+            generateContent: async () => ({ text: 'Recovered via Gemini after Groq 413.' })
+          }
+        })
+      }
+    );
+    assert(
+      payload413FallbackResp.status === 200 &&
+        payload413FallbackResp.body.provider === 'gemini' &&
+        payload413FallbackResp.body.fallbackUsed === true,
+      'Recovers via Gemini fallback on Groq 413 context-too-large'
+    );
 
     let fallbackCalledOn400 = false;
     const badReqResp = await handleAssistantRequest(
@@ -773,7 +820,7 @@ async function runAiAgentTests() {
     assert(groqOnly503.status === 503 && groqOnly503.body.category === 'server_error', 'Returns clean 503 server_error when Groq is down and Gemini fallback is unconfigured');
     process.env.GEMINI_API_KEY = 'test-gemini-key-present';
 
-    // 6g. Empty Groq response -> 502 invalid_response (no retry loop / fallback)
+    // 6g. Empty Groq response -> 502 invalid_response; reasoning-token length truncation recovers via Gemini fallback
     const emptyReplyResp = await handleAssistantRequest(
       { message: 'Hi' },
       undefined,
@@ -786,6 +833,50 @@ async function runAiAgentTests() {
       }
     );
     assert(emptyReplyResp.status === 502 && emptyReplyResp.body.category === 'invalid_response', 'Rejects empty Groq response with 502 invalid_response');
+
+    const lengthTruncatedRecovered = await handleAssistantRequest(
+      { message: 'Summarize my spending' },
+      undefined,
+      {
+        groqFetchImpl: async () =>
+          new Response(JSON.stringify({ choices: [{ message: { content: '' }, finish_reason: 'length' }] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          }),
+        createClient: () => ({
+          models: {
+            generateContent: async () => ({
+              candidates: [{ content: { parts: [{ thought: true, text: 'internal' }, { text: 'Recovered summary from Gemini.' }] } }]
+            })
+          }
+        })
+      }
+    );
+    assert(
+      lengthTruncatedRecovered.status === 200 &&
+        lengthTruncatedRecovered.body.reply === 'Recovered summary from Gemini.' &&
+        lengthTruncatedRecovered.body.provider === 'gemini' &&
+        lengthTruncatedRecovered.body.fallbackUsed === true,
+      'Recovers via Gemini when reasoning-token exhaustion produces finish_reason=length empty content, extracting non-thought Gemini parts cleanly'
+    );
+
+    const bothFailResp = await handleAssistantRequest(
+      { message: 'Hi' },
+      undefined,
+      {
+        groqFetchImpl: async () => new Response(JSON.stringify({ error: { message: 'Groq 503' } }), { status: 503 }),
+        createClient: () => ({
+          models: {
+            generateContent: async () => {
+              const err = new Error('Gemini upstream 503') as Error & { status?: number };
+              err.status = 503;
+              throw err;
+            }
+          }
+        })
+      }
+    );
+    assert(bothFailResp.status === 503 && bothFailResp.body.provider === 'gemini', 'Surfaces clean structured error when both Groq and Gemini fail');
 
     // 6h. Transcribe (Groq whisper-large-v3-turbo primary + optional Gemini fallback) & Speak (Gemini TTS)
     const sampleAudioB64 = Buffer.alloc(128, 3).toString('base64');

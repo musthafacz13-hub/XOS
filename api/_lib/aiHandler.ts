@@ -73,6 +73,8 @@ export interface GeminiClientLike {
       candidates?: Array<{
         content?: {
           parts?: Array<{
+            text?: string;
+            thought?: boolean;
             inlineData?: { data?: string; mimeType?: string };
           }>;
         };
@@ -94,6 +96,7 @@ export interface AiHandlerDeps {
 const MAX_MESSAGE_CHARS = 1800;
 const MAX_HISTORY_TURNS = 10;
 const MAX_HISTORY_TURN_CHARS = 1000;
+const GROQ_MAX_CONTEXT_JSON_CHARS = 12000;
 const MAX_CONTEXT_JSON_CHARS = 28000;
 // Keep under Vercel's 4.5MB serverless request body limit
 const MAX_AUDIO_BASE64_CHARS = 3.2 * 1024 * 1024;
@@ -234,12 +237,49 @@ export async function verifySupabaseSessionToken(
   }
 }
 
+const MANGLISH_RESPONSE_REGEX =
+  /\b(innu|innale|rupa|paisa|chelav\w*|chilav\w*|kadam|koduthu|vaangi|kitti|varavu|varumanam|shambalam|sambalam|cheyyu|cherkk\w*|adichu|ethra|aanu|undo|undu|masam|maasam)\b/i;
+
 export function detectResponseLanguage(text: string): 'ml' | 'en' | 'mixed' {
   const hasMalayalamScript = /[\u0D00-\u0D7F]/.test(text);
   const hasLatin = /[A-Za-z]{2,}/.test(text);
   if (hasMalayalamScript && hasLatin) return 'mixed';
   if (hasMalayalamScript) return 'ml';
+  if (MANGLISH_RESPONSE_REGEX.test(text)) return 'mixed';
   return 'en';
+}
+
+function extractGeminiResponseText(
+  resp:
+    | {
+        text?: string;
+        candidates?: Array<{
+          content?: {
+            parts?: Array<{
+              text?: string;
+              thought?: boolean;
+            }>;
+          };
+        }>;
+      }
+    | null
+    | undefined
+): string {
+  if (!resp) return '';
+  if (typeof resp.text === 'string' && resp.text.trim()) {
+    return resp.text.trim();
+  }
+  const parts = resp.candidates?.[0]?.content?.parts;
+  if (Array.isArray(parts)) {
+    const joined = parts
+      .filter(p => !p?.thought && typeof p?.text === 'string')
+      .map(p => p.text!.trim())
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+    if (joined) return joined;
+  }
+  return '';
 }
 
 function getServerIstTodayString(): string {
@@ -559,19 +599,18 @@ export async function handleAssistantRequest(
   const groqApiKey = getGroqApiKey();
   const geminiApiKey = getGeminiApiKey();
 
-  if (!groqApiKey) {
+  if (!groqApiKey && !geminiApiKey) {
     const totalDurationMs = Date.now() - startTime;
     logDiagnostic('error', {
       event: 'ai_request_failed',
       requestId,
       endpoint,
       stage: 'config',
-      provider: 'groq',
       authDurationMs: authCheck.authDurationMs,
       totalDurationMs,
       status: 503,
       errorCategory: 'invalid_api_key',
-      providerErrorCode: 'MISSING_GROQ_API_KEY'
+      providerErrorCode: 'MISSING_AI_API_KEYS'
     });
     return {
       status: 503,
@@ -579,7 +618,6 @@ export async function handleAssistantRequest(
         error: 'AI service is temporarily unavailable.',
         category: 'invalid_api_key',
         stage: 'config',
-        provider: 'groq',
         requestId,
         durationMs: totalDurationMs
       })
@@ -727,7 +765,9 @@ export async function handleAssistantRequest(
     }
   }
 
-  const serializedContextResult = serializeGroundedContextSafely(body.groundedContext, MAX_CONTEXT_JSON_CHARS);
+  const groqContextResult = serializeGroundedContextSafely(body.groundedContext, GROQ_MAX_CONTEXT_JSON_CHARS);
+  const geminiContextResult = serializeGroundedContextSafely(body.groundedContext, MAX_CONTEXT_JSON_CHARS);
+  let activeContextResult = groqApiKey ? groqContextResult : geminiContextResult;
 
   const languageDirective =
     body.preferredLanguage === 'ml-IN'
@@ -748,19 +788,25 @@ ${buildVoiceEntrySystemInstructions(resolvedCatalog)}`
 LANGUAGE:
 ${languageDirective}`;
 
-  const groundedTurnPrompt = `User Question:
+  const groqTurnPrompt = `User Question:
 ${message}
 
 XOS GROUNDED DATA CONTEXT (READ-ONLY JSON):
-${serializedContextResult.json}`;
+${groqContextResult.json}`;
 
-  const groqMessages = [
+  const geminiTurnPrompt = `User Question:
+${message}
+
+XOS GROUNDED DATA CONTEXT (READ-ONLY JSON):
+${geminiContextResult.json}`;
+
+  const buildGroqMessages = () => [
     { role: 'system' as const, content: systemInstruction },
     ...sanitizedHistory.map(turn => ({
       role: turn.role === 'model' ? ('assistant' as const) : ('user' as const),
       content: turn.text
     })),
-    { role: 'user' as const, content: groundedTurnPrompt }
+    { role: 'user' as const, content: groqTurnPrompt }
   ];
 
   const geminiContents = [
@@ -770,15 +816,15 @@ ${serializedContextResult.json}`;
     })),
     {
       role: 'user' as const,
-      parts: [{ text: groundedTurnPrompt }]
+      parts: [{ text: geminiTurnPrompt }]
     }
   ];
 
   const clientFactory = deps.createClient ?? ((k: string, t: number) => createGeminiClient(k, t));
   const groqFetchFn = deps.groqFetchImpl ?? deps.fetchImpl;
-  let activeProvider: 'groq' | 'gemini' = 'groq';
-  let activeModel = GROQ_PRIMARY_MODEL;
-  let fallbackUsed = false;
+  let activeProvider: 'groq' | 'gemini' = groqApiKey ? 'groq' : 'gemini';
+  let activeModel = groqApiKey ? GROQ_PRIMARY_MODEL : ASSISTANT_MODEL;
+  let fallbackUsed = !groqApiKey;
 
   const providerStart = Date.now();
   const serverController = new AbortController();
@@ -795,6 +841,7 @@ ${serializedContextResult.json}`;
     activeProvider = 'gemini';
     activeModel = ASSISTANT_MODEL;
     fallbackUsed = true;
+    activeContextResult = geminiContextResult;
 
     const invokeGemini = async (modelName: string) => {
       const remainingMs = Math.max(2000, geminiTimeoutMs - (Date.now() - providerStart));
@@ -806,6 +853,7 @@ ${serializedContextResult.json}`;
         config: {
           systemInstruction,
           abortSignal: serverController.signal,
+          ...(queryHasTransactionIntent ? { responseMimeType: 'application/json' } : {}),
           ...(thinkingConfig ? { thinkingConfig } : {})
         }
       });
@@ -813,7 +861,7 @@ ${serializedContextResult.json}`;
 
     try {
       const resp = await invokeGemini(activeModel);
-      return (resp.text || '').trim();
+      return extractGeminiResponseText(resp);
     } catch (primaryGeminiErr) {
       const primaryClassified = classifyGeminiError(
         primaryGeminiErr,
@@ -828,7 +876,7 @@ ${serializedContextResult.json}`;
       ) {
         activeModel = ASSISTANT_FALLBACK_MODEL;
         const resp = await invokeGemini(activeModel);
-        return (resp.text || '').trim();
+        return extractGeminiResponseText(resp);
       }
       throw primaryGeminiErr;
     }
@@ -836,52 +884,110 @@ ${serializedContextResult.json}`;
 
   try {
     let reply = '';
-    try {
-      const groqResult = await callGroqChatCompletion({
-        apiKey: groqApiKey,
-        messages: groqMessages,
-        abortSignal: serverController.signal,
-        fetchImpl: groqFetchFn,
-        model: GROQ_PRIMARY_MODEL,
-        maxCompletionTokens: GROQ_MAX_COMPLETION_TOKENS,
-        temperature: GROQ_TEMPERATURE,
-        reasoningEffort: 'low'
-      });
-      reply = groqResult.reply;
-    } catch (groqErr) {
-      const groqClassified =
-        groqErr instanceof GroqApiError
-          ? groqErr.classified
-          : classifyGeminiError(groqErr, deadlineExceeded || serverController.signal.aborted);
-
-      const remainingMs = geminiTimeoutMs - (Date.now() - providerStart);
-      const canFallbackToGemini =
-        Boolean(geminiApiKey) &&
-        isFallbackEligibleCategory(groqClassified.category) &&
-        !deadlineExceeded &&
-        !serverController.signal.aborted &&
-        remainingMs > 10000;
-
-      if (canFallbackToGemini) {
-        logDiagnostic('warn', {
-          event: 'ai_provider_fallback',
-          requestId,
-          endpoint,
-          stage: 'groq',
-          provider: 'groq',
-          fallbackUsed: true,
-          authDurationMs: authCheck.authDurationMs,
-          providerDurationMs: Date.now() - providerStart,
-          totalDurationMs: Date.now() - startTime,
+    if (groqApiKey) {
+      try {
+        const groqResult = await callGroqChatCompletion({
+          apiKey: groqApiKey,
+          messages: buildGroqMessages(),
+          abortSignal: serverController.signal,
+          fetchImpl: groqFetchFn,
           model: GROQ_PRIMARY_MODEL,
-          status: groqClassified.status,
-          errorCategory: groqClassified.category,
-          providerErrorCode: groqClassified.geminiErrorCode
+          maxCompletionTokens: GROQ_MAX_COMPLETION_TOKENS,
+          temperature: GROQ_TEMPERATURE,
+          reasoningEffort: 'low',
+          ...(queryHasTransactionIntent ? { responseFormat: 'json_object' as const } : {})
         });
-        reply = await runGeminiFallback();
-      } else {
-        throw groqErr;
+        reply = groqResult.reply;
+
+        const remainingMsAfterGroq = geminiTimeoutMs - (Date.now() - providerStart);
+        const reasoningTruncatedEmpty = groqResult.finishReason === 'length' && !reply;
+        const nonJsonTransactionReply =
+          queryHasTransactionIntent && Boolean(reply) && !parseStructuredLlmJson(reply);
+
+        if (
+          (reasoningTruncatedEmpty || nonJsonTransactionReply) &&
+          geminiApiKey &&
+          !deadlineExceeded &&
+          !serverController.signal.aborted &&
+          remainingMsAfterGroq > 6000
+        ) {
+          logDiagnostic('warn', {
+            event: 'ai_provider_fallback',
+            requestId,
+            endpoint,
+            stage: 'groq',
+            provider: 'groq',
+            fallbackUsed: true,
+            authDurationMs: authCheck.authDurationMs,
+            providerDurationMs: Date.now() - providerStart,
+            totalDurationMs: Date.now() - startTime,
+            model: GROQ_PRIMARY_MODEL,
+            status: 502,
+            errorCategory: 'invalid_response',
+            providerErrorCode: reasoningTruncatedEmpty
+              ? 'GROQ_REASONING_TRUNCATED'
+              : 'GROQ_NON_JSON_TRANSACTION'
+          });
+          reply = await runGeminiFallback();
+        }
+      } catch (groqErr) {
+        const groqClassified =
+          groqErr instanceof GroqApiError
+            ? groqErr.classified
+            : classifyGeminiError(groqErr, deadlineExceeded || serverController.signal.aborted);
+
+        const remainingMs = geminiTimeoutMs - (Date.now() - providerStart);
+        const canRetryGroqWithoutJsonMode =
+          groqClassified.geminiErrorCode === 'GROQ_JSON_VALIDATE_FAILED' &&
+          !geminiApiKey &&
+          !deadlineExceeded &&
+          !serverController.signal.aborted &&
+          remainingMs > 6000;
+
+        if (canRetryGroqWithoutJsonMode) {
+          const retryResult = await callGroqChatCompletion({
+            apiKey: groqApiKey,
+            messages: buildGroqMessages(),
+            abortSignal: serverController.signal,
+            fetchImpl: groqFetchFn,
+            model: GROQ_PRIMARY_MODEL,
+            maxCompletionTokens: GROQ_MAX_COMPLETION_TOKENS,
+            temperature: GROQ_TEMPERATURE,
+            reasoningEffort: 'low'
+          });
+          reply = retryResult.reply;
+        } else {
+          const canFallbackToGemini =
+            Boolean(geminiApiKey) &&
+            isFallbackEligibleCategory(groqClassified.category) &&
+            !deadlineExceeded &&
+            !serverController.signal.aborted &&
+            remainingMs > 6000;
+
+          if (canFallbackToGemini) {
+            logDiagnostic('warn', {
+              event: 'ai_provider_fallback',
+              requestId,
+              endpoint,
+              stage: 'groq',
+              provider: 'groq',
+              fallbackUsed: true,
+              authDurationMs: authCheck.authDurationMs,
+              providerDurationMs: Date.now() - providerStart,
+              totalDurationMs: Date.now() - startTime,
+              model: GROQ_PRIMARY_MODEL,
+              status: groqClassified.status,
+              errorCategory: groqClassified.category,
+              providerErrorCode: groqClassified.geminiErrorCode
+            });
+            reply = await runGeminiFallback();
+          } else {
+            throw groqErr;
+          }
+        }
       }
+    } else {
+      reply = await runGeminiFallback();
     }
 
     const providerDurationMs = Date.now() - providerStart;
@@ -902,8 +1008,8 @@ ${serializedContextResult.json}`;
         status: 502,
         errorCategory: 'invalid_response',
         providerErrorCode: 'EMPTY_RESPONSE',
-        contextModules: serializedContextResult.modules,
-        contextChars: serializedContextResult.json.length
+        contextModules: activeContextResult.modules,
+        contextChars: activeContextResult.json.length
       });
       return {
         status: 502,
@@ -979,6 +1085,12 @@ ${serializedContextResult.json}`;
             finalReply = structured.reply;
           }
         }
+      } else if (queryHasTransactionIntent) {
+        actionType = 'clarification_needed';
+        clarification = {
+          reason: 'missing_details',
+          message: finalReply
+        };
       }
     }
 
@@ -994,8 +1106,8 @@ ${serializedContextResult.json}`;
       totalDurationMs,
       model: activeModel,
       status: 200,
-      contextModules: serializedContextResult.modules,
-      contextChars: serializedContextResult.json.length
+      contextModules: activeContextResult.modules,
+      contextChars: activeContextResult.json.length
     });
 
     return {
@@ -1036,8 +1148,8 @@ ${serializedContextResult.json}`;
       errorCategory: classified.category,
       providerErrorCode: classified.geminiErrorCode,
       timeoutStage: classified.category === 'timeout' ? activeProvider : null,
-      contextModules: serializedContextResult.modules,
-      contextChars: serializedContextResult.json.length
+      contextModules: activeContextResult.modules,
+      contextChars: activeContextResult.json.length
     });
 
     return {
@@ -1200,6 +1312,13 @@ export async function handleTranscribeRequest(
   let activeModel = groqApiKey ? GROQ_TRANSCRIBE_MODEL : TRANSCRIBE_MODEL;
   let fallbackUsed = false;
 
+  const geminiAudioMime =
+    baseMime === 'audio/x-wav'
+      ? 'audio/wav'
+      : baseMime === 'audio/x-m4a' || baseMime === 'audio/m4a'
+        ? 'audio/mp4'
+        : baseMime;
+
   const invokeGeminiTranscribe = async (gKey: string) => {
     activeProvider = 'gemini';
     activeModel = TRANSCRIBE_MODEL;
@@ -1211,7 +1330,7 @@ export async function handleTranscribeRequest(
         parts: [
           {
             inlineData: {
-              mimeType: baseMime,
+              mimeType: geminiAudioMime,
               data: audioBase64
             }
           },
@@ -1224,7 +1343,7 @@ export async function handleTranscribeRequest(
         abortSignal: serverController.signal
       }
     });
-    return (response.text || '').trim();
+    return extractGeminiResponseText(response);
   };
 
   try {
@@ -1256,7 +1375,7 @@ export async function handleTranscribeRequest(
           isFallbackEligibleCategory(groqClassified.category) &&
           !deadlineExceeded &&
           !serverController.signal.aborted &&
-          remainingMs > 10000
+          remainingMs > 6000
         ) {
           fallbackUsed = true;
           transcript = await invokeGeminiTranscribe(geminiApiKey);
@@ -1265,6 +1384,7 @@ export async function handleTranscribeRequest(
         }
       }
     } else if (geminiApiKey) {
+      fallbackUsed = true;
       transcript = await invokeGeminiTranscribe(geminiApiKey);
     }
 
@@ -1485,7 +1605,9 @@ export async function handleSpeakRequest(
 
     const geminiDurationMs = Date.now() - geminiStart;
     const totalDurationMs = Date.now() - startTime;
-    const inlineAudio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+    const inlineAudio = response.candidates?.[0]?.content?.parts?.find(
+      p => Boolean(p?.inlineData?.data)
+    )?.inlineData;
     const audioBase64 = inlineAudio?.data;
 
     if (!audioBase64) {

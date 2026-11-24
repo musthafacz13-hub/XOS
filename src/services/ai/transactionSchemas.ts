@@ -452,26 +452,20 @@ export function isExplicitReadOnlyQuestion(message: string): boolean {
   if (!trimmed) return true;
   const lower = trimmed.toLowerCase();
 
-  // If the user explicitly asks to add/record/log something, do not prematurely treat as read-only
-  const hasExplicitEntryVerb =
-    /\b(add|create|log|record|save|deposit|withdraw|repay|paid back|lent|borrowed|spent|received|earned)\b/i.test(
+  // Imperative entry commands explicitly ask to record/add data even if phrased as a polite question
+  const hasImperativeEntryCommand =
+    /\b(add|create|log|record|save|deposit|withdraw)\b/i.test(lower) ||
+    /(ചേർക്കൂ|ചേർക്ക്|ചേർക്കണം|സേവ് ചെയ്യ)/.test(trimmed) ||
+    /\b(cherkk\w*|cheyyu|cheyyanam|adichu)\b/i.test(lower);
+
+  const hasReadOnlyInterrogative =
+    READ_ONLY_QUESTION_PREFIXES.some(re => re.test(lower)) ||
+    /(എത്ര|എന്തൊക്കെയാണ്|എങ്ങനെയുണ്ട്|ആർക്കൊക്കെ|ആരൊക്കെ|ethra|enganeyundu|enthanu|aarkkokke|undo\b)/i.test(
       lower
     ) ||
-    /(ചേർക്കൂ|ചേർക്ക്|ചേർക്കണം|ചെലവായി|ചിലവായി|കടം കൊടുത്തു|കടം വാങ്ങി|തിരിച്ചു കൊടുത്തു|തിരിച്ചു തന്നു|സേവ് ചെയ്യ|ഇട്ടു|കിട്ടി|ലഭിച്ചു)/.test(
-      trimmed
-    ) ||
-    /\b(koduthu|vaangi|chelavayi|chilavayi|thirichu|kitti|itt[uo]|cherkk)/i.test(lower);
+    trimmed.endsWith('?');
 
-  if (READ_ONLY_QUESTION_PREFIXES.some(re => re.test(lower)) && !hasExplicitEntryVerb) {
-    return true;
-  }
-
-  // Malayalam/Manglish pure question markers ("എത്ര...", "എങ്ങനെയുണ്ട്...", "ethra...", "undo?", "aano?")
-  if (
-    (/(എത്ര|എന്തൊക്കെയാണ്|എങ്ങനെയുണ്ട്|ആർക്കൊക്കെ|ethra|enganeyundu|enthanu|aarkkokke|undo\b)/i.test(lower) ||
-      trimmed.endsWith('?')) &&
-    !hasExplicitEntryVerb
-  ) {
+  if (hasReadOnlyInterrogative && !hasImperativeEntryCommand) {
     return true;
   }
 
@@ -505,7 +499,7 @@ export function hasPotentialTransactionIntent(message: string): boolean {
     /(ചെലവ്|ചെലവായി|ചിലവ്|ചിലവായി|രൂപ|വരവ്|വരുമാനം|ശമ്പളം|കിട്ടി|കടം|തരാൻ|കൊടുത്തു|വാങ്ങി|തിരിച്ചു|സേവിംഗ്സ്|സേവിങ്സ്|സമ്പാദ്യം|നിക്ഷേപ|ചേർക്ക|ആഡ്)/.test(
       trimmed
     ) ||
-    /\b(rupa|paisa|chelav|chilav|kadam|koduthu|vaangi|thirichu|kitti|shambalam|sambalam|varavu|savings|nooru|aayiram|anjooru)\b/i.test(
+    /\b(rupa|paisa|chelav\w*|chilav\w*|kadam|koduthu|vaangi|thirichu|kitti|shambalam|sambalam|varavu|savings|nooru|aayiram|anjooru|cheyyu|cherkk\w*|adichu)\b/i.test(
       lower
     );
 

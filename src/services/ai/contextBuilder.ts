@@ -194,7 +194,8 @@ const MANGLISH_HINTS = [
   'chelav', 'chilav', 'shambalam', 'sambalam', 'kadam', 'kittan', 'kittanund',
   'varavu', 'varumanam', 'paisa', 'enganeyundu', 'engane', 'enthanu',
   'masam', 'maasam', 'masathile', 'kazhinja', 'tharan', 'kodukkan', 'joli',
-  'namaskaram', 'sukhamano', 'parayu', 'sahayikk', 'divasam'
+  'namaskaram', 'sukhamano', 'parayu', 'sahayikk', 'divasam',
+  'innu', 'innale', 'rupa', 'cheyyu', 'cherkku', 'adichu'
 ];
 
 function detectLanguageFromText(text: string): 'ml' | 'en' | 'mixed' {

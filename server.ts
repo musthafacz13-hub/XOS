@@ -37,8 +37,8 @@ async function startServer() {
     const geminiConfigured = Boolean(getGeminiApiKey());
     res.json({
       ok: true,
-      aiConfigured: groqConfigured,
-      primaryProvider: groqConfigured ? 'groq' : 'unconfigured',
+      aiConfigured: groqConfigured || geminiConfigured,
+      primaryProvider: groqConfigured ? 'groq' : geminiConfigured ? 'gemini' : 'unconfigured',
       fallbackConfigured: geminiConfigured
     });
   });

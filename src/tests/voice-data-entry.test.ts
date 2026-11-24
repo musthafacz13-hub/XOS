@@ -1164,6 +1164,141 @@ async function runVoiceDataEntryTests(): Promise<void> {
       '"Add 150 rupees food expense." prepares preview and performs 0 DB writes prior to confirmation'
     );
 
+    // 23b. JSON-mode enforcement + fallback + Malayalam/Manglish/English 150-rupee expense pipeline + cross-user isolation
+    let sawGroqJsonMode = false;
+    let sawGeminiJsonMode = false;
+    process.env.GEMINI_API_KEY = 'gem_test_key';
+
+    // Verify Groq sends response_format: { type: 'json_object' } on transaction prompts
+    const manglishExpResp = await handleAssistantRequest(
+      {
+        message: 'Innu 150 rupa food inu expense add cheyyu',
+        groundedContext: {},
+        entryCatalog: catalog,
+        preferredLanguage: 'ml-IN'
+      },
+      'Bearer tok-1',
+      {
+        fetchImpl: makeSupabaseAuthOkFetch(),
+        groqFetchImpl: async (_url, init) => {
+          const parsedBody = JSON.parse(String(init?.body || '{}')) as { response_format?: { type?: string } };
+          sawGroqJsonMode = parsedBody?.response_format?.type === 'json_object';
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      action: 'transaction_proposal',
+                      confidence: 0.96,
+                      reply: '₹150 ഭക്ഷണ ചെലവായി ചേർക്കട്ടെ?',
+                      transaction: {
+                        intent: 'create_expense',
+                        amount: 150,
+                        category: 'Food & Dining',
+                        title: 'Food',
+                        date: catalog.todayIst,
+                        paymentMethod: 'Cash'
+                      }
+                    })
+                  }
+                }
+              ]
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          );
+        }
+      }
+    );
+    const manglishProp = manglishExpResp.body.pendingTransaction as PendingTransactionProposal;
+    assert(sawGroqJsonMode, 'Enforces Groq response_format=json_object for transaction extraction');
+    assert(
+      manglishExpResp.body.actionType === 'transaction_proposal' &&
+        manglishProp?.detectedLanguage === 'mixed' &&
+        manglishProp?.transaction.intent === 'create_expense' &&
+        manglishProp?.transaction.amount === 150 &&
+        manglishProp?.transaction.category === 'Food & Dining' &&
+        actionStub.db.expenses.length === 0,
+      'Manglish expense ("Innu 150 rupa food inu expense add cheyyu") produces preview with 0 DB writes until confirmed'
+    );
+
+    // Verify Gemini JSON-mode fallback if Groq returns non-JSON prose or json_validate_failed on Malayalam expense
+    const mlFallbackResp = await handleAssistantRequest(
+      {
+        message: 'ഇന്ന് 150 രൂപ ഭക്ഷണത്തിന് ചെലവായി',
+        groundedContext: {},
+        entryCatalog: catalog,
+        preferredLanguage: 'ml-IN'
+      },
+      'Bearer tok-1',
+      {
+        fetchImpl: makeSupabaseAuthOkFetch(),
+        groqFetchImpl: async () =>
+          new Response(
+            JSON.stringify({ error: { message: 'Failed to validate JSON', code: 'json_validate_failed' } }),
+            { status: 400, headers: { 'content-type': 'application/json' } }
+          ),
+        createClient: () => ({
+          models: {
+            generateContent: async (params: Record<string, unknown>) => {
+              const cfg = (params.config || {}) as { responseMimeType?: string };
+              sawGeminiJsonMode = cfg.responseMimeType === 'application/json';
+              return {
+                text: JSON.stringify({
+                  action: 'transaction_proposal',
+                  confidence: 0.95,
+                  reply: '₹150 ഭക്ഷണ ചെലവായി ചേർക്കട്ടെ?',
+                  transaction: {
+                    intent: 'create_expense',
+                    amount: 150,
+                    category: 'Food & Dining',
+                    title: 'ഭക്ഷണം',
+                    date: catalog.todayIst,
+                    paymentMethod: 'Cash'
+                  }
+                })
+              };
+            }
+          }
+        })
+      }
+    );
+    assert(sawGeminiJsonMode, 'Enforces Gemini responseMimeType=application/json on fallback transaction extraction');
+    const mlFallbackProp = mlFallbackResp.body.pendingTransaction as PendingTransactionProposal;
+    assert(
+      mlFallbackResp.body.actionType === 'transaction_proposal' &&
+        mlFallbackResp.body.provider === 'gemini' &&
+        mlFallbackResp.body.fallbackUsed === true &&
+        mlFallbackProp.transaction.intent === 'create_expense' &&
+        mlFallbackProp.transaction.amount === 150 &&
+        actionStub.db.expenses.length === 0,
+      'Recovers via Gemini JSON mode on Groq json_validate_failed and preserves confirmation gate'
+    );
+
+    // Confirm and verify real repository expense row + user_id isolation
+    const savedMlExp = await executeConfirmedTransaction({
+      proposal: mlFallbackProp,
+      confirmedByUser: true,
+      confirmationSource: 'button'
+    });
+    assert(
+      savedMlExp.ok &&
+        countRows(actionStub.db.expenses) === 1 &&
+        actionStub.db.expenses[0].user_id === 'user-voice-test-1' &&
+        actionStub.db.expenses[0].amount === 150 &&
+        repository.getExpenses().some(e => e.id === savedMlExp.recordId && e.amount === 150),
+      'Confirmed expense persists to user_id=user-voice-test-1 and immediately appears in repository.getExpenses()'
+    );
+
+    // Switching active user clears previous user expenses cleanly (no cross-user leak)
+    repository.clearUserData();
+    repository.setActiveUserId('user-voice-test-2');
+    assert(
+      repository.getExpenses().length === 0,
+      'Cross-user switch never leaks prior user expenses into another user session'
+    );
+    delete process.env.GEMINI_API_KEY;
+
     // 24. Static security & storage audit
     const rootDir = process.cwd();
     const clientVoiceFiles = [
