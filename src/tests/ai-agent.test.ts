@@ -1248,11 +1248,20 @@ async function runAiAgentTests() {
     'Salary and attendance',
     'Debt and savings',
     'Retry',
-    'Message XOS'
+    'Message Jarvis AI'
   ]) {
     assert(aiViewSrc.includes(requiredToken), `AiAgentView includes required minimalist UI element: ${requiredToken}`);
   }
   assert(!aiViewSrc.includes('Voice On') && !aiViewSrc.includes('Voice Muted') && !aiViewSrc.includes('Diagnostic Stage'), 'AiAgentView removes oversized telemetry badges and debug boxes');
+
+  const headerSrc = fs.readFileSync(path.join(rootDir, 'src/components/layout/Header.tsx'), 'utf8');
+  assert(
+    headerSrc.includes("activeTab === 'ai-agent'") &&
+      headerSrc.includes("'Jarvis AI'") &&
+      headerSrc.includes('<JarvisLogo') &&
+      headerSrc.includes('{!isJarvisAi &&'),
+    'Header renders Jarvis AI title + JarvisLogo exclusively in Jarvis AI section and omits + Log button'
+  );
 
   const vercelRaw = fs.readFileSync(path.join(rootDir, 'vercel.json'), 'utf8');
   assert(vercelRaw.includes('microphone=(self)'), 'vercel.json enables same-origin microphone permission');

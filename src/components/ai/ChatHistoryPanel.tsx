@@ -87,7 +87,7 @@ export const ChatHistoryPanel: React.FC<ChatHistoryPanelProps> = ({
           type="button"
           onClick={isMobileDrawer ? onCloseMobile : onCloseDesktop}
           aria-label="Close chat history"
-          className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-neutral-500 hover:text-[#111111] hover:bg-neutral-100 cursor-pointer"
+          className="min-h-[44px] min-w-[44px] sm:min-h-[38px] sm:min-w-[38px] flex items-center justify-center rounded-xl text-neutral-500 hover:text-[#111111] hover:bg-neutral-100 cursor-pointer"
         >
           {isMobileDrawer ? (
             <X className="w-4 h-4" />
@@ -143,7 +143,7 @@ export const ChatHistoryPanel: React.FC<ChatHistoryPanelProps> = ({
               type="button"
               onClick={() => onSetShowArchived(true)}
               data-testid="open-archived-chats-button"
-              className="w-full px-3 py-2 rounded-xl text-xs font-medium text-neutral-600 hover:text-[#111111] hover:bg-neutral-50 flex items-center justify-between cursor-pointer min-h-[40px]"
+              className="w-full px-3 py-2 rounded-xl text-xs font-medium text-neutral-600 hover:text-[#111111] hover:bg-neutral-50 flex items-center justify-between cursor-pointer min-h-[44px]"
             >
               <span className="inline-flex items-center gap-2">
                 <Archive className="w-3.5 h-3.5 text-neutral-400" />
@@ -173,7 +173,7 @@ export const ChatHistoryPanel: React.FC<ChatHistoryPanelProps> = ({
 
       {isMobileOpen && (
         <div
-          className="lg:hidden fixed inset-0 z-40 flex"
+          className="lg:hidden fixed inset-0 z-50 flex"
           role="dialog"
           aria-modal="true"
           aria-label="Conversation history"
@@ -183,7 +183,7 @@ export const ChatHistoryPanel: React.FC<ChatHistoryPanelProps> = ({
             className="fixed inset-0 bg-black/30 backdrop-blur-xs"
             onClick={onCloseMobile}
           />
-          <div className="relative z-10 w-[86%] max-w-xs h-full bg-white border-r border-black/[0.08] p-4 shadow-xl flex flex-col">
+          <div className="relative z-10 w-[86%] max-w-xs h-full bg-white border-r border-black/[0.08] p-4 shadow-xl flex flex-col pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
             {panelBody(true)}
           </div>
         </div>

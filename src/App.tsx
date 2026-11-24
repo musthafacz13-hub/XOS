@@ -226,9 +226,11 @@ function XOSApplication() {
       return;
     }
     const navLabel =
-      activeTab === 'savings'
-        ? 'Goals & Savings'
-        : NAV_ITEMS.find(item => item.id === activeTab)?.label || 'Dashboard';
+      activeTab === 'ai-agent'
+        ? 'Jarvis AI'
+        : activeTab === 'savings'
+          ? 'Goals & Savings'
+          : NAV_ITEMS.find(item => item.id === activeTab)?.label || 'Dashboard';
     applySeoConfig(getWorkspaceSeoConfig(navLabel));
   }, [loading, showingAuthScreen, authRoute, activeTab]);
 
