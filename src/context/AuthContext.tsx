@@ -318,11 +318,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { error } = await supabase.auth.signInWithOtp({
           email: cleanEmail,
           options: {
-            emailRedirectTo: redirectUrl
+            emailRedirectTo: redirectUrl,
+            shouldCreateUser: false
           }
         });
 
         if (error) {
+          const lower = error.message.toLowerCase();
+          if (lower.includes('signups not allowed') || lower.includes('user not found') || lower.includes('not found') || lower.includes('signup requires')) {
+            apiOptimization.recordAction(`auth:magiclink:${cleanEmail}`);
+            return { error: null }; // Anti-enumeration: return success for unknown emails
+          }
           return { error: sanitizeAuthErrorMessage(error) };
         }
 

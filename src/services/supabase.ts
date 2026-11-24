@@ -37,7 +37,7 @@ export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKe
     flowType: 'pkce',
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true,
+    detectSessionInUrl: false,
     storageKey: 'xos_auth_session'
   },
   global: {

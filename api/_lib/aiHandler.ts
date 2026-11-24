@@ -157,6 +157,7 @@ export interface AuthVerificationResult {
   userId?: string;
   reason?: string;
   timedOut?: boolean;
+  status?: number;
   authDurationMs: number;
 }
 
@@ -166,8 +167,29 @@ export async function verifySupabaseSessionToken(
   authTimeoutMs: number = DEFAULT_AUTH_TIMEOUT_MS
 ): Promise<AuthVerificationResult> {
   const startedAt = Date.now();
+  const isProduction = process.env.NODE_ENV === 'production';
+  const groqKey = getGroqApiKey();
+  const geminiKey = getGeminiApiKey();
+  const hasAiKeys = Boolean(groqKey || geminiKey);
   const supabaseCfg = getSupabaseServerConfig();
+
   if (!supabaseCfg) {
+    if (isProduction) {
+      return {
+        valid: false,
+        reason: 'Supabase configuration is missing or invalid in production.',
+        status: 503,
+        authDurationMs: Date.now() - startedAt
+      };
+    }
+    if (hasAiKeys) {
+      return {
+        valid: false,
+        reason: 'AI provider keys require valid Supabase server configuration.',
+        status: 503,
+        authDurationMs: Date.now() - startedAt
+      };
+    }
     return {
       valid: true,
       userId: 'local-workspace',
@@ -570,13 +592,14 @@ export async function handleAssistantRequest(
   const authCheck = await verifySupabaseSessionToken(authHeader, deps.fetchImpl, authTimeoutMs);
   if (!authCheck.valid) {
     const totalDurationMs = Date.now() - startTime;
-    const category: AiErrorCategory = authCheck.timedOut ? 'timeout' : 'auth_required';
-    const status = authCheck.timedOut ? 504 : 401;
+    const status = authCheck.status || (authCheck.timedOut ? 504 : 401);
+    const category: AiErrorCategory = authCheck.status === 503 ? 'invalid_api_key' : (authCheck.timedOut ? 'timeout' : 'auth_required');
+    const stage = authCheck.status === 503 ? 'config' : 'auth';
     logDiagnostic('error', {
       event: 'ai_request_failed',
       requestId,
       endpoint,
-      stage: 'auth',
+      stage,
       authDurationMs: authCheck.authDurationMs,
       totalDurationMs,
       status,
@@ -588,7 +611,7 @@ export async function handleAssistantRequest(
       body: buildErrorBody({
         error: authCheck.reason || 'Unauthorized',
         category,
-        stage: 'auth',
+        stage,
         requestId,
         durationMs: totalDurationMs,
         timeoutStage: authCheck.timedOut ? 'auth' : null
@@ -1184,14 +1207,15 @@ export async function handleTranscribeRequest(
   const authCheck = await verifySupabaseSessionToken(authHeader, deps.fetchImpl, authTimeoutMs);
   if (!authCheck.valid) {
     const totalDurationMs = Date.now() - startTime;
-    const category: AiErrorCategory = authCheck.timedOut ? 'timeout' : 'auth_required';
-    const status = authCheck.timedOut ? 504 : 401;
+    const status = authCheck.status || (authCheck.timedOut ? 504 : 401);
+    const category: AiErrorCategory = authCheck.status === 503 ? 'invalid_api_key' : (authCheck.timedOut ? 'timeout' : 'auth_required');
+    const stage = authCheck.status === 503 ? 'config' : 'auth';
     return {
       status,
       body: buildErrorBody({
         error: authCheck.reason || 'Unauthorized',
         category,
-        stage: 'auth',
+        stage,
         requestId,
         durationMs: totalDurationMs,
         timeoutStage: authCheck.timedOut ? 'auth' : null
@@ -1506,14 +1530,15 @@ export async function handleSpeakRequest(
   const authCheck = await verifySupabaseSessionToken(authHeader, deps.fetchImpl, authTimeoutMs);
   if (!authCheck.valid) {
     const totalDurationMs = Date.now() - startTime;
-    const category: AiErrorCategory = authCheck.timedOut ? 'timeout' : 'auth_required';
-    const status = authCheck.timedOut ? 504 : 401;
+    const status = authCheck.status || (authCheck.timedOut ? 504 : 401);
+    const category: AiErrorCategory = authCheck.status === 503 ? 'invalid_api_key' : (authCheck.timedOut ? 'timeout' : 'auth_required');
+    const stage = authCheck.status === 503 ? 'config' : 'auth';
     return {
       status,
       body: buildErrorBody({
         error: authCheck.reason || 'Unauthorized',
         category,
-        stage: 'auth',
+        stage,
         requestId,
         durationMs: totalDurationMs,
         timeoutStage: authCheck.timedOut ? 'auth' : null

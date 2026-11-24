@@ -262,7 +262,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
@@ -297,7 +297,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 DROP TRIGGER IF EXISTS trg_sync_savings_balance ON public.savings_transactions;
 CREATE TRIGGER trg_sync_savings_balance
@@ -342,7 +342,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 DROP TRIGGER IF EXISTS trg_sync_debt_status ON public.debt_repayments;
 CREATE TRIGGER trg_sync_debt_status
@@ -369,17 +369,17 @@ ALTER TABLE public.goals ENABLE ROW LEVEL SECURITY;
 
 -- 6.2 Profiles Policies
 CREATE POLICY "profiles_select_own" ON public.profiles FOR SELECT USING (id = auth.uid());
-CREATE POLICY "profiles_update_own" ON public.profiles FOR UPDATE USING (id = auth.uid());
+CREATE POLICY "profiles_update_own" ON public.profiles FOR UPDATE USING (id = auth.uid()) WITH CHECK (id = auth.uid());
 
 -- 6.3 User Settings Policies
 CREATE POLICY "user_settings_select_own" ON public.user_settings FOR SELECT USING (user_id = auth.uid());
 CREATE POLICY "user_settings_insert_own" ON public.user_settings FOR INSERT WITH CHECK (user_id = auth.uid());
-CREATE POLICY "user_settings_update_own" ON public.user_settings FOR UPDATE USING (user_id = auth.uid());
+CREATE POLICY "user_settings_update_own" ON public.user_settings FOR UPDATE USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
 -- 6.4 Salary Configs Policies
 CREATE POLICY "salary_configs_select_own" ON public.salary_configs FOR SELECT USING (user_id = auth.uid());
 CREATE POLICY "salary_configs_insert_own" ON public.salary_configs FOR INSERT WITH CHECK (user_id = auth.uid());
-CREATE POLICY "salary_configs_update_own" ON public.salary_configs FOR UPDATE USING (user_id = auth.uid());
+CREATE POLICY "salary_configs_update_own" ON public.salary_configs FOR UPDATE USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
 -- 6.5 Salary Payouts Policies
 CREATE POLICY "salary_payouts_all_own" ON public.salary_payouts FOR ALL USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
