@@ -146,7 +146,7 @@ export function sanitizeAuthErrorMessage(err: unknown): string {
     return 'Please verify your email address before logging in. Check your inbox for the confirmation link.';
   }
   if (lower.includes('user already registered') || lower.includes('already been registered')) {
-    return 'An account with this email address already exists. Please log in instead.';
+    return 'Unable to complete sign up with this email. If you already have an account, please log in or reset your password.';
   }
   if (lower.includes('password should be at least') || lower.includes('weak_password')) {
     return 'Password must be at least 8 characters long.';
@@ -198,8 +198,12 @@ export function clearAuthUrlParams(): void {
     if (
       hash.includes('access_token=') ||
       hash.includes('refresh_token=') ||
+      hash.includes('expires_in=') ||
+      hash.includes('token_type=') ||
+      hash.includes('provider_token=') ||
       hash.includes('type=recovery') ||
       hash.includes('error=') ||
+      hash.includes('error_code=') ||
       hash === '#login' ||
       hash === '#signup' ||
       hash === '#magic-link' ||

@@ -1,8 +1,9 @@
 /**
  * XOS Authentication Callback Processor
- * Handles incoming Supabase auth redirects (PKCE codes, token fragments, password recovery, email verification).
+ * Handles incoming Supabase auth redirects (PKCE codes, token_hash OTP, token fragments, password recovery, email verification).
  */
 import React, { useEffect, useState, useRef } from 'react';
+import type { EmailOtpType } from '@supabase/supabase-js';
 import { Loader2, AlertCircle, ArrowRight } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../../services/supabase';
 import { AuthLayout } from './AuthLayout';
@@ -12,6 +13,30 @@ interface AuthCallbackViewProps {
   onSuccess: () => void;
   onPasswordRecovery: () => void;
   onNavigateLogin: () => void;
+}
+
+const ALLOWED_OTP_TYPES = new Set<EmailOtpType>([
+  'signup',
+  'invite',
+  'magiclink',
+  'recovery',
+  'email_change',
+  'email'
+]);
+
+const pkceExchangeInFlight = new Map<
+  string,
+  Promise<Awaited<ReturnType<typeof supabase.auth.exchangeCodeForSession>>>
+>();
+
+function exchangeCodeOnce(code: string) {
+  const existing = pkceExchangeInFlight.get(code);
+  if (existing) return existing;
+  const promise = supabase.auth.exchangeCodeForSession(code).finally(() => {
+    pkceExchangeInFlight.delete(code);
+  });
+  pkceExchangeInFlight.set(code, promise);
+  return promise;
 }
 
 export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
@@ -27,24 +52,27 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
     hasProcessedRef.current = true;
 
     let active = true;
-    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
     const processAuthCallback = async () => {
-      // 1. Check for explicit error in URL parameters
+      // 1. Check for explicit error in URL parameters or hash fragments
       const urlParams = new URLSearchParams(window.location.search);
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
 
       const errorDesc = urlParams.get('error_description') || hashParams.get('error_description');
+      const errorCode = urlParams.get('error_code') || hashParams.get('error_code');
       const errorMsg = urlParams.get('error') || hashParams.get('error');
 
-      if (errorDesc || errorMsg) {
+      if (errorDesc || errorCode || errorMsg) {
         clearAuthUrlParams();
         if (active) {
-          let decoded = errorDesc || errorMsg || 'Authentication callback failed.';
+          let decoded = errorDesc || errorCode || errorMsg || 'Authentication callback failed.';
           try {
             decoded = decodeURIComponent(decoded);
           } catch {
             // Keep raw message if already decoded or malformed
+          }
+          if (errorCode === 'otp_expired' && !decoded.toLowerCase().includes('expired')) {
+            decoded = 'otp_expired';
           }
           setErrorMessage(sanitizeAuthErrorMessage(decoded));
         }
@@ -52,7 +80,8 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
       }
 
       // 2. Check for password recovery type
-      const isRecovery = hashParams.get('type') === 'recovery' || urlParams.get('type') === 'recovery';
+      const rawType = urlParams.get('type') || hashParams.get('type');
+      const isRecovery = rawType === 'recovery';
 
       if (!isSupabaseConfigured) {
         clearAuthUrlParams();
@@ -62,11 +91,11 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
         return;
       }
 
-      // 3. Check for PKCE Authorization Code
+      // 3. Check for PKCE Authorization Code (single-use coalesced exchange)
       const code = urlParams.get('code');
       if (code) {
         try {
-          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          const { data, error } = await exchangeCodeOnce(code);
           clearAuthUrlParams();
           if (!active) return;
 
@@ -80,7 +109,7 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
           } else if (data.session) {
             onSuccess();
           } else {
-            onNavigateLogin();
+            setErrorMessage('This authentication link could not be verified. Please request a new link and try again.');
           }
           return;
         } catch (err) {
@@ -92,50 +121,91 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
         }
       }
 
-      // 4. Check for existing session or hash token
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (!active) return;
-
-        if (error) {
+      // 4. Check for OTP token_hash callback (email confirmation, magic link, recovery)
+      const tokenHash = urlParams.get('token_hash');
+      if (tokenHash) {
+        if (!rawType || !ALLOWED_OTP_TYPES.has(rawType as EmailOtpType)) {
           clearAuthUrlParams();
-          setErrorMessage(sanitizeAuthErrorMessage(error));
+          if (active) {
+            setErrorMessage('This authentication link is invalid or incomplete. Please request a new link.');
+          }
           return;
         }
+        try {
+          const { data, error } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: rawType as EmailOtpType
+          });
+          clearAuthUrlParams();
+          if (!active) return;
 
-        if (isRecovery && session) {
+          if (error) {
+            setErrorMessage(sanitizeAuthErrorMessage(error));
+            return;
+          }
+
+          if (isRecovery && data.session) {
+            onPasswordRecovery();
+          } else if (data.session) {
+            onSuccess();
+          } else {
+            setErrorMessage('This verification link could not be verified. Please request a new link.');
+          }
+          return;
+        } catch (err) {
           clearAuthUrlParams();
-          onPasswordRecovery();
-        } else if (session) {
+          if (active) {
+            setErrorMessage(sanitizeAuthErrorMessage(err));
+          }
+          return;
+        }
+      }
+
+      // 5. Check for implicit hash fragment tokens (detectSessionInUrl is intentionally false)
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+      if (accessToken) {
+        if (!refreshToken) {
           clearAuthUrlParams();
-          onSuccess();
-        } else {
-          // Wait briefly for onAuthStateChange / implicit hash parsing before routing to login
-          fallbackTimer = setTimeout(async () => {
-            if (!active) return;
-            try {
-              const { data: { session: delayedSession } } = await supabase.auth.getSession();
-              if (!active) return;
-              const stillRecovery = isRecovery || window.location.hash.includes('type=recovery');
-              clearAuthUrlParams();
-              if (delayedSession && stillRecovery) {
-                onPasswordRecovery();
-              } else if (delayedSession) {
-                onSuccess();
-              } else {
-                onNavigateLogin();
-              }
-            } catch {
-              clearAuthUrlParams();
-              if (active) onNavigateLogin();
-            }
-          }, 1200);
+          if (active) {
+            setErrorMessage('This authentication link is incomplete or corrupted. Please request a new link.');
+          }
+          return;
         }
-      } catch (err) {
-        clearAuthUrlParams();
-        if (active) {
-          setErrorMessage(sanitizeAuthErrorMessage(err));
+        try {
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          });
+          clearAuthUrlParams();
+          if (!active) return;
+
+          if (error) {
+            setErrorMessage(sanitizeAuthErrorMessage(error));
+            return;
+          }
+
+          if (isRecovery && data.session) {
+            onPasswordRecovery();
+          } else if (data.session) {
+            onSuccess();
+          } else {
+            setErrorMessage('This authentication link has expired or could not establish a session.');
+          }
+          return;
+        } catch (err) {
+          clearAuthUrlParams();
+          if (active) {
+            setErrorMessage(sanitizeAuthErrorMessage(err));
+          }
+          return;
         }
+      }
+
+      // 6. Interrupted, stripped, or empty callback URL: fail safely without reusing a pre-existing session
+      clearAuthUrlParams();
+      if (active) {
+        setErrorMessage('This authentication link is incomplete, expired, or has already been used. Please request a new link.');
       }
     };
 
@@ -143,9 +213,6 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
 
     return () => {
       active = false;
-      if (fallbackTimer) {
-        clearTimeout(fallbackTimer);
-      }
     };
   }, [onSuccess, onPasswordRecovery, onNavigateLogin]);
 

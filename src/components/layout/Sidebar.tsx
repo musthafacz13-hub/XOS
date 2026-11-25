@@ -14,7 +14,8 @@ import {
   LucideIcon,
   HandCoins,
   LogOut,
-  AudioLines
+  AudioLines,
+  StickyNote
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { UserSettings } from '../../types';
@@ -34,6 +35,7 @@ export type ActiveTab =
   | 'salary' 
   | 'savings' 
   | 'reports' 
+  | 'notes'
   | 'ai-agent'
   | 'settings';
 
@@ -55,6 +57,7 @@ export interface NavItemConfig {
 export const NAV_ITEMS: NavItemConfig[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, category: 'core' },
   { id: 'goals', label: 'Goals & Savings', icon: Target, category: 'core' },
+  { id: 'notes', label: 'Notes', icon: StickyNote, category: 'core' },
   { id: 'expenses', label: 'Expenses', icon: CreditCard, category: 'finance' },
   { id: 'income', label: 'Income', icon: TrendingUp, category: 'finance' },
   { id: 'debt', label: 'Debt Management', icon: HandCoins, category: 'finance' },

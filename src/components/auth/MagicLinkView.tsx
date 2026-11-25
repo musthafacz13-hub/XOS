@@ -96,7 +96,7 @@ export const MagicLinkView: React.FC<MagicLinkViewProps> = ({ onNavigate }) => {
               Check your email
             </h3>
             <p className="text-xs text-neutral-600 leading-relaxed font-normal">
-              We've dispatched a secure one-click sign-in link to:
+              If an active account matches this email, we've sent a secure one-click sign-in link to:
             </p>
             <p className="text-xs font-mono font-semibold text-[#111111] bg-neutral-50 py-1.5 px-3 rounded-lg border border-neutral-200 inline-block break-all max-w-full">
               {sentEmail}

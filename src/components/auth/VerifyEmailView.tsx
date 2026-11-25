@@ -55,7 +55,7 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
       } else {
         setResendNotice({
           type: 'success',
-          text: 'A fresh verification link has been sent to your email.'
+          text: 'If this address has a pending verification, a fresh link has been sent.'
         });
         setCooldownSeconds(60);
       }
@@ -83,10 +83,10 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
         {/* Messaging */}
         <div className="space-y-2">
           <h3 className="font-bold text-base text-[#111111]">
-            Confirmation email sent
+            Check your inbox
           </h3>
           <p className="text-xs text-neutral-600 leading-relaxed font-normal">
-            We sent a verification link to:
+            If this email is eligible for a new account, we've sent a confirmation link to:
           </p>
           <div className="text-xs font-mono font-semibold text-[#111111] bg-neutral-50 py-1.5 px-3 rounded-lg border border-neutral-200 inline-block break-all max-w-full">
             {email || 'your email address'}
@@ -108,7 +108,7 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
           </div>
           <div className="flex items-start gap-2">
             <CheckCircle className="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0" />
-            <span>You will be seamlessly redirected into your XOS command center.</span>
+            <span>Already have an account? Return to Log In or reset your password if needed.</span>
           </div>
         </div>
 

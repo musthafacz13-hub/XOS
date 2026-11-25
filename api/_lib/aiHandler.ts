@@ -201,6 +201,7 @@ export async function verifySupabaseSessionToken(
   if (!token) {
     return {
       valid: false,
+      status: 401,
       reason: 'Your session has expired. Please sign in again.',
       authDurationMs: Date.now() - startedAt
     };
@@ -226,6 +227,7 @@ export async function verifySupabaseSessionToken(
     if (!response.ok) {
       return {
         valid: false,
+        status: 401,
         reason: 'Your session has expired. Please sign in again.',
         authDurationMs: Date.now() - startedAt
       };
@@ -235,6 +237,7 @@ export async function verifySupabaseSessionToken(
     if (!userJson?.id) {
       return {
         valid: false,
+        status: 401,
         reason: 'Your session has expired. Please sign in again.',
         authDurationMs: Date.now() - startedAt
       };
@@ -249,6 +252,7 @@ export async function verifySupabaseSessionToken(
     return {
       valid: false,
       timedOut,
+      status: timedOut ? 504 : 401,
       reason: timedOut
         ? 'AI is taking longer than expected. Please try again.'
         : 'Unable to verify your session right now. Please try again.',

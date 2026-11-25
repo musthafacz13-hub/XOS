@@ -62,9 +62,10 @@ function runTests() {
     sanitizeAuthErrorMessage({ message: 'Email not confirmed' }).includes('verify your email'),
     'Maps unconfirmed email cleanly'
   );
+  const duplicateMsg = sanitizeAuthErrorMessage({ message: 'User already registered' });
   assert(
-    sanitizeAuthErrorMessage({ message: 'User already registered' }).includes('already exists'),
-    'Maps duplicate user cleanly'
+    !duplicateMsg.toLowerCase().includes('already exists') && duplicateMsg.includes('Unable to complete sign up'),
+    'Sanitizes duplicate user error without revealing account existence'
   );
   assert(
     sanitizeAuthErrorMessage({ message: 'New password should be different from the old password' }).includes('different'),
@@ -158,7 +159,12 @@ function runTests() {
   assert(!loginViewSrc.includes('autoFocus') && !signUpViewSrc.includes('autoFocus'), 'Auth forms avoid autoFocus viewport jump on mobile');
   assert(loginViewSrc.includes('isSubmittingRef') && signUpViewSrc.includes('isSubmittingRef'), 'Auth forms guard against rapid duplicate submissions synchronously');
   assert(loginViewSrc.includes('aria-pressed={showPassword}') && signUpViewSrc.includes('aria-pressed={showPassword}'), 'Password toggle buttons expose aria-pressed state');
-  assert(authContextSrc.includes('identities.length === 0'), 'AuthContext detects Supabase v2 duplicate-email empty identities signup');
+  assert(
+    authContextSrc.includes('identities.length === 0') &&
+      !authContextSrc.includes('already exists') &&
+      authContextSrc.includes('needsEmailVerification: true'),
+    'AuthContext preserves GoTrue v2 anti-enumeration on duplicate-email signup'
+  );
   const initialDataSrc = fs.readFileSync(path.join(rootDir, 'src/data/initialData.ts'), 'utf8');
   assert(
     !authContextSrc.includes('isDemoUser') &&

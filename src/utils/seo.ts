@@ -60,14 +60,18 @@ export function resolveAuthRouteFromLocation(loc: {
 }): PublicOrAuthRoute {
   const { search, hash } = loc;
   const normalizedPath = normalizePathname(loc.pathname);
+  const searchParams = new URLSearchParams(search.startsWith('?') ? search : search ? `?${search}` : '');
+  const hashParams = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
 
-  if (hash.includes('type=recovery') || search.includes('type=recovery')) {
-    return 'reset-password';
-  }
   if (
-    search.includes('code=') ||
-    hash.includes('access_token=') ||
-    normalizedPath === '/auth/callback'
+    normalizedPath === '/auth/callback' ||
+    searchParams.has('code') ||
+    searchParams.has('token_hash') ||
+    searchParams.has('error') ||
+    searchParams.has('error_code') ||
+    hashParams.has('access_token') ||
+    hashParams.has('error') ||
+    hashParams.has('error_code')
   ) {
     return 'callback';
   }

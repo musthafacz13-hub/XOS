@@ -46,6 +46,9 @@ const SalaryView = lazy(() =>
 const ReportsView = lazy(() =>
   import('./components/reports/ReportsView').then(m => ({ default: m.ReportsView }))
 );
+const NotesView = lazy(() =>
+  import('./components/notes/NotesView').then(m => ({ default: m.NotesView }))
+);
 const AiAgentView = lazy(() =>
   import('./components/ai/AiAgentView').then(m => ({ default: m.AiAgentView }))
 );
@@ -109,7 +112,7 @@ const TAB_TRANSITION = { duration: 0.14, ease: [0.16, 1, 0.3, 1] as const };
 
 function XOSApplication() {
   const data = useXOSData();
-  const { user, loading, initError, retryInitialization, dismissInitError, isPasswordRecovery } = useAuth();
+  const { user, loading, initError, retryInitialization, dismissInitError, isPasswordRecovery, markPasswordRecovery } = useAuth();
 
   // Authentication & Public Navigation State
   const [authRoute, setAuthRoute] = useState<AuthRoute>(() => {
@@ -136,12 +139,12 @@ function XOSApplication() {
 
   const [registeredEmail, setRegisteredEmail] = useState<string>('');
 
-  // Handle password recovery flag from AuthContext
+  // Handle verified password recovery flag from AuthContext
   useEffect(() => {
-    if (isPasswordRecovery) {
+    if (isPasswordRecovery && user) {
       setAuthRoute('reset-password');
     }
-  }, [isPasswordRecovery]);
+  }, [isPasswordRecovery, user]);
 
   // Workspace Navigation State
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
@@ -212,8 +215,9 @@ function XOSApplication() {
   }, [navigateAuthRoute]);
 
   const navigateResetPassword = useCallback(() => {
+    markPasswordRecovery();
     navigateAuthRoute('reset-password');
-  }, [navigateAuthRoute]);
+  }, [markPasswordRecovery, navigateAuthRoute]);
 
   // Route-accurate SEO title, description, canonical & robots indexability (never expose private user info)
   useEffect(() => {
@@ -298,6 +302,7 @@ function XOSApplication() {
               key="reset-password"
               onSuccess={navigateWelcome}
               onNavigateLogin={navigateLogin}
+              onNavigateForgotPassword={() => navigateAuthRoute('forgot-password')}
             />
           )}
 
@@ -380,6 +385,7 @@ function XOSApplication() {
               {activeTab === 'attendance' && <WorkView />}
               {activeTab === 'salary' && <SalaryView />}
               {activeTab === 'reports' && <ReportsView />}
+              {activeTab === 'notes' && <NotesView />}
               {activeTab === 'ai-agent' && <AiAgentView />}
               {activeTab === 'settings' && <SettingsView />}
             </motion.div>

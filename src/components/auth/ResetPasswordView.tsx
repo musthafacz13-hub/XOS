@@ -13,13 +13,15 @@ import { clearAuthUrlParams } from '../../utils/authValidation';
 interface ResetPasswordViewProps {
   onSuccess: () => void;
   onNavigateLogin: () => void;
+  onNavigateForgotPassword?: () => void;
 }
 
 export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
   onSuccess,
-  onNavigateLogin
+  onNavigateLogin,
+  onNavigateForgotPassword
 }) => {
-  const { updatePassword, user, clearPasswordRecoveryFlag } = useAuth();
+  const { updatePassword, user, signOut, clearPasswordRecoveryFlag } = useAuth();
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -38,11 +40,25 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
     };
   }, []);
 
+  const handleReturnToLogin = async () => {
+    clearAuthUrlParams();
+    clearPasswordRecoveryFlag();
+    if (user) {
+      await signOut();
+    }
+    onNavigateLogin();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmittingRef.current || loading) return;
 
     setErrorMessage(null);
+
+    if (!user) {
+      setErrorMessage('No active recovery session was found. Please request a new password reset link.');
+      return;
+    }
 
     if (password.length < 8) {
       setErrorMessage('Password must be at least 8 characters long.');
@@ -140,7 +156,7 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
                 type={showPassword ? 'text' : 'password'}
                 required
                 autoComplete="new-password"
-                disabled={loading}
+                disabled={loading || !user}
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => {
@@ -151,7 +167,7 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
               />
               <button
                 type="button"
-                disabled={loading}
+                disabled={loading || !user}
                 onClick={() => setShowPassword(prev => !prev)}
                 className="absolute right-1.5 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100/80 transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
@@ -171,7 +187,7 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
               type={showPassword ? 'text' : 'password'}
               required
               autoComplete="new-password"
-              disabled={loading}
+              disabled={loading || !user}
               placeholder="••••••••"
               value={confirmPassword}
               onChange={(e) => {
@@ -185,7 +201,7 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
           <motion.button
             whileTap={tapScale.button}
             type="submit"
-            disabled={loading}
+            disabled={loading || !user}
             className="w-full min-h-[48px] flex items-center justify-center gap-2 py-3 bg-[#111318] text-white text-sm font-semibold rounded-xl hover:bg-black transition-colors shadow-sm disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
           >
             {loading ? (
@@ -201,11 +217,21 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
             )}
           </motion.button>
 
-          <div className="pt-2 text-center text-xs text-neutral-500 border-t border-black/[0.04]">
+          <div className="pt-2 text-center text-xs text-neutral-500 border-t border-black/[0.04] flex flex-wrap items-center justify-center gap-3">
+            {!user && onNavigateForgotPassword && (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={onNavigateForgotPassword}
+                className="min-h-[44px] px-4 inline-flex items-center justify-center text-[#111111] hover:underline font-semibold transition-colors cursor-pointer rounded-xl disabled:opacity-50"
+              >
+                Request New Reset Link
+              </button>
+            )}
             <button
               type="button"
               disabled={loading}
-              onClick={onNavigateLogin}
+              onClick={handleReturnToLogin}
               className="min-h-[44px] px-4 inline-flex items-center justify-center text-neutral-500 hover:text-black font-medium transition-colors cursor-pointer rounded-xl disabled:opacity-50"
             >
               Return to Login

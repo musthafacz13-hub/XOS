@@ -27,6 +27,7 @@ export interface AuthContextType {
   requestPasswordReset: (email: string) => Promise<{ error: string | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
+  markPasswordRecovery: () => void;
   clearPasswordRecoveryFlag: () => void;
   retryInitialization: () => Promise<void>;
   dismissInitError: () => void;
@@ -158,10 +159,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     mountedRef.current = true;
 
-    if (window.location.hash.includes('type=recovery')) {
-      setIsPasswordRecovery(true);
-    }
-
     if (!isSupabaseConfigured) {
       setLoading(false);
       return () => {
@@ -173,7 +170,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
       if (!mountedRef.current) return;
 
-      if (event === 'PASSWORD_RECOVERY') {
+      if (event === 'PASSWORD_RECOVERY' && currentSession) {
         setIsPasswordRecovery(true);
       }
 
@@ -182,6 +179,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         inFlightHydrationRef.current = null;
         setSession(null);
         setUser(null);
+        setIsPasswordRecovery(false);
         apiOptimization.invalidateCache();
         repository.clearUserData();
         setLoading(false);
@@ -271,13 +269,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
         if (error) {
+          const lower = error.message.toLowerCase();
+          if (lower.includes('user already registered') || lower.includes('already been registered')) {
+            return { error: null, needsEmailVerification: true };
+          }
           return { error: sanitizeAuthErrorMessage(error) };
         }
 
         // In Supabase GoTrue v2 with email confirmation enabled, signing up with an
         // already-registered email returns a user with an empty identities array and no session.
+        // Preserve GoTrue's anti-enumeration guarantee by routing to the neutral verification view.
         if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0 && !data.session) {
-          return { error: 'An account with this email address already exists. Please log in instead.' };
+          return { error: null, needsEmailVerification: true };
         }
 
         // If user created but session is null, email confirmation is required by Supabase settings
@@ -325,7 +328,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (error) {
           const lower = error.message.toLowerCase();
-          if (lower.includes('signups not allowed') || lower.includes('user not found') || lower.includes('not found') || lower.includes('signup requires')) {
+          if (
+            lower.includes('signups not allowed') ||
+            lower.includes('signups are disabled') ||
+            lower.includes('otp_disabled') ||
+            lower.includes('user not found') ||
+            lower.includes('not found') ||
+            lower.includes('signup requires')
+          ) {
             apiOptimization.recordAction(`auth:magiclink:${cleanEmail}`);
             return { error: null }; // Anti-enumeration: return success for unknown emails
           }
@@ -365,6 +375,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         });
         if (error) {
+          const lower = error.message.toLowerCase();
+          if (lower.includes('user not found') || lower.includes('already confirmed') || lower.includes('email_confirmed')) {
+            apiOptimization.recordAction(`auth:resend:${cleanEmail}`);
+            return { error: null };
+          }
           return { error: sanitizeAuthErrorMessage(error) };
         }
         apiOptimization.recordAction(`auth:resend:${cleanEmail}`);
@@ -455,6 +470,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  const markPasswordRecovery = useCallback(() => {
+    setIsPasswordRecovery(true);
+  }, []);
+
   const clearPasswordRecoveryFlag = useCallback(() => {
     setIsPasswordRecovery(false);
   }, []);
@@ -482,6 +501,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     requestPasswordReset,
     updatePassword,
     signOut,
+    markPasswordRecovery,
     clearPasswordRecoveryFlag,
     retryInitialization,
     dismissInitError
@@ -498,6 +518,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     requestPasswordReset,
     updatePassword,
     signOut,
+    markPasswordRecovery,
     clearPasswordRecoveryFlag,
     retryInitialization,
     dismissInitError

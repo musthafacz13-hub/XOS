@@ -240,3 +240,6 @@ export interface DebtRepayment {
   notes?: string;
   created_at: string;
 }
+
+export * from './notes';
+
