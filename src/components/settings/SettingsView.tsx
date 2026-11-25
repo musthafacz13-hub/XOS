@@ -18,16 +18,23 @@ import { usePWAInstall } from '../../hooks/usePWAInstall';
 import { useAuth } from '../../context/AuthContext';
 import { repository, SettingsBundleSaveError, SettingsBundleSection } from '../../services/repository';
 import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
+import {
+  INPUT_CLASS,
+  LABEL_CLASS,
+  Modal,
+  MONO_INPUT_CLASS,
+  PageHeader,
+  PRIMARY_BUTTON_CLASS,
+  SECONDARY_BUTTON_CLASS,
+  SELECT_CLASS,
+  SUBTLE_BUTTON_CLASS
+} from '../ui';
 
 const PDFExportModal = lazy(() =>
   import('../modals/PDFExportModal').then(m => ({ default: m.PDFExportModal }))
 );
 
-const INPUT_CLASS =
-  'w-full h-10 px-3 text-sm text-[#111111] bg-white border border-neutral-200 rounded-lg transition-colors placeholder:text-neutral-400 hover:border-neutral-300 focus-visible:outline-none focus-visible:border-[#111111] focus-visible:ring-2 focus-visible:ring-[#111111]/10';
-
-const SELECT_CLASS =
-  'w-full h-10 pl-3 pr-9 text-sm text-[#111111] bg-white border border-neutral-200 rounded-lg appearance-none cursor-pointer transition-colors hover:border-neutral-300 focus-visible:outline-none focus-visible:border-[#111111] focus-visible:ring-2 focus-visible:ring-[#111111]/10';
+const SETTINGS_SELECT_CLASS = `${SELECT_CLASS} pl-3.5 pr-9 appearance-none cursor-pointer`;
 
 export const SettingsView: React.FC = () => {
   const data = useXOSData();
@@ -579,52 +586,46 @@ export const SettingsView: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto bg-white text-[#111111]">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6">
-        <div className="min-w-0">
-          <h2 className="text-xl sm:text-2xl font-semibold text-[#111111] tracking-tight">
-            Settings
-          </h2>
-          <p className="text-sm text-neutral-500 mt-1">
-            Manage your account, preferences, salary rates, categories, and data.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3 shrink-0">
-          {saveSuccessMessage && (
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
-              <Check className="w-3.5 h-3.5 text-emerald-600" />
-              <span>{saveSuccessMessage}</span>
-            </span>
-          )}
-          {!saveSuccessMessage && hasUnsavedChanges && !saveErrorMessage && (
-            <span className="text-xs text-neutral-500">Unsaved changes</span>
-          )}
-
-          <button
-            type="button"
-            onClick={() => handleSaveSettings()}
-            disabled={isSaving || isResetting}
-            className="inline-flex items-center justify-center gap-2 h-10 px-4 bg-[#111111] hover:bg-black text-white text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] focus-visible:ring-offset-2"
-          >
-            {isSaving ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Saving...</span>
-              </>
-            ) : (
-              <span>Save Settings</span>
+    <div className="max-w-4xl mx-auto text-[#1d1d1f] space-y-6">
+      <PageHeader
+        title="Settings"
+        description="Manage your account, preferences, salary rates, categories, and data."
+        actions={
+          <div className="flex items-center gap-3">
+            {saveSuccessMessage && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                <span>{saveSuccessMessage}</span>
+              </span>
             )}
-          </button>
-        </div>
-      </div>
+            {!saveSuccessMessage && hasUnsavedChanges && !saveErrorMessage && (
+              <span className="text-xs text-[#6e6e73]">Unsaved changes</span>
+            )}
+
+            <button
+              type="button"
+              onClick={() => handleSaveSettings()}
+              disabled={isSaving || isResetting}
+              className={PRIMARY_BUTTON_CLASS}
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <span>Save Settings</span>
+              )}
+            </button>
+          </div>
+        }
+      />
 
       {/* Inline Feedback Banners */}
       {saveErrorMessage && (
         <div
           role="alert"
-          className="mb-6 p-3.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm flex items-start justify-between gap-3"
+          className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm flex items-start justify-between gap-3"
         >
           <div className="flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
@@ -633,7 +634,7 @@ export const SettingsView: React.FC = () => {
           <button
             type="button"
             onClick={() => setSaveErrorMessage(null)}
-            className="text-rose-700 hover:text-rose-900 p-0.5 cursor-pointer shrink-0"
+            className="text-rose-700 hover:text-rose-900 p-1 rounded-lg cursor-pointer shrink-0"
             aria-label="Dismiss error"
           >
             <X className="w-4 h-4" />
@@ -644,7 +645,7 @@ export const SettingsView: React.FC = () => {
       {bannerMessage && (
         <div
           role="status"
-          className="mb-6 p-3.5 rounded-lg bg-neutral-50 border border-neutral-200 text-neutral-800 text-xs sm:text-sm flex items-center justify-between gap-3"
+          className="p-3.5 rounded-xl bg-[#f5f5f7] border border-black/[0.08] text-[#1d1d1f] text-xs sm:text-sm flex items-center justify-between gap-3"
         >
           <div className="flex items-center gap-2.5">
             <Check className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -653,7 +654,7 @@ export const SettingsView: React.FC = () => {
           <button
             onClick={() => setBannerMessage(null)}
             type="button"
-            className="text-neutral-500 hover:text-[#111111] text-xs font-medium cursor-pointer shrink-0"
+            className="text-[#6e6e73] hover:text-[#1d1d1f] text-xs font-medium cursor-pointer shrink-0"
           >
             Dismiss
           </button>
@@ -663,21 +664,21 @@ export const SettingsView: React.FC = () => {
       {connectionError && (
         <div
           role="alert"
-          className="mb-6 p-3.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs sm:text-sm flex items-start gap-2.5"
+          className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs sm:text-sm flex items-start gap-2.5"
         >
           <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
           <span>Some settings could not load from the server: {connectionError}</span>
         </div>
       )}
 
-      <form onSubmit={handleSaveSettings} noValidate>
+      <form onSubmit={handleSaveSettings} noValidate className="divide-y divide-black/[0.06]">
         {/* A. Account */}
-        <section aria-labelledby="settings-account-heading" className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-10 py-7 border-t border-neutral-200/80">
+        <section aria-labelledby="settings-account-heading" className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-10 py-7 first:pt-2">
           <div className="md:col-span-4 space-y-1">
-            <h3 id="settings-account-heading" className="text-[15px] font-semibold text-[#111111]">
+            <h3 id="settings-account-heading" className="text-[15px] font-semibold text-[#1d1d1f] tracking-[-0.01em]">
               Account
             </h3>
-            <p className="text-xs text-neutral-500 leading-relaxed">
+            <p className="text-xs text-[#6e6e73] leading-relaxed">
               Your sign-in email, display name, and session controls.
             </p>
           </div>
@@ -685,21 +686,19 @@ export const SettingsView: React.FC = () => {
           <div className="md:col-span-8 space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Account Email */}
-              <div className="space-y-1.5">
-                <label className="block text-xs font-medium text-neutral-700">
-                  Account Email
-                </label>
-                <div className="h-10 px-3 flex items-center rounded-lg bg-neutral-50 border border-neutral-200/80 text-sm text-neutral-700 truncate">
+              <div>
+                <span className={LABEL_CLASS}>Account Email</span>
+                <div className="min-h-[44px] sm:min-h-[40px] px-3.5 flex items-center rounded-xl bg-[#f5f5f7] border border-black/[0.06] text-base sm:text-sm text-[#6e6e73] truncate">
                   {user?.email || 'Not signed in'}
                 </div>
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-[#6e6e73] mt-1.5">
                   Managed by your sign-in account.
                 </p>
               </div>
 
               {/* Display Name */}
-              <div className="space-y-1.5">
-                <label htmlFor="profile-name" className="block text-xs font-medium text-neutral-700">
+              <div>
+                <label htmlFor="profile-name" className={LABEL_CLASS}>
                   Display Name
                 </label>
                 <input
@@ -710,24 +709,24 @@ export const SettingsView: React.FC = () => {
                   onChange={(e) => setProfileName(e.target.value)}
                   className={INPUT_CLASS}
                 />
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-[#6e6e73] mt-1.5">
                   Shown on your dashboard and PDF reports.
                 </p>
               </div>
             </div>
 
             {/* Sign Out Row */}
-            <div className="pt-4 border-t border-neutral-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="pt-4 border-t border-black/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-[#111111]">Sign out</p>
-                <p className="text-xs text-neutral-500">
+                <p className="text-sm font-medium text-[#1d1d1f]">Sign out</p>
+                <p className="text-xs text-[#6e6e73]">
                   End your current session on this device.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsSignOutModalOpen(true)}
-                className="inline-flex items-center justify-center h-9 px-3.5 text-xs font-medium text-neutral-700 hover:text-[#111111] bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-neutral-300 rounded-lg transition-colors whitespace-nowrap shrink-0 self-start sm:self-auto cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/15"
+                className={`${SECONDARY_BUTTON_CLASS} self-start sm:self-auto`}
               >
                 Sign Out
               </button>
@@ -736,20 +735,20 @@ export const SettingsView: React.FC = () => {
         </section>
 
         {/* B. Preferences */}
-        <section aria-labelledby="settings-preferences-heading" className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-10 py-7 border-t border-neutral-200/80">
+        <section aria-labelledby="settings-preferences-heading" className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-10 py-7">
           <div className="md:col-span-4 space-y-1">
-            <h3 id="settings-preferences-heading" className="text-[15px] font-semibold text-[#111111]">
+            <h3 id="settings-preferences-heading" className="text-[15px] font-semibold text-[#1d1d1f] tracking-[-0.01em]">
               Preferences
             </h3>
-            <p className="text-xs text-neutral-500 leading-relaxed">
+            <p className="text-xs text-[#6e6e73] leading-relaxed">
               Regional formatting for currency, dates, and weekly calendars.
             </p>
           </div>
 
           <div className="md:col-span-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
             {/* Primary Currency */}
-            <div className="space-y-1.5">
-              <label htmlFor="currency-select" className="block text-xs font-medium text-neutral-700">
+            <div>
+              <label htmlFor="currency-select" className={LABEL_CLASS}>
                 Primary Currency
               </label>
               <div className="relative">
@@ -757,7 +756,7 @@ export const SettingsView: React.FC = () => {
                   id="currency-select"
                   value={currency}
                   onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
-                  className={SELECT_CLASS}
+                  className={SETTINGS_SELECT_CLASS}
                 >
                   {Object.entries(CURRENCIES).map(([code, info]) => (
                     <option key={code} value={code}>
@@ -765,16 +764,16 @@ export const SettingsView: React.FC = () => {
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="w-4 h-4 text-neutral-400 pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                <ChevronDown className="w-4 h-4 text-[#86868b] pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
               </div>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-[#6e6e73] mt-1.5">
                 Defaults to INR (₹).
               </p>
             </div>
 
             {/* Date Format */}
-            <div className="space-y-1.5">
-              <label htmlFor="date-format-select" className="block text-xs font-medium text-neutral-700">
+            <div>
+              <label htmlFor="date-format-select" className={LABEL_CLASS}>
                 Date Format
               </label>
               <div className="relative">
@@ -782,22 +781,22 @@ export const SettingsView: React.FC = () => {
                   id="date-format-select"
                   value={dateFormat}
                   onChange={(e) => setDateFormat(e.target.value as DateFormat)}
-                  className={SELECT_CLASS}
+                  className={SETTINGS_SELECT_CLASS}
                 >
                   <option value="YYYY-MM-DD">YYYY-MM-DD</option>
                   <option value="DD/MM/YYYY">DD/MM/YYYY</option>
                   <option value="MM/DD/YYYY">MM/DD/YYYY</option>
                 </select>
-                <ChevronDown className="w-4 h-4 text-neutral-400 pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                <ChevronDown className="w-4 h-4 text-[#86868b] pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
               </div>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-[#6e6e73] mt-1.5">
                 Used across logs and reports.
               </p>
             </div>
 
             {/* Week Starts On */}
-            <div className="space-y-1.5">
-              <label htmlFor="week-start-select" className="block text-xs font-medium text-neutral-700">
+            <div>
+              <label htmlFor="week-start-select" className={LABEL_CLASS}>
                 Week Starts On
               </label>
               <div className="relative">
@@ -805,14 +804,14 @@ export const SettingsView: React.FC = () => {
                   id="week-start-select"
                   value={weekStartDay}
                   onChange={(e) => setWeekStartDay(e.target.value as WeekStartDay)}
-                  className={SELECT_CLASS}
+                  className={SETTINGS_SELECT_CLASS}
                 >
                   <option value="Monday">Monday</option>
                   <option value="Sunday">Sunday</option>
                 </select>
-                <ChevronDown className="w-4 h-4 text-neutral-400 pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                <ChevronDown className="w-4 h-4 text-[#86868b] pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
               </div>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-[#6e6e73] mt-1.5">
                 Aligns the attendance calendar.
               </p>
             </div>
@@ -820,30 +819,30 @@ export const SettingsView: React.FC = () => {
         </section>
 
         {/* C. Salary Configuration */}
-        <section aria-labelledby="settings-salary-heading" className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-10 py-7 border-t border-neutral-200/80">
-          <div className="md:col-span-4 space-y-2">
-            <h3 id="settings-salary-heading" className="text-[15px] font-semibold text-[#111111]">
+        <section aria-labelledby="settings-salary-heading" className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-10 py-7">
+          <div className="md:col-span-4 space-y-1.5">
+            <h3 id="settings-salary-heading" className="text-[15px] font-semibold text-[#1d1d1f] tracking-[-0.01em]">
               Salary Configuration
             </h3>
-            <p className="text-xs text-neutral-500 leading-relaxed">
+            <p className="text-xs text-[#6e6e73] leading-relaxed">
               Daily salary rates and overtime rules applied to new attendance entries.
             </p>
             {!savedSalaryConfigured && (
-              <span className="inline-block px-2 py-0.5 text-[11px] font-medium text-neutral-600 bg-neutral-100 rounded-md">
+              <p className="text-xs font-medium text-[#86868b]">
                 Not configured yet
-              </span>
+              </p>
             )}
           </div>
 
           <div className="md:col-span-8 space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Daily Base Salary */}
-              <div className="space-y-1.5">
-                <label htmlFor="daily-base-salary" className="block text-xs font-medium text-neutral-700">
+              <div>
+                <label htmlFor="daily-base-salary" className={LABEL_CLASS}>
                   Daily Base Salary
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-neutral-400 pointer-events-none">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-medium text-[#86868b] pointer-events-none">
                     {currencySymbol}
                   </span>
                   <input
@@ -855,32 +854,32 @@ export const SettingsView: React.FC = () => {
                     placeholder="Not configured"
                     value={dailyBaseSalaryInput}
                     onChange={(e) => setDailyBaseSalaryInput(e.target.value)}
-                    className={`${INPUT_CLASS} pl-8 font-mono tabular-nums placeholder:font-sans`}
+                    className={`${MONO_INPUT_CLASS} pl-8 placeholder:font-sans`}
                   />
                 </div>
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-[#6e6e73] mt-1.5">
                   Base pay earned for a standard workday.
                 </p>
               </div>
 
               {/* Daily Add-on Salary */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <label htmlFor="addon-salary" className="block text-xs font-medium text-neutral-700">
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <label htmlFor="addon-salary" className="block text-xs font-medium text-[#6e6e73]">
                     Additional / Add-on Salary
                   </label>
-                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-700 cursor-pointer">
+                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1d1d1f] cursor-pointer">
                     <input
                       type="checkbox"
                       checked={addonEnabled}
                       onChange={(e) => setAddonEnabled(e.target.checked)}
-                      className="rounded border-neutral-300 text-[#111111] focus:ring-[#111111]"
+                      className="rounded border-black/[0.2] text-[#0284c7] accent-[#0284c7] focus:ring-[#0284c7]"
                     />
                     <span>Enable Add-on</span>
                   </label>
                 </div>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-neutral-400 pointer-events-none">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-medium text-[#86868b] pointer-events-none">
                     {currencySymbol}
                   </span>
                   <input
@@ -893,10 +892,10 @@ export const SettingsView: React.FC = () => {
                     disabled={!addonEnabled}
                     value={addonSalaryInput}
                     onChange={(e) => setAddonSalaryInput(e.target.value)}
-                    className={`${INPUT_CLASS} pl-8 font-mono tabular-nums disabled:bg-neutral-50 disabled:text-neutral-400`}
+                    className={`${MONO_INPUT_CLASS} pl-8`}
                   />
                 </div>
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-[#6e6e73] mt-1.5">
                   {addonEnabled
                     ? 'Added daily on top of base pay for each Present workday.'
                     : 'Add-on pay is currently disabled.'}
@@ -904,8 +903,8 @@ export const SettingsView: React.FC = () => {
               </div>
 
               {/* Standard Duty Hours */}
-              <div className="space-y-1.5">
-                <label htmlFor="standard-hours" className="block text-xs font-medium text-neutral-700">
+              <div>
+                <label htmlFor="standard-hours" className={LABEL_CLASS}>
                   Standard Daily Duty Hours
                 </label>
                 <div className="relative">
@@ -919,35 +918,35 @@ export const SettingsView: React.FC = () => {
                     placeholder="Not configured"
                     value={standardHoursInput}
                     onChange={(e) => setStandardHoursInput(e.target.value)}
-                    className={`${INPUT_CLASS} pr-10 font-mono tabular-nums placeholder:font-sans`}
+                    className={`${MONO_INPUT_CLASS} pr-10 placeholder:font-sans`}
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 pointer-events-none">
+                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs text-[#86868b] pointer-events-none">
                     hrs
                   </span>
                 </div>
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-[#6e6e73] mt-1.5">
                   Daily shift duration before overtime applies.
                 </p>
               </div>
 
               {/* Extra Working Hour Rate */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <label htmlFor="extra-hour-rate" className="block text-xs font-medium text-neutral-700">
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <label htmlFor="extra-hour-rate" className="block text-xs font-medium text-[#6e6e73]">
                     Extra Working Hour Rate
                   </label>
-                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-700 cursor-pointer">
+                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1d1d1f] cursor-pointer">
                     <input
                       type="checkbox"
                       checked={overtimeEnabled}
                       onChange={(e) => setOvertimeEnabled(e.target.checked)}
-                      className="rounded border-neutral-300 text-[#111111] focus:ring-[#111111]"
+                      className="rounded border-black/[0.2] text-[#0284c7] accent-[#0284c7] focus:ring-[#0284c7]"
                     />
                     <span>Overtime</span>
                   </label>
                 </div>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-neutral-400 pointer-events-none">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-medium text-[#86868b] pointer-events-none">
                     {currencySymbol}
                   </span>
                   <input
@@ -960,13 +959,13 @@ export const SettingsView: React.FC = () => {
                     disabled={!overtimeEnabled}
                     value={extraHourRateInput}
                     onChange={(e) => setExtraHourRateInput(e.target.value)}
-                    className={`${INPUT_CLASS} pl-8 pr-9 font-mono tabular-nums placeholder:font-sans disabled:bg-neutral-50 disabled:text-neutral-400`}
+                    className={`${MONO_INPUT_CLASS} pl-8 pr-9 placeholder:font-sans`}
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 pointer-events-none">
+                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs text-[#86868b] pointer-events-none">
                     /hr
                   </span>
                 </div>
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-[#6e6e73] mt-1.5">
                   {overtimeEnabled
                     ? 'Paid per hour worked beyond standard daily hours.'
                     : 'Overtime calculation disabled for new entries.'}
@@ -974,8 +973,8 @@ export const SettingsView: React.FC = () => {
               </div>
 
               {/* Salary Currency (Synced with Primary Currency) */}
-              <div className="space-y-1.5 sm:col-span-2">
-                <label htmlFor="salary-currency-select" className="block text-xs font-medium text-neutral-700">
+              <div className="sm:col-span-2">
+                <label htmlFor="salary-currency-select" className={LABEL_CLASS}>
                   Salary Currency
                 </label>
                 <div className="relative">
@@ -983,7 +982,7 @@ export const SettingsView: React.FC = () => {
                     id="salary-currency-select"
                     value={currency}
                     onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
-                    className={SELECT_CLASS}
+                    className={SETTINGS_SELECT_CLASS}
                   >
                     {Object.entries(CURRENCIES).map(([code, info]) => (
                       <option key={code} value={code}>
@@ -991,16 +990,16 @@ export const SettingsView: React.FC = () => {
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="w-4 h-4 text-neutral-400 pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
+                  <ChevronDown className="w-4 h-4 text-[#86868b] pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
                 </div>
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-[#6e6e73] mt-1.5">
                   Synced with workspace regional currency.
                 </p>
               </div>
             </div>
 
             {/* Live Daily Pay Preview */}
-            <div className="p-3.5 rounded-xl bg-neutral-50 border border-neutral-200/80 space-y-2">
+            <div className="p-4 rounded-2xl bg-[#f5f5f7] space-y-2.5">
               {dailyBaseSalaryInput.trim() !== '' &&
               standardHoursInput.trim() !== '' &&
               Number.isFinite(parsedDailyBase) &&
@@ -1009,17 +1008,17 @@ export const SettingsView: React.FC = () => {
               parsedStandardHours > 0 ? (
                 <>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-[#111111]">Live Daily Pay Preview</span>
-                    <span className="text-[11px] font-mono text-neutral-500 tabular-nums">
+                    <span className="text-xs font-semibold text-[#1d1d1f]">Live Daily Pay Preview</span>
+                    <span className="text-xs font-mono text-[#6e6e73] tabular-nums">
                       ≈ {formatCurrency(parsedDailyBase / parsedStandardHours, currency)}/hr base
                     </span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                    <div className="p-2.5 rounded-lg bg-white border border-neutral-200/70 flex items-center justify-between">
-                      <span className="text-neutral-600">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1 border-t border-black/[0.06]">
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-[#6e6e73]">
                         Standard ({parsedStandardHours}h)
                       </span>
-                      <span className="font-mono font-semibold text-[#111111] tabular-nums">
+                      <span className="font-mono font-semibold text-[#1d1d1f] tabular-nums">
                         {formatCurrency(
                           parsedDailyBase +
                             (addonEnabled && Number.isFinite(parsedAddonSalary) && parsedAddonSalary >= 0
@@ -1029,11 +1028,11 @@ export const SettingsView: React.FC = () => {
                         )}
                       </span>
                     </div>
-                    <div className="p-2.5 rounded-lg bg-white border border-neutral-200/70 flex items-center justify-between">
-                      <span className="text-neutral-600">
+                    <div className="flex items-center justify-between py-1 sm:border-l sm:border-black/[0.06] sm:pl-3">
+                      <span className="text-[#6e6e73]">
                         +2h Overtime ({parsedStandardHours + 2}h)
                       </span>
-                      <span className="font-mono font-semibold text-[#111111] tabular-nums">
+                      <span className="font-mono font-semibold text-[#1d1d1f] tabular-nums">
                         {formatCurrency(
                           parsedDailyBase +
                             (addonEnabled && Number.isFinite(parsedAddonSalary) && parsedAddonSalary >= 0
@@ -1050,17 +1049,17 @@ export const SettingsView: React.FC = () => {
                   </div>
                 </>
               ) : (
-                <div className="flex items-center justify-between gap-2 text-xs text-neutral-500">
-                  <span className="font-semibold text-[#111111]">Live Daily Pay Preview</span>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs text-[#6e6e73]">
+                  <span className="font-semibold text-[#1d1d1f]">Live Daily Pay Preview</span>
                   <span>Not configured — enter daily base salary and standard hours above to preview.</span>
                 </div>
               )}
             </div>
 
             {/* Historical Protection */}
-            <div className="p-3.5 rounded-xl bg-white border border-neutral-200/80 space-y-1.5 text-xs text-neutral-600">
-              <div className="flex items-center gap-1.5 font-medium text-[#111111]">
-                <ShieldCheck className="w-3.5 h-3.5 text-[#0284C7] shrink-0" />
+            <div className="p-4 rounded-2xl bg-white border border-black/[0.08] space-y-1 text-xs text-[#6e6e73]">
+              <div className="flex items-center gap-1.5 font-semibold text-[#1d1d1f]">
+                <ShieldCheck className="w-4 h-4 text-[#0284c7] shrink-0" />
                 <span>Historical Record Protection</span>
               </div>
               <p className="leading-relaxed">
@@ -1071,12 +1070,12 @@ export const SettingsView: React.FC = () => {
         </section>
 
         {/* D. Categories */}
-        <section aria-labelledby="settings-categories-heading" className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-10 py-7 border-t border-neutral-200/80">
+        <section aria-labelledby="settings-categories-heading" className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-10 py-7">
           <div className="md:col-span-4 space-y-1">
-            <h3 id="settings-categories-heading" className="text-[15px] font-semibold text-[#111111]">
+            <h3 id="settings-categories-heading" className="text-[15px] font-semibold text-[#1d1d1f] tracking-[-0.01em]">
               Categories
             </h3>
-            <p className="text-xs text-neutral-500 leading-relaxed">
+            <p className="text-xs text-[#6e6e73] leading-relaxed">
               Manage labels for expense tracking and income entries.
             </p>
           </div>
@@ -1085,10 +1084,10 @@ export const SettingsView: React.FC = () => {
             {/* Expense Categories */}
             <div className="space-y-3">
               <div className="flex items-baseline justify-between">
-                <label htmlFor="new-expense-category" className="text-xs font-medium text-neutral-700">
+                <label htmlFor="new-expense-category" className="text-xs font-medium text-[#6e6e73]">
                   Expense Categories
                 </label>
-                <span className="text-xs text-neutral-400 font-mono tabular-nums">
+                <span className="text-xs text-[#86868b] font-mono tabular-nums">
                   {expenseCategories.length}
                 </span>
               </div>
@@ -1115,7 +1114,7 @@ export const SettingsView: React.FC = () => {
                   type="button"
                   onClick={handleAddCategory}
                   disabled={!newCatName.trim()}
-                  className="h-10 px-4 text-xs font-medium text-[#111111] bg-neutral-100 hover:bg-neutral-200 disabled:opacity-40 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/15"
+                  className={SUBTLE_BUTTON_CLASS}
                 >
                   Add
                 </button>
@@ -1125,34 +1124,34 @@ export const SettingsView: React.FC = () => {
                 <p className="text-xs text-rose-600">{catFeedback}</p>
               )}
 
-              <div className="flex flex-wrap gap-1.5">
+              <div className="rounded-xl border border-black/[0.08] bg-white divide-y divide-black/[0.06] sm:divide-y-0 sm:grid sm:grid-cols-2">
                 {expenseCategories.map((cat) => (
-                  <span
+                  <div
                     key={cat}
-                    className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 bg-neutral-50 border border-neutral-200/80 text-neutral-800 text-xs rounded-md"
+                    className="flex items-center justify-between gap-2 px-3.5 py-2 sm:border-b sm:border-black/[0.06] sm:odd:border-r text-xs text-[#1d1d1f]"
                   >
-                    <span>{cat}</span>
+                    <span className="truncate font-medium">{cat}</span>
                     <button
                       type="button"
                       onClick={() => handleRemoveCategory(cat)}
                       disabled={expenseCategories.length <= 1}
-                      className="p-0.5 rounded text-neutral-400 hover:text-[#111111] hover:bg-neutral-200/60 disabled:opacity-25 cursor-pointer disabled:cursor-not-allowed transition-colors"
+                      className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-[#86868b] hover:text-rose-600 hover:bg-rose-50 disabled:opacity-25 cursor-pointer disabled:cursor-not-allowed transition-colors shrink-0"
                       aria-label={`Remove expense category ${cat}`}
                     >
-                      <X className="w-3 h-3" />
+                      <X className="w-3.5 h-3.5" />
                     </button>
-                  </span>
+                  </div>
                 ))}
               </div>
             </div>
 
             {/* Income Sources */}
-            <div className="space-y-3 pt-5 border-t border-neutral-100">
+            <div className="space-y-3 pt-5 border-t border-black/[0.06]">
               <div className="flex items-baseline justify-between">
-                <label htmlFor="new-income-source" className="text-xs font-medium text-neutral-700">
+                <label htmlFor="new-income-source" className="text-xs font-medium text-[#6e6e73]">
                   Income Sources
                 </label>
-                <span className="text-xs text-neutral-400 font-mono tabular-nums">
+                <span className="text-xs text-[#86868b] font-mono tabular-nums">
                   {incomeSources.length}
                 </span>
               </div>
@@ -1179,7 +1178,7 @@ export const SettingsView: React.FC = () => {
                   type="button"
                   onClick={handleAddIncomeSource}
                   disabled={!newIncName.trim()}
-                  className="h-10 px-4 text-xs font-medium text-[#111111] bg-neutral-100 hover:bg-neutral-200 disabled:opacity-40 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/15"
+                  className={SUBTLE_BUTTON_CLASS}
                 >
                   Add
                 </button>
@@ -1189,42 +1188,42 @@ export const SettingsView: React.FC = () => {
                 <p className="text-xs text-rose-600">{incFeedback}</p>
               )}
 
-              <div className="flex flex-wrap gap-1.5">
+              <div className="rounded-xl border border-black/[0.08] bg-white divide-y divide-black/[0.06] sm:divide-y-0 sm:grid sm:grid-cols-2">
                 {incomeSources.map((src) => (
-                  <span
+                  <div
                     key={src}
-                    className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 bg-neutral-50 border border-neutral-200/80 text-neutral-800 text-xs rounded-md"
+                    className="flex items-center justify-between gap-2 px-3.5 py-2 sm:border-b sm:border-black/[0.06] sm:odd:border-r text-xs text-[#1d1d1f]"
                   >
-                    <span>{src}</span>
+                    <span className="truncate font-medium">{src}</span>
                     <button
                       type="button"
                       onClick={() => handleRemoveIncomeSource(src)}
                       disabled={incomeSources.length <= 1}
-                      className="p-0.5 rounded text-neutral-400 hover:text-[#111111] hover:bg-neutral-200/60 disabled:opacity-25 cursor-pointer disabled:cursor-not-allowed transition-colors"
+                      className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-[#86868b] hover:text-rose-600 hover:bg-rose-50 disabled:opacity-25 cursor-pointer disabled:cursor-not-allowed transition-colors shrink-0"
                       aria-label={`Remove income source ${src}`}
                     >
-                      <X className="w-3 h-3" />
+                      <X className="w-3.5 h-3.5" />
                     </button>
-                  </span>
+                  </div>
                 ))}
               </div>
             </div>
 
-            {/* Bottom Form Save Actions (helpful after scrolling on mobile/desktop) */}
+            {/* Bottom Form Save Actions */}
             {hasUnsavedChanges && (
-              <div className="pt-4 border-t border-neutral-100 flex items-center justify-end gap-2.5">
+              <div className="pt-4 border-t border-black/[0.06] flex items-center justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={handleDiscardChanges}
                   disabled={isSaving || isResetting}
-                  className="h-9 px-3.5 text-xs font-medium text-neutral-600 hover:text-[#111111] bg-white hover:bg-neutral-50 border border-neutral-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+                  className={SECONDARY_BUTTON_CLASS}
                 >
                   Discard
                 </button>
                 <button
                   type="submit"
                   disabled={isSaving || isResetting}
-                  className="inline-flex items-center justify-center gap-2 h-9 px-4 bg-[#111111] hover:bg-black text-white text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]"
+                  className={PRIMARY_BUTTON_CLASS}
                 >
                   {isSaving ? (
                     <>
@@ -1242,26 +1241,26 @@ export const SettingsView: React.FC = () => {
       </form>
 
       {/* E. Data & Privacy */}
-      <section aria-labelledby="settings-data-heading" className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-10 py-7 border-t border-neutral-200/80">
+      <section aria-labelledby="settings-data-heading" className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-10 py-7 border-t border-black/[0.06]">
         <div className="md:col-span-4 space-y-1">
-          <h3 id="settings-data-heading" className="text-[15px] font-semibold text-[#111111]">
+          <h3 id="settings-data-heading" className="text-[15px] font-semibold text-[#1d1d1f] tracking-[-0.01em]">
             Data & Privacy
           </h3>
-          <p className="text-xs text-neutral-500 leading-relaxed">
+          <p className="text-xs text-[#6e6e73] leading-relaxed">
             Export your financial records or permanently reset your app data.
           </p>
         </div>
 
         <div className="md:col-span-8">
-          <div className="border border-neutral-200/80 rounded-xl divide-y divide-neutral-200/80 bg-white">
-            {/* Install App Row (shown when browser supports install or iOS Safari non-standalone) */}
+          <div className="border border-black/[0.08] rounded-2xl divide-y divide-black/[0.06] bg-white">
+            {/* Install App Row */}
             {!isInstalled && (isInstallable || isIOS) && (
               <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="space-y-1">
-                  <h4 className="text-sm font-medium text-[#111111]">
+                  <h4 className="text-sm font-medium text-[#1d1d1f]">
                     Install XOS on Device
                   </h4>
-                  <p className="text-xs text-neutral-500 leading-relaxed max-w-md">
+                  <p className="text-xs text-[#6e6e73] leading-relaxed max-w-md">
                     {isIOS
                       ? 'Add XOS to your iPhone Home Screen for a full-screen standalone app experience.'
                       : 'Install XOS for quick Home Screen launch and offline asset caching.'}
@@ -1274,10 +1273,10 @@ export const SettingsView: React.FC = () => {
             {/* Export PDF Report */}
             <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
-                <h4 className="text-sm font-medium text-[#111111]">
+                <h4 className="text-sm font-medium text-[#1d1d1f]">
                   Export PDF Report
                 </h4>
-                <p className="text-xs text-neutral-500 leading-relaxed max-w-md">
+                <p className="text-xs text-[#6e6e73] leading-relaxed max-w-md">
                   Download a formatted multi-page PDF statement covering your income, expenses, attendance, savings, and goals.
                 </p>
               </div>
@@ -1287,7 +1286,7 @@ export const SettingsView: React.FC = () => {
                   setIsPDFModalOpen(true);
                 }}
                 type="button"
-                className="inline-flex items-center justify-center h-10 px-4 text-xs sm:text-sm font-medium text-[#111111] bg-white hover:bg-neutral-50 border border-neutral-200 hover:border-neutral-300 rounded-lg transition-colors whitespace-nowrap shrink-0 self-start sm:self-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111]/15"
+                className={`${SECONDARY_BUTTON_CLASS} self-start sm:self-center`}
               >
                 Export PDF Report
               </button>
@@ -1296,10 +1295,10 @@ export const SettingsView: React.FC = () => {
             {/* Reset All App Data */}
             <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
-                <h4 className="text-sm font-medium text-rose-700">
+                <h4 className="text-sm font-medium text-rose-600">
                   Reset All App Data
                 </h4>
-                <p className="text-xs text-neutral-500 leading-relaxed max-w-md">
+                <p className="text-xs text-[#6e6e73] leading-relaxed max-w-md">
                   Permanently deletes your signed-in XOS records (expenses, income, attendance, debts, goals, savings, and payouts) and restores clean settings. Your account, profile, and active sign-in session are preserved.
                 </p>
               </div>
@@ -1310,7 +1309,7 @@ export const SettingsView: React.FC = () => {
                 }}
                 disabled={isResetting || isSaving}
                 type="button"
-                className="inline-flex items-center justify-center gap-2 h-10 px-4 text-xs sm:text-sm font-medium text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 hover:border-rose-300 rounded-lg transition-colors whitespace-nowrap shrink-0 self-start sm:self-center cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30"
+                className="inline-flex items-center justify-center gap-2 min-h-[44px] sm:min-h-[40px] px-4 py-2 text-[13px] font-medium text-rose-600 bg-white hover:bg-rose-50 border border-rose-200 hover:border-rose-300 rounded-xl transition-colors whitespace-nowrap shrink-0 self-start sm:self-center cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30"
               >
                 {isResetting ? (
                   <>
@@ -1327,30 +1326,30 @@ export const SettingsView: React.FC = () => {
       </section>
 
       {/* F. About, Legal & Support */}
-      <section aria-labelledby="settings-info-heading" className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-10 py-7 border-t border-neutral-200/80">
+      <section aria-labelledby="settings-info-heading" className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-10 py-7 border-t border-black/[0.06]">
         <div className="md:col-span-4 space-y-1">
-          <h3 id="settings-info-heading" className="text-[15px] font-semibold text-[#111111]">
+          <h3 id="settings-info-heading" className="text-[15px] font-semibold text-[#1d1d1f] tracking-[-0.01em]">
             About, Legal &amp; Support
           </h3>
-          <p className="text-xs text-neutral-500 leading-relaxed">
+          <p className="text-xs text-[#6e6e73] leading-relaxed">
             Application information, open-source repository, legal terms, and frequently asked questions.
           </p>
         </div>
 
         <div className="md:col-span-8">
-          <div className="border border-neutral-200/80 rounded-xl divide-y divide-neutral-200/80 bg-white">
+          <div className="border border-black/[0.08] rounded-2xl divide-y divide-black/[0.06] bg-white">
             {/* About XOS */}
             <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
-                <h4 className="text-sm font-medium text-[#111111]">About XOS</h4>
-                <p className="text-xs text-neutral-500 leading-relaxed max-w-md">
+                <h4 className="text-sm font-medium text-[#1d1d1f]">About XOS</h4>
+                <p className="text-xs text-[#6e6e73] leading-relaxed max-w-md">
                   Version, open-source developer information, and GitHub repository.
                 </p>
               </div>
               <button
                 onClick={() => setActiveInfoModal('about')}
                 type="button"
-                className="inline-flex items-center justify-center h-9 px-3.5 text-xs font-medium text-neutral-700 hover:text-[#111111] bg-white hover:bg-neutral-50 border border-neutral-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                className={`${SECONDARY_BUTTON_CLASS} self-start sm:self-center`}
               >
                 View About
               </button>
@@ -1359,15 +1358,15 @@ export const SettingsView: React.FC = () => {
             {/* Privacy Policy */}
             <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
-                <h4 className="text-sm font-medium text-[#111111]">Privacy Policy</h4>
-                <p className="text-xs text-neutral-500 leading-relaxed max-w-md">
+                <h4 className="text-sm font-medium text-[#1d1d1f]">Privacy Policy</h4>
+                <p className="text-xs text-[#6e6e73] leading-relaxed max-w-md">
                   How your private data, Supabase RLS isolation, and session credentials are handled.
                 </p>
               </div>
               <button
                 onClick={() => setActiveInfoModal('privacy')}
                 type="button"
-                className="inline-flex items-center justify-center h-9 px-3.5 text-xs font-medium text-neutral-700 hover:text-[#111111] bg-white hover:bg-neutral-50 border border-neutral-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                className={`${SECONDARY_BUTTON_CLASS} self-start sm:self-center`}
               >
                 View Privacy Policy
               </button>
@@ -1376,15 +1375,15 @@ export const SettingsView: React.FC = () => {
             {/* Terms & Conditions */}
             <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
-                <h4 className="text-sm font-medium text-[#111111]">Terms &amp; Conditions</h4>
-                <p className="text-xs text-neutral-500 leading-relaxed max-w-md">
+                <h4 className="text-sm font-medium text-[#1d1d1f]">Terms &amp; Conditions</h4>
+                <p className="text-xs text-[#6e6e73] leading-relaxed max-w-md">
                   Open-source software license agreement, user responsibilities, and warranty disclaimers.
                 </p>
               </div>
               <button
                 onClick={() => setActiveInfoModal('terms')}
                 type="button"
-                className="inline-flex items-center justify-center h-9 px-3.5 text-xs font-medium text-neutral-700 hover:text-[#111111] bg-white hover:bg-neutral-50 border border-neutral-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                className={`${SECONDARY_BUTTON_CLASS} self-start sm:self-center`}
               >
                 View Terms
               </button>
@@ -1393,15 +1392,15 @@ export const SettingsView: React.FC = () => {
             {/* Frequently Asked Questions */}
             <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
-                <h4 className="text-sm font-medium text-[#111111]">Frequently Asked Questions</h4>
-                <p className="text-xs text-neutral-500 leading-relaxed max-w-md">
+                <h4 className="text-sm font-medium text-[#1d1d1f]">Frequently Asked Questions</h4>
+                <p className="text-xs text-[#6e6e73] leading-relaxed max-w-md">
                   Answers about salary calculations, data backups, attendance, and account resets.
                 </p>
               </div>
               <button
                 onClick={() => setActiveInfoModal('faq')}
                 type="button"
-                className="inline-flex items-center justify-center h-9 px-3.5 text-xs font-medium text-neutral-700 hover:text-[#111111] bg-white hover:bg-neutral-50 border border-neutral-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                className={`${SECONDARY_BUTTON_CLASS} self-start sm:self-center`}
               >
                 View FAQs
               </button>
@@ -1455,125 +1454,116 @@ export const SettingsView: React.FC = () => {
       )}
 
       {/* About / Legal / FAQ Modal Dialog */}
-      {activeInfoModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6 space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
-              <h3 className="text-base font-semibold text-[#111111]">
-                {activeInfoModal === 'about' && 'About XOS'}
-                {activeInfoModal === 'privacy' && 'Privacy Policy'}
-                {activeInfoModal === 'terms' && 'Terms & Conditions'}
-                {activeInfoModal === 'faq' && 'Frequently Asked Questions'}
-              </h3>
-              <button
-                onClick={() => setActiveInfoModal(null)}
-                type="button"
-                className="p-1 rounded-lg text-neutral-400 hover:text-[#111111] hover:bg-neutral-100 transition-colors cursor-pointer"
-                aria-label="Close dialog"
-              >
-                <X className="w-5 h-5" />
-              </button>
+      <Modal
+        isOpen={Boolean(activeInfoModal)}
+        onClose={() => setActiveInfoModal(null)}
+        title={
+          activeInfoModal === 'about'
+            ? 'About XOS'
+            : activeInfoModal === 'privacy'
+              ? 'Privacy Policy'
+              : activeInfoModal === 'terms'
+                ? 'Terms & Conditions'
+                : 'Frequently Asked Questions'
+        }
+        maxWidth="lg"
+        footer={
+          <button
+            onClick={() => setActiveInfoModal(null)}
+            type="button"
+            className={PRIMARY_BUTTON_CLASS}
+          >
+            Close
+          </button>
+        }
+      >
+        <div className="text-xs sm:text-sm text-[#6e6e73] leading-relaxed space-y-4">
+          {activeInfoModal === 'about' && (
+            <>
+              <p>
+                <strong className="text-[#1d1d1f]">XOS</strong> is a private Personal Life Operating System designed to help you manage everyday finances, work records, salary calculations, savings reserves, and milestone goals in a unified workspace.
+              </p>
+              <p>
+                Developed by Musthafa CZ. Built with React 19, TypeScript, Vite, and Supabase with Row-Level Security.
+              </p>
+              <div className="pt-2">
+                <a
+                  href="https://github.com/musthafacz13-hub/XOS"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={SECONDARY_BUTTON_CLASS}
+                >
+                  <span>View GitHub Repository</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </>
+          )}
+
+          {activeInfoModal === 'privacy' && (
+            <>
+              <h4 className="font-semibold text-[#1d1d1f]">1. Information We Process</h4>
+              <p>
+                XOS operates entirely within your private user account secured by Supabase Authentication. We process only the financial records, attendance entries, goals, savings, and settings you explicitly enter.
+              </p>
+              <h4 className="font-semibold text-[#1d1d1f]">2. Data Storage &amp; Security</h4>
+              <p>
+                All application data is stored securely in your private Supabase database instance protected by PostgreSQL Row-Level Security (RLS), ensuring that only authenticated owners can access their records.
+              </p>
+              <h4 className="font-semibold text-[#1d1d1f]">3. Cookies &amp; Sessions</h4>
+              <p>
+                We use standard session tokens solely for authentication and keeping you signed in. We do not use third-party advertising cookies or trackers.
+              </p>
+              <h4 className="font-semibold text-[#1d1d1f]">4. Data Export &amp; Deletion</h4>
+              <p>
+                You retain full ownership of your data. You can export complete multi-page PDF reports or JSON backups at any time from Settings, or permanently reset your transactional data using the account reset utility.
+              </p>
+            </>
+          )}
+
+          {activeInfoModal === 'terms' && (
+            <>
+              <h4 className="font-semibold text-[#1d1d1f]">1. Acceptance of Terms</h4>
+              <p>
+                By accessing or using XOS, you agree to these terms for personal, non-commercial productivity use.
+              </p>
+              <h4 className="font-semibold text-[#1d1d1f]">2. Open-Source Software</h4>
+              <p>
+                XOS is provided as open-source software under standard licensing. It is provided &ldquo;as is&rdquo; without warranty of any kind, express or implied.
+              </p>
+              <h4 className="font-semibold text-[#1d1d1f]">3. User Responsibility</h4>
+              <p>
+                You are solely responsible for maintaining the confidentiality of your account credentials and the accuracy of the financial and attendance data you record.
+              </p>
+              <h4 className="font-semibold text-[#1d1d1f]">4. Availability</h4>
+              <p>
+                While XOS is designed for reliable daily performance, we do not guarantee uninterrupted uptime or permanent offline data retention beyond your browser and database storage state.
+              </p>
+            </>
+          )}
+
+          {activeInfoModal === 'faq' && (
+            <div className="space-y-4">
+              <div>
+                <h5 className="font-semibold text-[#1d1d1f]">How does XOS protect my financial and personal data?</h5>
+                <p className="mt-1">XOS uses Supabase authentication and strict PostgreSQL Row-Level Security (RLS) policies. Your records are isolated to your account and never shared or exposed publicly.</p>
+              </div>
+              <div>
+                <h5 className="font-semibold text-[#1d1d1f]">How do I calculate my earned salary?</h5>
+                <p className="mt-1">Configure your daily base salary, standard working hours, optional add-ons, and overtime rates in Salary Settings. Each attendance entry automatically computes your daily earnings.</p>
+              </div>
+              <div>
+                <h5 className="font-semibold text-[#1d1d1f]">Can I export my data or install XOS as an app?</h5>
+                <p className="mt-1">Yes. You can export comprehensive PDF reports or JSON backups from Settings, and install XOS as a Progressive Web App (PWA) on your desktop or mobile device.</p>
+              </div>
+              <div>
+                <h5 className="font-semibold text-[#1d1d1f]">How do I reset my account data if needed?</h5>
+                <p className="mt-1">You can permanently delete all transactional records (expenses, income, attendance, debts, goals) while preserving your account and settings using the &ldquo;Reset All App Data&rdquo; option in Settings.</p>
+              </div>
             </div>
-
-            <div className="text-xs sm:text-sm text-neutral-600 leading-relaxed space-y-4">
-              {activeInfoModal === 'about' && (
-                <>
-                  <p>
-                    <strong>XOS</strong> is a private Personal Life Operating System designed to help you manage everyday finances, work records, salary calculations, savings reserves, and milestone goals in a unified workspace.
-                  </p>
-                  <p>
-                    Developed by Musthafa CZ. Built with React 19, TypeScript, Vite, and Supabase with Row-Level Security.
-                  </p>
-                  <div className="pt-2">
-                    <a
-                      href="https://github.com/musthafacz13-hub/XOS"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 h-10 px-4 text-xs font-semibold text-[#111111] bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors"
-                    >
-                      <span>View GitHub Repository</span>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  </div>
-                </>
-              )}
-
-              {activeInfoModal === 'privacy' && (
-                <>
-                  <h4 className="font-semibold text-[#111111]">1. Information We Process</h4>
-                  <p>
-                    XOS operates entirely within your private user account secured by Supabase Authentication. We process only the financial records, attendance entries, goals, savings, and settings you explicitly enter.
-                  </p>
-                  <h4 className="font-semibold text-[#111111]">2. Data Storage &amp; Security</h4>
-                  <p>
-                    All application data is stored securely in your private Supabase database instance protected by PostgreSQL Row-Level Security (RLS), ensuring that only authenticated owners can access their records.
-                  </p>
-                  <h4 className="font-semibold text-[#111111]">3. Cookies &amp; Sessions</h4>
-                  <p>
-                    We use standard session tokens solely for authentication and keeping you signed in. We do not use third-party advertising cookies or trackers.
-                  </p>
-                  <h4 className="font-semibold text-[#111111]">4. Data Export &amp; Deletion</h4>
-                  <p>
-                    You retain full ownership of your data. You can export complete multi-page PDF reports or JSON backups at any time from Settings, or permanently reset your transactional data using the account reset utility.
-                  </p>
-                </>
-              )}
-
-              {activeInfoModal === 'terms' && (
-                <>
-                  <h4 className="font-semibold text-[#111111]">1. Acceptance of Terms</h4>
-                  <p>
-                    By accessing or using XOS, you agree to these terms for personal, non-commercial productivity use.
-                  </p>
-                  <h4 className="font-semibold text-[#111111]">2. Open-Source Software</h4>
-                  <p>
-                    XOS is provided as open-source software under standard licensing. It is provided &ldquo;as is&rdquo; without warranty of any kind, express or implied.
-                  </p>
-                  <h4 className="font-semibold text-[#111111]">3. User Responsibility</h4>
-                  <p>
-                    You are solely responsible for maintaining the confidentiality of your account credentials and the accuracy of the financial and attendance data you record.
-                  </p>
-                  <h4 className="font-semibold text-[#111111]">4. Availability</h4>
-                  <p>
-                    While XOS is designed for reliable daily performance, we do not guarantee uninterrupted uptime or permanent offline data retention beyond your browser and database storage state.
-                  </p>
-                </>
-              )}
-
-              {activeInfoModal === 'faq' && (
-                <div className="space-y-4">
-                  <div>
-                    <h5 className="font-semibold text-[#111111]">How does XOS protect my financial and personal data?</h5>
-                    <p className="mt-1">XOS uses Supabase authentication and strict PostgreSQL Row-Level Security (RLS) policies. Your records are isolated to your account and never shared or exposed publicly.</p>
-                  </div>
-                  <div>
-                    <h5 className="font-semibold text-[#111111]">How do I calculate my earned salary?</h5>
-                    <p className="mt-1">Configure your daily base salary, standard working hours, optional add-ons, and overtime rates in Salary Settings. Each attendance entry automatically computes your daily earnings.</p>
-                  </div>
-                  <div>
-                    <h5 className="font-semibold text-[#111111]">Can I export my data or install XOS as an app?</h5>
-                    <p className="mt-1">Yes. You can export comprehensive PDF reports or JSON backups from Settings, and install XOS as a Progressive Web App (PWA) on your desktop or mobile device.</p>
-                  </div>
-                  <div>
-                    <h5 className="font-semibold text-[#111111]">How do I reset my account data if needed?</h5>
-                    <p className="mt-1">You can permanently delete all transactional records (expenses, income, attendance, debts, goals) while preserving your account and settings using the &ldquo;Reset All App Data&rdquo; option in Settings.</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="pt-2 flex justify-end">
-              <button
-                onClick={() => setActiveInfoModal(null)}
-                type="button"
-                className="h-10 px-5 text-xs font-medium text-white bg-[#111111] hover:bg-black rounded-xl transition-colors cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
+          )}
         </div>
-      )}
+      </Modal>
     </div>
   );
 };

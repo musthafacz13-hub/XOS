@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
-import { 
-  LayoutDashboard, 
-  Target, 
-  CreditCard, 
-  TrendingUp, 
-  CalendarCheck, 
-  Banknote, 
-  PiggyBank, 
-  BarChart3, 
-  Settings, 
-  ChevronLeft, 
+import {
+  LayoutDashboard,
+  Target,
+  CreditCard,
+  TrendingUp,
+  CalendarCheck,
+  Banknote,
+  BarChart3,
+  Settings,
+  ChevronLeft,
   ChevronRight,
   LucideIcon,
   HandCoins,
@@ -17,24 +16,21 @@ import {
   AudioLines,
   StickyNote
 } from 'lucide-react';
-import { motion } from 'motion/react';
 import { UserSettings } from '../../types';
-import { WaterRippleContainer } from '../common/WaterRipple';
 import { ConfirmDialog } from '../common/ConfirmDialog';
-import { MOTION_SPRINGS } from '../../utils/motion';
 import { useAuth } from '../../context/AuthContext';
 import { XOSLogo } from '../common/XOSLogo';
 
-export type ActiveTab = 
-  | 'dashboard' 
-  | 'goals' 
-  | 'expenses' 
-  | 'income' 
+export type ActiveTab =
+  | 'dashboard'
+  | 'goals'
+  | 'expenses'
+  | 'income'
   | 'debt'
-  | 'attendance' 
-  | 'salary' 
-  | 'savings' 
-  | 'reports' 
+  | 'attendance'
+  | 'salary'
+  | 'savings'
+  | 'reports'
   | 'notes'
   | 'ai-agent'
   | 'settings';
@@ -64,7 +60,7 @@ export const NAV_ITEMS: NavItemConfig[] = [
   { id: 'salary', label: 'Salary Management', icon: Banknote, category: 'finance' },
   { id: 'attendance', label: 'Work Attendance', icon: CalendarCheck, category: 'work' },
   { id: 'reports', label: 'Reports & Analytics', icon: BarChart3, category: 'work' },
-  { id: 'ai-agent', label: 'AI Agent', icon: AudioLines, category: 'assistant' },
+  { id: 'ai-agent', label: 'Jarvis AI', icon: AudioLines, category: 'assistant' },
   { id: 'settings', label: 'Settings', icon: Settings, category: 'settings' }
 ];
 
@@ -87,7 +83,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: NAV_ITEMS.filter(item => item.category === 'work')
   },
   {
-    name: 'More Modules',
+    name: 'Intelligence',
     items: NAV_ITEMS.filter(item => item.category === 'assistant')
   }
 ];
@@ -103,129 +99,95 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
   const [isSignOutDialogOpen, setIsSignOutDialogOpen] = useState(false);
 
   const userName = settings.profile.name.trim() || 'My Workspace';
-  const userRole = 'Personal System';
   const avatarLetter = (userName.charAt(0) || 'X').toUpperCase();
 
   return (
     <aside
-      className={`hidden md:flex flex-col liquid-glass border-r border-black/[0.06] transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] shrink-0 select-none relative z-30 ${
-        collapsed ? 'w-[74px]' : 'w-64'
+      className={`hidden md:flex flex-col bg-[#fbfbfd] border-r border-black/[0.06] transition-[width] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] shrink-0 relative z-30 ${
+        collapsed ? 'w-[72px]' : 'w-60'
       }`}
       aria-label="Primary Desktop Navigation"
     >
       {/* Brand Header */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-black/[0.06]">
-        <div className="flex items-center gap-3 overflow-hidden">
-          <motion.div
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="shrink-0"
-          >
+        <div className="flex items-center gap-2.5 overflow-hidden">
+          <div className="shrink-0">
             <XOSLogo size="md" />
-          </motion.div>
+          </div>
           {!collapsed && (
-            <motion.div 
-              initial={{ opacity: 0, x: -6 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col min-w-0"
-            >
-              <span className="font-bold text-sm text-[#111111] tracking-tight leading-none truncate">
+            <div className="flex flex-col min-w-0">
+              <span className="font-semibold text-[15px] text-[#1d1d1f] tracking-[-0.015em] leading-none truncate">
                 XOS
               </span>
-              <span className="text-[11px] text-neutral-400 font-normal tracking-tight mt-1 truncate">
-                Personal Life OS
+              <span className="text-[11px] text-[#86868b] font-normal mt-1 truncate">
+                Personal OS
               </span>
-            </motion.div>
+            </div>
           )}
         </div>
 
-        <motion.button
-          whileHover={{ scale: 1.06 }}
-          whileTap={{ scale: 0.92 }}
+        <button
           onClick={() => setCollapsed(!collapsed)}
           type="button"
-          className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-900 hover:bg-black/[0.04] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB] cursor-pointer"
+          className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg text-[#86868b] hover:text-[#1d1d1f] hover:bg-black/[0.04] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7] cursor-pointer"
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-        </motion.button>
+        </button>
       </div>
 
       {/* Navigation Sections */}
-      <nav className="flex-1 py-3 px-2 space-y-4 overflow-y-auto">
+      <nav className="flex-1 py-4 px-2.5 space-y-5 overflow-y-auto">
         {NAV_GROUPS.map((group) => (
           <div key={group.name} className="space-y-1">
-            {!collapsed && (
-              <div className="px-3 pt-1 pb-1 text-[10px] font-semibold tracking-wider uppercase text-neutral-400">
+            {!collapsed ? (
+              <div className="px-2.5 pb-1 text-[11px] font-medium text-[#86868b]">
                 {group.name}
               </div>
-            )}
-            {collapsed && (
-              <div className="h-px bg-black/[0.04] mx-2 my-2" aria-hidden="true" />
+            ) : (
+              <div className="h-px bg-black/[0.05] mx-2 my-2" aria-hidden="true" />
             )}
 
             <div className="space-y-0.5">
               {group.items.map((item) => {
                 const Icon = item.icon;
-                const isActive = activeTab === item.id;
+                const isActive =
+                  activeTab === item.id ||
+                  (item.id === 'goals' && activeTab === 'savings');
+
                 return (
                   <div key={item.id} className="relative group">
-                    <WaterRippleContainer
-                      className="rounded-xl"
-                      rippleColor={isActive ? 'rgba(255, 255, 255, 0.2)' : 'rgba(135, 206, 235, 0.22)'}
+                    <button
+                      onClick={() => setActiveTab(item.id)}
+                      type="button"
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-[13px] cursor-pointer text-left transition-colors ${
+                        isActive
+                          ? 'bg-[#e8e8ed]/85 text-[#1d1d1f] font-semibold'
+                          : 'text-[#6e6e73] font-medium hover:text-[#1d1d1f] hover:bg-black/[0.03]'
+                      } ${collapsed ? 'justify-center px-0 min-h-[40px]' : ''}`}
+                      aria-current={isActive ? 'page' : undefined}
                     >
-                      <motion.button
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => setActiveTab(item.id)}
-                        type="button"
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium cursor-pointer text-left relative z-10 transition-colors duration-150 ${
+                      <Icon
+                        className={`w-4 h-4 shrink-0 transition-colors ${
                           isActive
-                            ? 'text-white'
-                            : 'text-neutral-600 hover:text-neutral-900 hover:bg-black/[0.03]'
-                        } ${collapsed ? 'justify-center px-0' : ''}`}
-                        aria-current={isActive ? 'page' : undefined}
-                      >
-                        {/* Fluid Sliding Active Capsule Indicator */}
-                        {isActive && (
-                          <motion.div
-                            layoutId="sidebarActiveBackground"
-                            transition={MOTION_SPRINGS.tactile}
-                            className="absolute inset-0 bg-[#111111] rounded-xl shadow-xs z-0"
-                          />
-                        )}
+                            ? 'text-[#0284c7]'
+                            : 'text-[#86868b] group-hover:text-[#1d1d1f]'
+                        }`}
+                      />
+                      {!collapsed && (
+                        <span className="truncate flex-1 tracking-[-0.005em]">
+                          {item.label}
+                        </span>
+                      )}
+                    </button>
 
-                        <div className="w-5 h-5 flex items-center justify-center shrink-0 relative z-10">
-                          <Icon className={`w-4 h-4 transition-colors duration-200 ${isActive ? 'text-[#87CEEB]' : 'text-neutral-500 group-hover:text-neutral-800'}`} />
-                        </div>
-                        
-                        {!collapsed && (
-                          <span className="truncate flex-1 tracking-tight relative z-10">
-                            {item.label}
-                          </span>
-                        )}
-
-                        {!collapsed && isActive && (
-                          <motion.span 
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            transition={{ type: 'spring', damping: 20, stiffness: 400 }}
-                            className="w-1.5 h-1.5 rounded-full bg-[#87CEEB] shrink-0 relative z-10" 
-                            aria-hidden="true" 
-                          />
-                        )}
-                      </motion.button>
-                    </WaterRippleContainer>
-
-                    {/* Floating tooltip on collapsed */}
                     {collapsed && (
                       <div
                         role="tooltip"
-                        className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2.5 z-50 px-2.5 py-1 rounded-lg bg-[#111111] text-white text-[11px] font-medium whitespace-nowrap shadow-lg opacity-0 translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150"
+                        className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2.5 z-50 px-2.5 py-1 rounded-lg bg-[#1d1d1f] text-white text-[11px] font-medium whitespace-nowrap shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                       >
                         {item.label}
-                        <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#111111]" />
                       </div>
                     )}
                   </div>
@@ -237,80 +199,63 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
       </nav>
 
       {/* Profile & Settings Footer */}
-      <div className="p-2.5 border-t border-black/[0.06] space-y-1.5">
-        {/* Profile/Settings Tile with Tactile Press & Ripple */}
+      <div className="p-2.5 border-t border-black/[0.06] space-y-1">
         <div className="relative group">
-          <WaterRippleContainer
-            className="rounded-xl"
-            rippleColor={activeTab === 'settings' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(135, 206, 235, 0.2)'}
+          <button
+            onClick={() => setActiveTab('settings')}
+            type="button"
+            className={`w-full flex items-center gap-2.5 p-2 rounded-xl cursor-pointer text-left transition-colors ${
+              activeTab === 'settings'
+                ? 'bg-[#e8e8ed]/85 text-[#1d1d1f]'
+                : 'hover:bg-black/[0.03] text-[#1d1d1f]'
+            } ${collapsed ? 'justify-center p-1.5' : ''}`}
+            aria-label="Account Settings"
           >
-            <motion.button
-              whileTap={{ scale: 0.98 }}
-              onClick={() => setActiveTab('settings')}
-              type="button"
-              className={`w-full flex items-center gap-2.5 p-2 rounded-xl cursor-pointer text-left relative z-10 transition-colors duration-150 ${
-                activeTab === 'settings' 
-                  ? 'text-white' 
-                  : 'hover:bg-black/[0.03] text-[#111111]'
-              } ${collapsed ? 'justify-center p-1.5' : ''}`}
-              aria-label="Account Settings"
-            >
-              {activeTab === 'settings' && (
-                <motion.div
-                  layoutId="sidebarActiveBackground"
-                  transition={MOTION_SPRINGS.tactile}
-                  className="absolute inset-0 bg-[#111111] rounded-xl shadow-xs z-0"
-                />
-              )}
-
-              <div className={`w-8 h-8 rounded-xl font-semibold text-xs flex items-center justify-center shrink-0 relative z-10 transition-colors duration-200 ${
+            <div
+              className={`w-8 h-8 rounded-full font-semibold text-xs flex items-center justify-center shrink-0 transition-colors ${
                 activeTab === 'settings'
-                  ? 'bg-[#87CEEB] text-[#111111]'
-                  : 'bg-[#111111] text-white'
-              }`}>
-                {avatarLetter}
+                  ? 'bg-[#0284c7] text-white'
+                  : 'bg-[#1d1d1f] text-white'
+              }`}
+            >
+              {avatarLetter}
+            </div>
+
+            {!collapsed && (
+              <div className="flex flex-col min-w-0 flex-1">
+                <span className="text-[13px] font-medium text-[#1d1d1f] truncate leading-tight">
+                  {userName}
+                </span>
+                <span className="text-[11px] text-[#86868b] truncate mt-0.5">
+                  {user?.email || 'Account Settings'}
+                </span>
               </div>
+            )}
 
-              {!collapsed && (
-                <div className="flex flex-col min-w-0 flex-1 relative z-10">
-                  <span className={`text-xs font-semibold truncate ${
-                    activeTab === 'settings' ? 'text-white' : 'text-[#111111]'
-                  }`}>
-                    {userName}
-                  </span>
-                  <span className={`text-[11px] truncate ${
-                    activeTab === 'settings' ? 'text-neutral-300' : 'text-neutral-400'
-                  }`}>
-                    {user?.email || userRole}
-                  </span>
-                </div>
-              )}
-
-              {!collapsed && (
-                <Settings className={`w-4 h-4 shrink-0 relative z-10 transition-colors duration-200 ${
-                  activeTab === 'settings' ? 'text-[#87CEEB]' : 'text-neutral-400 group-hover:text-neutral-700'
-                }`} />
-              )}
-            </motion.button>
-          </WaterRippleContainer>
+            {!collapsed && (
+              <Settings
+                className={`w-4 h-4 shrink-0 ${
+                  activeTab === 'settings' ? 'text-[#0284c7]' : 'text-[#86868b] group-hover:text-[#1d1d1f]'
+                }`}
+              />
+            )}
+          </button>
 
           {collapsed && (
             <div
               role="tooltip"
-              className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2.5 z-50 px-2.5 py-1 rounded-lg bg-[#111111] text-white text-[11px] font-medium whitespace-nowrap shadow-lg opacity-0 translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150"
+              className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2.5 z-50 px-2.5 py-1 rounded-lg bg-[#1d1d1f] text-white text-[11px] font-medium whitespace-nowrap shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-150"
             >
-              Settings & Profile
-              <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#111111]" />
+              Settings &amp; Profile
             </div>
           )}
         </div>
 
-        {/* Quick Sign Out Action */}
         {!collapsed && (
           <button
             type="button"
             onClick={() => setIsSignOutDialogOpen(true)}
-            className="w-full flex items-center justify-between px-3 py-1.5 text-[11px] text-neutral-400 hover:text-neutral-900 rounded-lg transition-colors cursor-pointer hover:bg-black/[0.03]"
+            className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-[#6e6e73] hover:text-[#1d1d1f] rounded-xl transition-colors cursor-pointer hover:bg-black/[0.03]"
           >
             <span>Sign Out</span>
             <LogOut className="w-3.5 h-3.5" />
@@ -318,7 +263,6 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
         )}
       </div>
 
-      {/* Sign Out Confirmation Dialog */}
       <ConfirmDialog
         isOpen={isSignOutDialogOpen}
         title="Sign Out of Workspace?"

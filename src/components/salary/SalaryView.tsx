@@ -7,8 +7,7 @@ import {
   Check,
   AlertCircle,
   Edit3,
-  ShieldCheck,
-  X
+  ShieldCheck
 } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
 import { AttendanceRecord, AttendanceStatus } from '../../types';
@@ -23,6 +22,21 @@ import { formatCurrency, formatHumanDate, getIstTodayString, getMonthString, get
 import { EmptyState } from '../common/EmptyState';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
+import {
+  ActionIconButton,
+  INPUT_CLASS,
+  LABEL_CLASS,
+  MONO_INPUT_CLASS,
+  MetricCard,
+  Modal,
+  PRIMARY_BUTTON_CLASS,
+  PageHeader,
+  SECONDARY_BUTTON_CLASS,
+  SELECT_CLASS,
+  SUBTLE_BUTTON_CLASS,
+  SectionCard,
+  SegmentedControl
+} from '../ui';
 
 type SalaryTab = 'summary' | 'daily' | 'payments' | 'settings';
 
@@ -43,7 +57,7 @@ export const SalaryView: React.FC = () => {
   const [isDeletingDaily, setIsDeletingDaily] = useState(false);
   const [deleteDailyError, setDeleteDailyError] = useState<string | null>(null);
 
-  // Rate Settings form (string state avoids mid-typing snap-back; starts empty when unconfigured)
+  // Rate Settings form
   const [dailyBaseSalaryInput, setDailyBaseSalaryInput] = useState(() =>
     typeof data.settings.salaryConfig.dailyBaseSalary === 'number'
       ? String(data.settings.salaryConfig.dailyBaseSalary)
@@ -118,6 +132,7 @@ export const SalaryView: React.FC = () => {
   const [allowReplace, setAllowReplace] = useState(false);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const isSubmittingPaymentRef = useRef(false);
 
   useEffect(() => {
     setDailyBaseSalaryInput(
@@ -140,16 +155,6 @@ export const SalaryView: React.FC = () => {
     setOvertimeEnabled(Boolean(data.settings.salaryConfig.overtimeEnabled));
   }, [data.settings.salaryConfig]);
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (isDailyModalOpen && !isSavingDaily) setIsDailyModalOpen(false);
-      if (isPaymentModalOpen && !isSubmittingPayment) setIsPaymentModalOpen(false);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isDailyModalOpen, isSavingDaily, isPaymentModalOpen, isSubmittingPayment]);
-
   const attendanceByDate = useMemo(
     () => new Map(data.attendance.map(r => [r.date, r])),
     [data.attendance]
@@ -163,7 +168,6 @@ export const SalaryView: React.FC = () => {
     [data.attendance, selectedMonth]
   );
 
-  // Monthly earnings summary calculation
   const monthlySummary = useMemo(
     () =>
       calculateMonthlySalarySummary(
@@ -516,8 +520,6 @@ export const SalaryView: React.FC = () => {
     }
   };
 
-  const isSubmittingPaymentRef = useRef(false);
-
   const openPaymentModal = () => {
     setPaymentAmount(monthlySummary.remainingSalary > 0 ? String(monthlySummary.remainingSalary) : '');
     setPaymentDate(todayStr);
@@ -598,68 +600,38 @@ export const SalaryView: React.FC = () => {
 
   const salaryConfigured = isSalaryConfigured(data.settings.salaryConfig);
 
+  const tabOptions = useMemo(
+    () => [
+      { id: 'summary' as const, label: 'Summary' },
+      { id: 'daily' as const, label: `Daily Ledger (${monthDailyRecords.length})` },
+      { id: 'payments' as const, label: `Payouts (${monthPayouts.length})` },
+      { id: 'settings' as const, label: 'Rate Settings' }
+    ],
+    [monthDailyRecords.length, monthPayouts.length]
+  );
+
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-black/[0.06]">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-[#111111] tracking-tight">
-            Daily Salary &amp; Earnings
-          </h2>
-          <p className="text-xs sm:text-sm text-neutral-500 font-normal mt-0.5">
-            Track monthly earnings, customize individual day rates or bonuses, and record salary payouts.
-          </p>
-        </div>
-
-        {/* View Tabs */}
-        <div className="flex items-center gap-1 bg-neutral-100 p-1 rounded-xl self-start sm:self-auto border border-neutral-200/60 overflow-x-auto max-w-full">
-          <button
-            type="button"
-            onClick={() => setActiveTab('summary')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'summary' ? 'bg-white text-[#111111] shadow-xs' : 'text-neutral-600 hover:text-black'
-            }`}
-          >
-            Summary
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('daily')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'daily' ? 'bg-white text-[#111111] shadow-xs' : 'text-neutral-600 hover:text-black'
-            }`}
-          >
-            Daily Ledger ({monthDailyRecords.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('payments')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'payments' ? 'bg-white text-[#111111] shadow-xs' : 'text-neutral-600 hover:text-black'
-            }`}
-          >
-            Payouts ({monthPayouts.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('settings')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'settings' ? 'bg-white text-[#111111] shadow-xs' : 'text-neutral-600 hover:text-black'
-            }`}
-          >
-            Rate Settings
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Daily Salary & Earnings"
+        description="Track monthly earnings, customize individual day rates or bonuses, and record salary payouts."
+        actions={
+          <SegmentedControl
+            options={tabOptions}
+            value={activeTab}
+            onChange={setActiveTab}
+            ariaLabel="Salary section views"
+          />
+        }
+      />
 
       {/* MONTHLY SUMMARY TAB */}
       {activeTab === 'summary' && (
         <div className="space-y-6">
-          {/* Month Selector */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-neutral-50 rounded-2xl border border-neutral-200">
-            <div className="flex items-center gap-2">
-              <Calculator className="w-4 h-4 text-[#8ECFFF]" />
-              <span className="font-bold text-sm text-[#111111]">Daily Earnings Period</span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <Calculator className="w-4 h-4 text-[#0284c7]" />
+              <span className="text-sm font-medium text-[#1d1d1f]">Daily Earnings Period</span>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -668,195 +640,175 @@ export const SalaryView: React.FC = () => {
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
                 aria-label="Select salary month"
-                className="px-3 py-1.5 text-xs font-mono font-semibold border border-neutral-300 rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
+                className="min-h-[40px] px-3 py-1.5 text-sm sm:text-xs font-mono font-medium border border-black/[0.12] rounded-xl bg-white focus:outline-none focus:border-[#0284c7] focus:ring-2 focus:ring-[#0284c7]/15"
               />
               <button
                 type="button"
                 onClick={() => openDailyCustomizeModal()}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white hover:bg-neutral-100 text-[#111111] border border-neutral-300 rounded-xl transition-colors cursor-pointer"
+                className={SECONDARY_BUTTON_CLASS}
               >
-                <Edit3 className="w-3.5 h-3.5 text-[#0284C7]" />
+                <Edit3 className="w-3.5 h-3.5 text-[#0284c7]" />
                 <span>Customize Daily Pay</span>
               </button>
-            </div>
-          </div>
-
-          {/* Main Dashboard Summary Area */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4">
-            {/* Prominent Dark Summary Panel */}
-            <div className="p-5 rounded-2xl bg-[#111111] text-white flex flex-col justify-between space-y-4 shadow-xs">
-              <div>
-                <div className="flex items-center justify-between text-neutral-400">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider">Earned Salary ({selectedMonth})</span>
-                  <span className="text-[11px] font-mono text-[#8ECFFF] tabular-nums">{monthlySummary.presentDays} days worked</span>
-                </div>
-                <div className="mt-3">
-                  <div className="text-3xl font-extrabold font-mono tracking-tight text-white tabular-nums">
-                    {formatCurrency(monthlySummary.earnedSalary, data.settings.currency)}
-                  </div>
-                  <p className="text-xs text-neutral-400 mt-1">
-                    {!salaryConfigured && monthlySummary.presentDays === 0
-                      ? 'Configure rates in Rate Settings to calculate pay'
-                      : monthlySummary.customizedDaysCount > 0
-                        ? `Includes ${monthlySummary.customizedDaysCount} customized day${monthlySummary.customizedDaysCount > 1 ? 's' : ''}`
-                        : 'Calculated from logged attendance & saved rates'}
-                  </p>
-                </div>
-              </div>
-
               <button
                 onClick={openPaymentModal}
                 type="button"
-                className="w-full py-2.5 bg-[#8ECFFF] text-[#111318] text-xs font-bold rounded-xl hover:bg-sky-300 transition-colors text-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white flex items-center justify-center gap-1.5"
+                className={PRIMARY_BUTTON_CLASS}
               >
                 <Banknote className="w-4 h-4" />
-                <span>Record Salary Payout</span>
+                <span>Record Payout</span>
               </button>
-            </div>
-
-            {/* Key Metrics Grid */}
-            <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
-              <div className="p-4 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1.5 shadow-xs">
-                <span className="text-[11px] font-semibold text-neutral-500 uppercase">Salary Received</span>
-                <div className="text-2xl sm:text-3xl font-bold font-mono text-emerald-600 tabular-nums">
-                  {formatCurrency(monthlySummary.salaryReceived, data.settings.currency)}
-                </div>
-                <span className="text-[11px] text-neutral-400">{monthPayouts.length} payout records</span>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1.5 shadow-xs">
-                <span className="text-[11px] font-semibold text-neutral-500 uppercase">Remaining Salary Due</span>
-                {!salaryConfigured && monthlySummary.presentDays === 0 && monthlySummary.earnedSalary === 0 && monthlySummary.salaryReceived === 0 ? (
-                  <>
-                    <div className="text-xl sm:text-2xl font-bold text-neutral-700">Not configured</div>
-                    <span className="text-[11px] text-neutral-400">Set rates in Rate Settings</span>
-                  </>
-                ) : (
-                  <>
-                    <div className="text-2xl sm:text-3xl font-bold font-mono text-[#111111] tabular-nums">
-                      {formatCurrency(monthlySummary.remainingSalary, data.settings.currency)}
-                    </div>
-                    <span className="text-[11px] text-neutral-400">
-                      {monthlySummary.overpaidAmount > 0
-                        ? `Overpaid by ${formatCurrency(monthlySummary.overpaidAmount, data.settings.currency)}`
-                        : 'Balance to be paid'}
-                    </span>
-                  </>
-                )}
-              </div>
-
-              <div className="p-4 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1.5 shadow-xs">
-                <span className="text-[11px] font-semibold text-neutral-500 uppercase">Total Hours &amp; Extra</span>
-                <div className="text-2xl sm:text-3xl font-bold font-mono text-neutral-700 tabular-nums">
-                  {monthlySummary.totalWorkingHours}h
-                </div>
-                <span className="text-[11px] text-neutral-400">Includes {monthlySummary.totalExtraHours}h extra hours</span>
-              </div>
             </div>
           </div>
 
-          {/* Breakdown & Config Info */}
-          <div className="p-5 sm:p-6 rounded-2xl bg-white border border-black/[0.08] shadow-xs space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 pb-3">
-              <h3 className="font-bold text-sm text-[#111111]">
-                Attendance &amp; Extra Hours Breakdown
-              </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <MetricCard
+              variant="focal"
+              label={`Earned Salary (${selectedMonth})`}
+              value={formatCurrency(monthlySummary.earnedSalary, data.settings.currency)}
+              sublabel={
+                !salaryConfigured && monthlySummary.presentDays === 0
+                  ? 'Configure rates in Rate Settings'
+                  : monthlySummary.customizedDaysCount > 0
+                    ? `${monthlySummary.presentDays} days · ${monthlySummary.customizedDaysCount} customized`
+                    : `${monthlySummary.presentDays} present days`
+              }
+            />
+
+            <MetricCard
+              label="Salary Received"
+              tone="positive"
+              value={formatCurrency(monthlySummary.salaryReceived, data.settings.currency)}
+              sublabel={`${monthPayouts.length} payout ${monthPayouts.length === 1 ? 'record' : 'records'}`}
+            />
+
+            <MetricCard
+              label="Remaining Salary Due"
+              value={
+                !salaryConfigured && monthlySummary.presentDays === 0 && monthlySummary.earnedSalary === 0 && monthlySummary.salaryReceived === 0 ? (
+                  <span className="text-lg font-medium text-[#6e6e73] font-sans">Not configured</span>
+                ) : (
+                  formatCurrency(monthlySummary.remainingSalary, data.settings.currency)
+                )
+              }
+              sublabel={
+                !salaryConfigured && monthlySummary.presentDays === 0 && monthlySummary.earnedSalary === 0 && monthlySummary.salaryReceived === 0
+                  ? 'Set rates in Rate Settings'
+                  : monthlySummary.overpaidAmount > 0
+                    ? `Overpaid by ${formatCurrency(monthlySummary.overpaidAmount, data.settings.currency)}`
+                    : 'Balance to be paid'
+              }
+            />
+
+            <MetricCard
+              label="Total Hours"
+              value={`${monthlySummary.totalWorkingHours}h`}
+              sublabel={`Includes ${monthlySummary.totalExtraHours}h extra hours`}
+            />
+          </div>
+
+          <SectionCard
+            title="Attendance & Extra Hours Breakdown"
+            action={
               <button
                 type="button"
                 onClick={() => setActiveTab('daily')}
-                className="text-xs font-semibold text-[#0284C7] hover:underline cursor-pointer"
+                className="text-xs font-medium text-[#0284c7] hover:underline cursor-pointer"
               >
                 View Daily Ledger →
               </button>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100">
-                <span className="text-[10px] font-semibold text-neutral-500 uppercase block">Present Days</span>
-                <span className="text-xl font-bold font-mono text-[#111111] block tabular-nums">{monthlySummary.presentDays}</span>
-                <span className="text-[10px] text-neutral-400">Logged days</span>
+            }
+          >
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <MetricCard
+                  variant="subtle"
+                  label="Present Days"
+                  value={monthlySummary.presentDays}
+                  sublabel="Logged workdays"
+                />
+                <MetricCard
+                  variant="subtle"
+                  label="Working Hours"
+                  value={`${monthlySummary.totalWorkingHours}h`}
+                  sublabel="Total logged"
+                />
+                <MetricCard
+                  variant="subtle"
+                  label="Extra Hours"
+                  value={`${monthlySummary.totalExtraHours}h`}
+                  sublabel={
+                    typeof data.settings.salaryConfig.standardWorkingHours === 'number'
+                      ? `Over ${data.settings.salaryConfig.standardWorkingHours}h/day`
+                      : 'Standard hours unset'
+                  }
+                />
+                <MetricCard
+                  variant="subtle"
+                  label="Leave / Absent"
+                  value={monthlySummary.leaveDays + monthlySummary.absentDays}
+                  sublabel={`${formatCurrency(0, data.settings.currency)} on off days`}
+                />
               </div>
 
-              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100">
-                <span className="text-[10px] font-semibold text-neutral-500 uppercase block">Total Working Hours</span>
-                <span className="text-xl font-bold font-mono text-[#111111] block tabular-nums">{monthlySummary.totalWorkingHours}h</span>
-                <span className="text-[10px] text-neutral-400">Logged hours</span>
-              </div>
-
-              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100">
-                <span className="text-[10px] font-semibold text-neutral-500 uppercase block">Extra Hours</span>
-                <span className="text-xl font-bold font-mono text-[#111111] block tabular-nums">{monthlySummary.totalExtraHours}h</span>
-                <span className="text-[10px] text-neutral-400">
-                  {typeof data.settings.salaryConfig.standardWorkingHours === 'number'
-                    ? `Hours over ${data.settings.salaryConfig.standardWorkingHours}h/day`
-                    : 'Standard hours not configured'}
-                </span>
-              </div>
-
-              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100">
-                <span className="text-[10px] font-semibold text-neutral-500 uppercase block">Leave / Absent</span>
-                <span className="text-xl font-bold font-mono text-neutral-700 block tabular-nums">{monthlySummary.leaveDays + monthlySummary.absentDays}</span>
-                <span className="text-[10px] text-neutral-400">{formatCurrency(0, data.settings.currency)} earned on off days</span>
-              </div>
-            </div>
-
-            <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 text-xs space-y-1.5 font-mono">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-bold text-[#111111]">Active Default Rate Formula:</span>
-                {!salaryConfigured && (
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('settings')}
-                    className="font-sans text-xs font-semibold text-[#0284C7] hover:underline cursor-pointer"
-                  >
-                    Configure Salary Rates →
-                  </button>
+              <div className="p-4 bg-[#f5f5f7] rounded-2xl text-xs space-y-1.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
+                  <span className="font-semibold text-[#1d1d1f]">Active Default Rate Formula</span>
+                  {!salaryConfigured && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('settings')}
+                      className="text-xs font-medium text-[#0284c7] hover:underline cursor-pointer"
+                    >
+                      Configure Salary Rates →
+                    </button>
+                  )}
+                </div>
+                {salaryConfigured ? (
+                  <div className="space-y-1 text-[#6e6e73] font-mono tabular-nums">
+                    <p>
+                      · Present Day Base: {formatCurrency(data.settings.salaryConfig.dailyBaseSalary ?? 0, data.settings.currency)} for up to {data.settings.salaryConfig.standardWorkingHours} hours.
+                    </p>
+                    <p>
+                      · Daily Add-on:{' '}
+                      {data.settings.salaryConfig.addonEnabled
+                        ? `+${formatCurrency(data.settings.salaryConfig.addonSalary ?? 0, data.settings.currency)}/day.`
+                        : `Disabled (${formatCurrency(data.settings.salaryConfig.addonSalary ?? 0, data.settings.currency)} configured).`}
+                    </p>
+                    <p>
+                      · Extra Hours:{' '}
+                      {data.settings.salaryConfig.overtimeEnabled
+                        ? `+${formatCurrency(data.settings.salaryConfig.extraHourRate ?? 0, data.settings.currency)}/hour beyond ${data.settings.salaryConfig.standardWorkingHours}h.`
+                        : `Overtime disabled (${formatCurrency(data.settings.salaryConfig.extraHourRate ?? 0, data.settings.currency)}/hr configured).`}
+                    </p>
+                    <p>
+                      · Leave / Absent / Holiday: {formatCurrency(0, data.settings.currency)} (past snapshots &amp; overrides stay preserved).
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-[#6e6e73]">
+                    Not configured yet. Open Rate Settings to define your daily base salary, standard working hours, and optional overtime or add-on rates.
+                  </p>
                 )}
               </div>
-              {salaryConfigured ? (
-                <>
-                  <p className="text-neutral-700">
-                    • Present Day Base: {formatCurrency(data.settings.salaryConfig.dailyBaseSalary ?? 0, data.settings.currency)} for up to {data.settings.salaryConfig.standardWorkingHours} hours.
-                  </p>
-                  <p className="text-neutral-700">
-                    • Daily Add-on:{' '}
-                    {data.settings.salaryConfig.addonEnabled
-                      ? `+${formatCurrency(data.settings.salaryConfig.addonSalary ?? 0, data.settings.currency)}/day.`
-                      : `Disabled (${formatCurrency(data.settings.salaryConfig.addonSalary ?? 0, data.settings.currency)} configured).`}
-                  </p>
-                  <p className="text-neutral-700">
-                    • Extra Hours:{' '}
-                    {data.settings.salaryConfig.overtimeEnabled
-                      ? `+${formatCurrency(data.settings.salaryConfig.extraHourRate ?? 0, data.settings.currency)}/hour for hours over ${data.settings.salaryConfig.standardWorkingHours}h.`
-                      : `Overtime calculation disabled (${formatCurrency(data.settings.salaryConfig.extraHourRate ?? 0, data.settings.currency)}/hr configured).`}
-                  </p>
-                  <p className="text-neutral-700">
-                    • Leave / Absent / Holiday: {formatCurrency(0, data.settings.currency)} (past daily snapshots &amp; overrides always remain preserved).
-                  </p>
-                </>
-              ) : (
-                <p className="text-neutral-600 font-sans">
-                  Not configured yet. Open Rate Settings to define your daily base salary, standard working hours, and optional overtime or add-on rates.
-                </p>
-              )}
             </div>
-          </div>
+          </SectionCard>
         </div>
       )}
 
       {/* DAILY LEDGER & CUSTOMIZATION TAB */}
       {activeTab === 'daily' && (
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-neutral-50 rounded-2xl border border-neutral-200">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <input
                 type="month"
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
                 aria-label="Filter daily ledger by month"
-                className="px-3 py-1.5 text-xs font-mono font-semibold border border-neutral-300 rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
+                className="min-h-[40px] px-3 py-1.5 text-sm sm:text-xs font-mono font-medium border border-black/[0.12] rounded-xl bg-white focus:outline-none focus:border-[#0284c7] focus:ring-2 focus:ring-[#0284c7]/15"
               />
-              <span className="text-xs text-neutral-600 font-medium">
+              <span className="text-xs text-[#6e6e73]">
                 {monthlySummary.customizedDaysCount > 0
                   ? `${monthlySummary.customizedDaysCount} customized day${monthlySummary.customizedDaysCount > 1 ? 's' : ''}`
                   : 'Using saved daily snapshots'}
@@ -866,15 +818,15 @@ export const SalaryView: React.FC = () => {
             <button
               type="button"
               onClick={() => openDailyCustomizeModal()}
-              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 bg-[#111111] hover:bg-black text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer self-start sm:self-auto"
+              className={PRIMARY_BUTTON_CLASS}
             >
-              <Plus className="w-4 h-4 text-[#8ECFFF]" />
+              <Plus className="w-4 h-4" />
               <span>Customize / Add Day</span>
             </button>
           </div>
 
           {dailyBannerMessage && (
-            <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-200 text-xs text-neutral-800 flex items-center justify-between gap-2">
+            <div className="p-3.5 rounded-2xl bg-[#f5f5f7] text-xs text-[#1d1d1f] flex items-center justify-between gap-2">
               <span className="flex items-center gap-2">
                 <Check className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span>{dailyBannerMessage}</span>
@@ -882,7 +834,7 @@ export const SalaryView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setDailyBannerMessage(null)}
-                className="text-neutral-500 hover:text-[#111111] font-medium cursor-pointer"
+                className="text-[#6e6e73] hover:text-[#1d1d1f] font-medium cursor-pointer"
               >
                 Dismiss
               </button>
@@ -899,157 +851,140 @@ export const SalaryView: React.FC = () => {
             />
           ) : (
             <>
-              {/* Mobile Daily Cards (< 768px) */}
-              <div className="md:hidden space-y-2.5">
+              {/* Mobile Cards */}
+              <div className="md:hidden divide-y divide-black/[0.06] bg-white rounded-2xl border border-black/[0.08] overflow-hidden">
                 {monthDailyRecords.map((rec) => {
                   const customized = isRecordCustomized(rec);
                   return (
-                    <div key={rec.id} className="p-4 rounded-2xl border border-black/[0.08] bg-white space-y-2.5 shadow-xs">
+                    <div key={rec.id} className="p-4 space-y-2">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <span className="font-mono font-bold text-sm text-[#111111] block">
+                          <span className="font-mono font-medium text-sm text-[#1d1d1f] block tabular-nums">
                             {formatHumanDate(rec.date)}
                           </span>
-                          <div className="flex items-center gap-1.5 mt-1">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-100 text-neutral-800">
-                              {rec.status}
-                            </span>
-                            {customized && (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#EAF6FF] text-[#111318] border border-[#8ECFFF]/60">
-                                Custom
-                              </span>
-                            )}
-                          </div>
+                          <span className="text-xs text-[#6e6e73] block mt-0.5">
+                            {rec.status}
+                            {customized ? ' · Custom' : ''}
+                          </span>
                         </div>
                         <div className="text-right">
-                          <span className="text-base font-extrabold font-mono text-[#111111] tabular-nums block">
+                          <span className="text-sm font-semibold font-mono text-[#1d1d1f] tabular-nums block">
                             {formatCurrency(rec.dailyEarnedSalary || 0, data.settings.currency)}
                           </span>
                           {rec.status === 'Present' && (
-                            <span className="text-[11px] font-mono text-neutral-500">
-                              {rec.calculatedHours || 0}h {rec.extraHours ? `(+${rec.extraHours}h OT)` : ''}
+                            <span className="text-[11px] font-mono text-[#6e6e73] tabular-nums">
+                              {rec.calculatedHours || 0}h{rec.extraHours ? ` (+${rec.extraHours}h OT)` : ''}
                             </span>
                           )}
                         </div>
                       </div>
 
                       {rec.status === 'Present' && (
-                        <div className="text-[11px] text-neutral-500 font-mono flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-neutral-100">
-                          <span>Base: {formatCurrency(rec.dailyBaseSalary ?? data.settings.salaryConfig.dailyBaseSalary ?? 0, data.settings.currency)}</span>
+                        <div className="text-xs text-[#6e6e73] font-mono tabular-nums flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span>Base {formatCurrency(rec.dailyBaseSalary ?? data.settings.salaryConfig.dailyBaseSalary ?? 0, data.settings.currency)}</span>
                           {rec.addonEnabled && (
-                            <span>Add-on: +{formatCurrency(rec.addonSalary ?? 0, data.settings.currency)}</span>
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span>Add-on +{formatCurrency(rec.addonSalary ?? 0, data.settings.currency)}</span>
+                            </>
                           )}
+                          <span aria-hidden="true">·</span>
                           <span>
-                            OT:{' '}
-                            {rec.overtimeEnabled === false
-                              ? 'Off'
-                              : `${formatCurrency(rec.extraHourRate ?? data.settings.salaryConfig.extraHourRate ?? 0, data.settings.currency)}/hr`}
+                            OT {rec.overtimeEnabled === false ? 'Off' : `${formatCurrency(rec.extraHourRate ?? data.settings.salaryConfig.extraHourRate ?? 0, data.settings.currency)}/hr`}
                           </span>
                         </div>
                       )}
 
                       {rec.notes && (
-                        <p className="text-xs text-neutral-600 bg-neutral-50 p-2 rounded-lg">
-                          {rec.notes}
-                        </p>
+                        <p className="text-xs text-[#6e6e73]">{rec.notes}</p>
                       )}
 
-                      <div className="pt-2 border-t border-neutral-100 flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-1.5 pt-1">
                         <button
                           type="button"
                           onClick={() => openDailyCustomizeModal(rec.date)}
-                          className="min-h-[36px] px-3 text-xs font-semibold text-[#111111] bg-neutral-100 hover:bg-neutral-200 rounded-lg inline-flex items-center gap-1.5 cursor-pointer"
+                          className="min-h-[40px] px-3 text-xs font-medium text-[#1d1d1f] bg-[#f5f5f7] hover:bg-[#e8e8ed] rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                           <span>Customize</span>
                         </button>
-                        <button
-                          type="button"
+                        <ActionIconButton
+                          icon={Trash2}
+                          label={`Delete record for ${rec.date}`}
+                          variant="delete"
                           onClick={() => {
                             setDeleteDailyError(null);
                             setDeleteDailyTargetId(rec.id);
                           }}
-                          className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-neutral-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
-                          aria-label={`Delete record for ${rec.date}`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        />
                       </div>
                     </div>
                   );
                 })}
               </div>
 
-              {/* Desktop Daily Ledger Table (>= 768px) */}
-              <div className="hidden md:block bg-white rounded-2xl border border-black/[0.08] overflow-hidden shadow-xs">
+              {/* Desktop Table */}
+              <div className="hidden md:block bg-white rounded-2xl border border-black/[0.08] overflow-hidden">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-neutral-50/80 border-b border-black/[0.06] text-[11px] font-bold text-neutral-500 uppercase tracking-wider">
+                    <tr className="bg-[#fbfbfd] border-b border-black/[0.06] text-[11px] font-medium text-[#6e6e73]">
                       <th className="py-3 px-4">Date</th>
                       <th className="py-3 px-4">Status</th>
                       <th className="py-3 px-4 text-center">Hours (OT)</th>
                       <th className="py-3 px-4 text-right">Applied Rates</th>
                       <th className="py-3 px-4 text-right">Earned Salary</th>
                       <th className="py-3 px-4">Notes</th>
-                      <th className="py-3 px-4 text-center">Actions</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-black/[0.06] text-xs text-neutral-700">
+                  <tbody className="divide-y divide-black/[0.06] text-[13px] text-[#1d1d1f]">
                     {monthDailyRecords.map((rec) => {
                       const customized = isRecordCustomized(rec);
                       return (
-                        <tr key={rec.id} className="hover:bg-neutral-50/70 transition-colors">
-                          <td className="py-3 px-4 font-mono font-semibold text-[#111111] whitespace-nowrap">
+                        <tr key={rec.id} className="hover:bg-[#f5f5f7]/60 transition-colors">
+                          <td className="py-3 px-4 font-mono font-medium text-[#1d1d1f] whitespace-nowrap tabular-nums">
                             {formatHumanDate(rec.date)}
                           </td>
                           <td className="py-3 px-4">
-                            <div className="inline-flex items-center gap-1.5">
-                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-100 text-neutral-800">
-                                {rec.status}
-                              </span>
-                              {customized && (
-                                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#EAF6FF] text-[#111318] border border-[#8ECFFF]/60">
-                                  Custom
-                                </span>
-                              )}
-                            </div>
+                            <span className="text-[#1d1d1f]">{rec.status}</span>
+                            {customized && (
+                              <span className="ml-1.5 text-xs font-medium text-[#0284c7]">· Custom</span>
+                            )}
                           </td>
                           <td className="py-3 px-4 text-center font-mono tabular-nums">
                             {rec.status === 'Present'
                               ? `${rec.calculatedHours || 0}h${rec.extraHours ? ` (+${rec.extraHours}h)` : ''}`
                               : '—'}
                           </td>
-                          <td className="py-3 px-4 text-right font-mono text-neutral-500 tabular-nums whitespace-nowrap">
+                          <td className="py-3 px-4 text-right font-mono text-xs text-[#6e6e73] tabular-nums whitespace-nowrap">
                             {rec.status === 'Present'
                               ? `${formatCurrency(rec.dailyBaseSalary ?? data.settings.salaryConfig.dailyBaseSalary ?? 0, data.settings.currency)}${rec.addonEnabled ? ` + ${formatCurrency(rec.addonSalary ?? 0, data.settings.currency)}` : ''} · ${rec.overtimeEnabled === false ? 'OT Off' : `${formatCurrency(rec.extraHourRate ?? data.settings.salaryConfig.extraHourRate ?? 0, data.settings.currency)}/h`}`
                               : '—'}
                           </td>
-                          <td className="py-3 px-4 text-right font-mono font-bold text-[#111111] tabular-nums whitespace-nowrap">
+                          <td className="py-3 px-4 text-right font-mono font-semibold text-[#1d1d1f] tabular-nums whitespace-nowrap">
                             {formatCurrency(rec.dailyEarnedSalary || 0, data.settings.currency)}
                           </td>
-                          <td className="py-3 px-4 text-neutral-500 max-w-[200px] truncate">
+                          <td className="py-3 px-4 text-[#6e6e73] max-w-[200px] truncate">
                             {rec.notes || '—'}
                           </td>
-                          <td className="py-3 px-4 text-center">
-                            <div className="inline-flex items-center gap-1.5">
+                          <td className="py-3 px-4 text-right">
+                            <div className="inline-flex items-center justify-end gap-1">
                               <button
                                 type="button"
                                 onClick={() => openDailyCustomizeModal(rec.date)}
-                                className="px-2.5 py-1 text-[11px] font-semibold text-[#111111] bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors cursor-pointer"
+                                className="min-h-[34px] px-3 text-xs font-medium text-[#1d1d1f] bg-[#f5f5f7] hover:bg-[#e8e8ed] rounded-xl transition-colors cursor-pointer"
                               >
                                 Customize
                               </button>
-                              <button
-                                type="button"
+                              <ActionIconButton
+                                icon={Trash2}
+                                label="Delete entry"
+                                variant="delete"
                                 onClick={() => {
                                   setDeleteDailyError(null);
                                   setDeleteDailyTargetId(rec.id);
                                 }}
-                                className="p-1 text-neutral-400 hover:text-rose-600 cursor-pointer"
-                                title="Delete Entry"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              />
                             </div>
                           </td>
                         </tr>
@@ -1066,14 +1001,15 @@ export const SalaryView: React.FC = () => {
       {/* PAYOUT HISTORY TAB */}
       {activeTab === 'payments' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between p-3 bg-neutral-50 rounded-2xl border border-neutral-200 text-xs">
-            <span className="font-semibold text-neutral-700">Period: {selectedMonth}</span>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-[#6e6e73] font-mono tabular-nums">Period: {selectedMonth}</span>
             <button
               type="button"
               onClick={openPaymentModal}
-              className="px-3 py-1.5 bg-[#111111] text-white font-semibold rounded-xl hover:bg-black cursor-pointer"
+              className={PRIMARY_BUTTON_CLASS}
             >
-              + Record Salary Payout
+              <Plus className="w-4 h-4" />
+              <span>Record Salary Payout</span>
             </button>
           </div>
 
@@ -1087,100 +1023,88 @@ export const SalaryView: React.FC = () => {
             />
           ) : (
             <>
-              {/* Mobile Payout Cards (< 768px) */}
-              <div className="md:hidden space-y-2.5">
+              {/* Mobile Cards */}
+              <div className="md:hidden divide-y divide-black/[0.06] bg-white rounded-2xl border border-black/[0.08] overflow-hidden">
                 {monthPayouts.map((pay) => {
                   const isSynced = syncedPayoutIncomeIds.has(pay.id);
                   return (
-                    <div key={pay.id} className="p-4 rounded-2xl border border-black/[0.08] bg-white space-y-2 shadow-xs">
+                    <div key={pay.id} className="p-4 space-y-2">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <span className="font-mono font-bold text-sm text-[#111111] block">
+                          <span className="font-mono font-medium text-sm text-[#1d1d1f] block tabular-nums">
                             {formatHumanDate(pay.paidAt)}
                           </span>
-                          <span className="text-[11px] font-mono text-neutral-500">
+                          <span className="text-xs font-mono text-[#6e6e73] tabular-nums">
                             {pay.periodStart} → {pay.periodEnd}
                           </span>
                         </div>
-                        <span className="font-mono font-bold text-base text-emerald-600 tabular-nums">
+                        <span className="font-mono font-semibold text-base text-emerald-700 tabular-nums">
                           {formatCurrency(pay.amountPaid, data.settings.currency)}
                         </span>
                       </div>
 
                       {pay.notes && (
-                        <p className="text-xs text-neutral-600">{pay.notes}</p>
+                        <p className="text-xs text-[#6e6e73]">{pay.notes}</p>
                       )}
 
-                      <div className="pt-2 border-t border-neutral-100 flex items-center justify-between">
-                        {isSynced ? (
-                          <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-800 font-semibold">
-                            Synced to Income
-                          </span>
-                        ) : (
-                          <span className="text-neutral-400 text-[10px]">Unsynced</span>
-                        )}
-                        <button
-                          type="button"
+                      <div className="flex items-center justify-between pt-1">
+                        <span className={`text-xs font-medium ${isSynced ? 'text-emerald-700' : 'text-[#86868b]'}`}>
+                          {isSynced ? 'Synced to Income' : 'Unsynced'}
+                        </span>
+                        <ActionIconButton
+                          icon={Trash2}
+                          label="Delete Payout"
+                          variant="delete"
                           onClick={() => setDeleteTargetId(pay.id)}
-                          className="p-1.5 text-neutral-400 hover:text-rose-600 cursor-pointer"
-                          aria-label="Delete Payout"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        />
                       </div>
                     </div>
                   );
                 })}
               </div>
 
-              {/* Desktop Payouts Table (>= 768px) */}
-              <div className="hidden md:block bg-white rounded-2xl border border-black/[0.08] overflow-hidden shadow-xs">
+              {/* Desktop Table */}
+              <div className="hidden md:block bg-white rounded-2xl border border-black/[0.08] overflow-hidden">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-neutral-50/80 border-b border-black/[0.06] text-[11px] font-bold text-neutral-500 uppercase tracking-wider">
+                    <tr className="bg-[#fbfbfd] border-b border-black/[0.06] text-[11px] font-medium text-[#6e6e73]">
                       <th className="py-3 px-4">Payment Date</th>
                       <th className="py-3 px-4">Period</th>
                       <th className="py-3 px-4 text-right">Amount Paid</th>
                       <th className="py-3 px-4">Notes</th>
                       <th className="py-3 px-4 text-center">Income Sync</th>
-                      <th className="py-3 px-4 text-center">Actions</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-black/[0.06] text-xs text-neutral-700">
+                  <tbody className="divide-y divide-black/[0.06] text-[13px] text-[#1d1d1f]">
                     {monthPayouts.map((pay) => {
                       const isSynced = syncedPayoutIncomeIds.has(pay.id);
                       return (
-                        <tr key={pay.id} className="hover:bg-neutral-50/70 transition-colors">
-                          <td className="py-3 px-4 font-mono font-bold text-[#111111]">
+                        <tr key={pay.id} className="hover:bg-[#f5f5f7]/60 transition-colors">
+                          <td className="py-3 px-4 font-mono font-medium text-[#1d1d1f] tabular-nums">
                             {formatHumanDate(pay.paidAt)}
                           </td>
-                          <td className="py-3 px-4 font-mono text-neutral-600">
+                          <td className="py-3 px-4 font-mono text-xs text-[#6e6e73] tabular-nums">
                             {pay.periodStart} → {pay.periodEnd}
                           </td>
-                          <td className="py-3 px-4 text-right font-mono font-bold text-emerald-600 tabular-nums">
+                          <td className="py-3 px-4 text-right font-mono font-semibold text-emerald-700 tabular-nums">
                             {formatCurrency(pay.amountPaid, data.settings.currency)}
                           </td>
-                          <td className="py-3 px-4 text-neutral-600">
+                          <td className="py-3 px-4 text-[#6e6e73]">
                             {pay.notes || 'Salary Payment'}
                           </td>
                           <td className="py-3 px-4 text-center">
-                            {isSynced ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-800 font-semibold">
-                                Synced
-                              </span>
-                            ) : (
-                              <span className="text-neutral-400 text-[10px]">Unsynced</span>
-                            )}
+                            <span className={`text-xs font-medium ${isSynced ? 'text-emerald-700' : 'text-[#86868b]'}`}>
+                              {isSynced ? 'Synced' : 'Unsynced'}
+                            </span>
                           </td>
-                          <td className="py-3 px-4 text-center">
-                            <button
-                              type="button"
+                          <td className="py-3 px-4 text-right">
+                            <ActionIconButton
+                              icon={Trash2}
+                              label="Delete Payout"
+                              variant="delete"
                               onClick={() => setDeleteTargetId(pay.id)}
-                              className="p-1 text-neutral-400 hover:text-rose-600 cursor-pointer"
-                              title="Delete Payout"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            />
                           </td>
                         </tr>
                       );
@@ -1195,563 +1119,504 @@ export const SalaryView: React.FC = () => {
 
       {/* RATE SETTINGS TAB */}
       {activeTab === 'settings' && (
-        <form onSubmit={handleSaveSettings} className="p-5 sm:p-6 rounded-2xl bg-white border border-black/[0.08] shadow-xs space-y-5 max-w-2xl">
-          <div className="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-black/[0.06]">
-            <div>
-              <h3 className="font-bold text-base text-[#111111]">Daily Salary Rate Settings</h3>
-              <p className="text-xs text-neutral-500 mt-0.5">
-                Configure your default daily wage, duty hours, and overtime calculation rate.
-              </p>
-            </div>
+        <SectionCard
+          title="Daily Salary Rate Settings"
+          subtitle="Configure your default daily wage, duty hours, and overtime calculation rate."
+          action={
             <div className="flex items-center gap-2">
               {savedSettingsNotif && (
-                <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
+                <span className="text-xs text-emerald-700 font-medium flex items-center gap-1">
                   <Check className="w-3.5 h-3.5" /> {savedSettingsNotif}
                 </span>
               )}
               {!salaryConfigured && (
-                <span className="px-2 py-1 text-[11px] font-medium text-neutral-600 bg-neutral-100 rounded-md">
-                  Not configured
-                </span>
+                <span className="text-xs font-medium text-[#86868b]">Not configured</span>
               )}
             </div>
-          </div>
-
-          {settingsError && (
-            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-              <span>{settingsError}</span>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="salary-rate-base" className="block text-xs font-semibold text-neutral-700 mb-1">
-                Daily Base Salary ({data.settings.currency})
-              </label>
-              <input
-                id="salary-rate-base"
-                type="number"
-                required
-                min="0"
-                step="any"
-                inputMode="decimal"
-                placeholder="Not configured"
-                value={dailyBaseSalaryInput}
-                onChange={(e) => setDailyBaseSalaryInput(e.target.value)}
-                className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl placeholder:font-sans placeholder:text-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
-              />
-              <p className="text-[11px] text-neutral-500 mt-1">
-                Earned for working standard daily hours.
-              </p>
-            </div>
-
-            <div>
-              <label htmlFor="salary-rate-hours" className="block text-xs font-semibold text-neutral-700 mb-1">
-                Standard Duty Hours / Day
-              </label>
-              <input
-                id="salary-rate-hours"
-                type="number"
-                required
-                min="0.5"
-                max="24"
-                step="0.5"
-                inputMode="decimal"
-                placeholder="Not configured"
-                value={standardWorkingHoursInput}
-                onChange={(e) => setStandardWorkingHoursInput(e.target.value)}
-                className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl placeholder:font-sans placeholder:text-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
-              />
-              <p className="text-[11px] text-neutral-500 mt-1">
-                Hours per day before overtime rate applies.
-              </p>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label htmlFor="salary-rate-addon" className="block text-xs font-semibold text-neutral-700">
-                  Daily Add-on Salary ({data.settings.currency})
-                </label>
-                <label className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={addonEnabled}
-                    onChange={(e) => setAddonEnabled(e.target.checked)}
-                    className="rounded border-neutral-300 text-[#111111] focus:ring-[#8ECFFF]"
-                  />
-                  <span>Enable Add-on</span>
-                </label>
+          }
+          className="max-w-2xl"
+        >
+          <form onSubmit={handleSaveSettings} className="space-y-5">
+            {settingsError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{settingsError}</span>
               </div>
-              <input
-                id="salary-rate-addon"
-                type="number"
-                min="0"
-                step="any"
-                inputMode="decimal"
-                placeholder="0"
-                disabled={!addonEnabled}
-                value={addonSalaryInput}
-                onChange={(e) => setAddonSalaryInput(e.target.value)}
-                className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] disabled:bg-neutral-50 disabled:text-neutral-400"
-              />
-              <p className="text-[11px] text-neutral-500 mt-1">
-                {addonEnabled
-                  ? 'Added to daily base salary on Present workdays.'
-                  : 'Add-on salary disabled for new entries.'}
-              </p>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label htmlFor="salary-rate-extra" className="block text-xs font-semibold text-neutral-700">
-                  Extra-Hour Rate ({data.settings.currency}/hour)
-                </label>
-                <label className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={overtimeEnabled}
-                    onChange={(e) => setOvertimeEnabled(e.target.checked)}
-                    className="rounded border-neutral-300 text-[#111111] focus:ring-[#8ECFFF]"
-                  />
-                  <span>Enable Overtime Pay</span>
-                </label>
-              </div>
-              <input
-                id="salary-rate-extra"
-                type="number"
-                min="0"
-                step="any"
-                inputMode="decimal"
-                placeholder="Not configured"
-                disabled={!overtimeEnabled}
-                value={extraHourRateInput}
-                onChange={(e) => setExtraHourRateInput(e.target.value)}
-                className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl placeholder:font-sans placeholder:text-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] disabled:bg-neutral-50 disabled:text-neutral-400"
-              />
-              <p className="text-[11px] text-neutral-500 mt-1">
-                {overtimeEnabled
-                  ? 'Additional rate paid per hour beyond standard daily duty hours.'
-                  : 'Overtime calculation disabled for new entries.'}
-              </p>
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-neutral-50 border border-neutral-200/80 flex items-start gap-2.5 text-xs text-neutral-600">
-            <ShieldCheck className="w-4 h-4 text-[#0284C7] shrink-0 mt-0.5" />
-            <p className="leading-relaxed">
-              Saved daily entries preserve their historical rates and custom earnings. Updating these defaults affects future records only.
-            </p>
-          </div>
-
-          <div className="pt-3 border-t border-neutral-100 flex items-center justify-end gap-2">
-            {hasRateSettingsChanges && (
-              <button
-                type="button"
-                onClick={handleCancelRateChanges}
-                disabled={isSavingSettings}
-                className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 border border-neutral-200 rounded-xl cursor-pointer disabled:opacity-50"
-              >
-                Cancel
-              </button>
             )}
-            <button
-              type="submit"
-              disabled={isSavingSettings || !hasRateSettingsChanges}
-              className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
-            >
-              {isSavingSettings ? 'Saving...' : 'Save Rate Settings'}
-            </button>
-          </div>
-        </form>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="salary-rate-base" className={LABEL_CLASS}>
+                  Daily Base Salary ({data.settings.currency})
+                </label>
+                <input
+                  id="salary-rate-base"
+                  type="number"
+                  required
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  placeholder="Not configured"
+                  value={dailyBaseSalaryInput}
+                  onChange={(e) => setDailyBaseSalaryInput(e.target.value)}
+                  className={MONO_INPUT_CLASS}
+                />
+                <p className="text-xs text-[#86868b] mt-1">
+                  Earned for working standard daily hours.
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="salary-rate-hours" className={LABEL_CLASS}>
+                  Standard Duty Hours / Day
+                </label>
+                <input
+                  id="salary-rate-hours"
+                  type="number"
+                  required
+                  min="0.5"
+                  max="24"
+                  step="0.5"
+                  inputMode="decimal"
+                  placeholder="Not configured"
+                  value={standardWorkingHoursInput}
+                  onChange={(e) => setStandardWorkingHoursInput(e.target.value)}
+                  className={MONO_INPUT_CLASS}
+                />
+                <p className="text-xs text-[#86868b] mt-1">
+                  Hours per day before overtime rate applies.
+                </p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label htmlFor="salary-rate-addon" className="text-xs font-medium text-[#6e6e73]">
+                    Daily Add-on Salary ({data.settings.currency})
+                  </label>
+                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1d1d1f] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={addonEnabled}
+                      onChange={(e) => setAddonEnabled(e.target.checked)}
+                      className="rounded border-black/20 text-[#0284c7] focus:ring-[#0284c7]"
+                    />
+                    <span>Enable Add-on</span>
+                  </label>
+                </div>
+                <input
+                  id="salary-rate-addon"
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  placeholder="0"
+                  disabled={!addonEnabled}
+                  value={addonSalaryInput}
+                  onChange={(e) => setAddonSalaryInput(e.target.value)}
+                  className={MONO_INPUT_CLASS}
+                />
+                <p className="text-xs text-[#86868b] mt-1">
+                  {addonEnabled
+                    ? 'Added to daily base salary on Present workdays.'
+                    : 'Add-on salary disabled for new entries.'}
+                </p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label htmlFor="salary-rate-extra" className="text-xs font-medium text-[#6e6e73]">
+                    Extra-Hour Rate ({data.settings.currency}/hour)
+                  </label>
+                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1d1d1f] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={overtimeEnabled}
+                      onChange={(e) => setOvertimeEnabled(e.target.checked)}
+                      className="rounded border-black/20 text-[#0284c7] focus:ring-[#0284c7]"
+                    />
+                    <span>Enable Overtime Pay</span>
+                  </label>
+                </div>
+                <input
+                  id="salary-rate-extra"
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  placeholder="Not configured"
+                  disabled={!overtimeEnabled}
+                  value={extraHourRateInput}
+                  onChange={(e) => setExtraHourRateInput(e.target.value)}
+                  className={MONO_INPUT_CLASS}
+                />
+                <p className="text-xs text-[#86868b] mt-1">
+                  {overtimeEnabled
+                    ? 'Additional rate paid per hour beyond standard daily duty hours.'
+                    : 'Overtime calculation disabled for new entries.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#f5f5f7] flex items-start gap-2.5 text-xs text-[#6e6e73]">
+              <ShieldCheck className="w-4 h-4 text-[#0284c7] shrink-0 mt-0.5" />
+              <p className="leading-relaxed">
+                Saved daily entries preserve their historical rates and custom earnings. Updating these defaults affects future records only.
+              </p>
+            </div>
+
+            <div className="pt-3 border-t border-black/[0.06] flex items-center justify-end gap-2">
+              {hasRateSettingsChanges && (
+                <button
+                  type="button"
+                  onClick={handleCancelRateChanges}
+                  disabled={isSavingSettings}
+                  className={SECONDARY_BUTTON_CLASS}
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={isSavingSettings || !hasRateSettingsChanges}
+                className={PRIMARY_BUTTON_CLASS}
+              >
+                {isSavingSettings ? 'Saving…' : 'Save Rate Settings'}
+              </button>
+            </div>
+          </form>
+        </SectionCard>
       )}
 
       {/* DAILY SALARY CUSTOMIZATION MODAL */}
-      {isDailyModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40"
-          onClick={() => { if (!isSavingDaily) setIsDailyModalOpen(false); }}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="daily-salary-modal-title"
-        >
-          <div
-            className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-black/[0.08] p-5 sm:p-6 max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-black/[0.06]">
-              <div>
-                <h3 id="daily-salary-modal-title" className="font-bold text-base text-[#111111]">
-                  Customize Daily Salary
-                </h3>
-                <p className="text-xs text-neutral-500">
-                  Adjust rates, hours, or final earned salary for a specific date.
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={isSavingDaily}
-                onClick={() => setIsDailyModalOpen(false)}
-                className="p-1.5 text-neutral-400 hover:text-black cursor-pointer disabled:opacity-50"
-                aria-label="Close modal"
-              >
-                <X className="w-4 h-4" />
-              </button>
+      <Modal
+        isOpen={isDailyModalOpen}
+        onClose={() => { if (!isSavingDaily) setIsDailyModalOpen(false); }}
+        disableClose={isSavingDaily}
+        maxWidth="md"
+        labelledById="daily-salary-modal-title"
+        title="Customize Daily Salary"
+        subtitle="Adjust rates, hours, or final earned salary for a specific date."
+        footer={
+          <>
+            <button
+              type="button"
+              disabled={isSavingDaily}
+              onClick={() => setIsDailyModalOpen(false)}
+              className={SECONDARY_BUTTON_CLASS}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="daily-salary-form"
+              disabled={isSavingDaily}
+              className={PRIMARY_BUTTON_CLASS}
+            >
+              {isSavingDaily ? 'Saving…' : 'Save Day Salary'}
+            </button>
+          </>
+        }
+      >
+        {dailyFormError && (
+          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+            <span>{dailyFormError}</span>
+          </div>
+        )}
+
+        <form id="daily-salary-form" onSubmit={handleSaveDailyCustomization} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <div>
+              <label htmlFor="daily-custom-date" className={LABEL_CLASS}>Date *</label>
+              <input
+                id="daily-custom-date"
+                type="date"
+                required
+                max={istTodayStr}
+                value={dailyDate}
+                onChange={(e) => handleDailyDateChange(e.target.value)}
+                className={MONO_INPUT_CLASS}
+              />
             </div>
+            <div>
+              <label htmlFor="daily-custom-status" className={LABEL_CLASS}>Status *</label>
+              <select
+                id="daily-custom-status"
+                value={dailyStatus}
+                onChange={(e) => setDailyStatus(e.target.value as AttendanceStatus)}
+                className={SELECT_CLASS}
+              >
+                <option value="Present">Present</option>
+                <option value="Absent">Absent</option>
+                <option value="Leave">Leave</option>
+                <option value="Holiday">Holiday</option>
+              </select>
+            </div>
+          </div>
 
-            {dailyFormError && (
-              <div className="mt-3 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                <span>{dailyFormError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSaveDailyCustomization} className="mt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+          {dailyStatus === 'Present' && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label htmlFor="daily-custom-date" className="block text-xs font-semibold text-neutral-700 mb-1">
-                    Date *
-                  </label>
+                  <label htmlFor="daily-custom-hours" className={LABEL_CLASS}>Hours Worked *</label>
                   <input
-                    id="daily-custom-date"
-                    type="date"
+                    id="daily-custom-hours"
+                    type="number"
+                    step="0.25"
+                    min="0"
+                    max="24"
                     required
-                    max={istTodayStr}
-                    value={dailyDate}
-                    onChange={(e) => handleDailyDateChange(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
+                    value={dailyHoursInput}
+                    onChange={(e) => setDailyHoursInput(e.target.value)}
+                    className={MONO_INPUT_CLASS}
                   />
                 </div>
                 <div>
-                  <label htmlFor="daily-custom-status" className="block text-xs font-semibold text-neutral-700 mb-1">
-                    Status *
+                  <label htmlFor="daily-custom-base" className={LABEL_CLASS}>
+                    Day Base Salary ({data.settings.currency}) *
                   </label>
-                  <select
-                    id="daily-custom-status"
-                    value={dailyStatus}
-                    onChange={(e) => setDailyStatus(e.target.value as AttendanceStatus)}
-                    className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
-                  >
-                    <option value="Present">Present</option>
-                    <option value="Absent">Absent</option>
-                    <option value="Leave">Leave</option>
-                    <option value="Holiday">Holiday</option>
-                  </select>
+                  <input
+                    id="daily-custom-base"
+                    type="number"
+                    step="any"
+                    min="0"
+                    required
+                    value={dailyCustomBaseInput}
+                    onChange={(e) => setDailyCustomBaseInput(e.target.value)}
+                    className={MONO_INPUT_CLASS}
+                  />
                 </div>
               </div>
 
-              {dailyStatus === 'Present' && (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label htmlFor="daily-custom-hours" className="block text-xs font-semibold text-neutral-700 mb-1">
-                        Hours Worked *
-                      </label>
-                      <input
-                        id="daily-custom-hours"
-                        type="number"
-                        step="0.25"
-                        min="0"
-                        max="24"
-                        required
-                        value={dailyHoursInput}
-                        onChange={(e) => setDailyHoursInput(e.target.value)}
-                        className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="daily-custom-base" className="block text-xs font-semibold text-neutral-700 mb-1">
-                        Day Base Salary ({data.settings.currency}) *
-                      </label>
-                      <input
-                        id="daily-custom-base"
-                        type="number"
-                        step="any"
-                        min="0"
-                        required
-                        value={dailyCustomBaseInput}
-                        onChange={(e) => setDailyCustomBaseInput(e.target.value)}
-                        className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label htmlFor="daily-custom-addon" className="block text-xs font-semibold text-neutral-700">
-                        Day Add-on Salary ({data.settings.currency})
-                      </label>
-                      <label className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-700 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={dailyCustomAddonEnabled}
-                          onChange={(e) => setDailyCustomAddonEnabled(e.target.checked)}
-                          className="rounded border-neutral-300 text-[#111111]"
-                        />
-                        <span>Add-on</span>
-                      </label>
-                    </div>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label htmlFor="daily-custom-addon" className="text-xs font-medium text-[#6e6e73]">
+                    Day Add-on Salary ({data.settings.currency})
+                  </label>
+                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1d1d1f] cursor-pointer">
                     <input
-                      id="daily-custom-addon"
-                      type="number"
-                      step="any"
-                      min="0"
-                      disabled={!dailyCustomAddonEnabled}
-                      value={dailyCustomAddonInput}
-                      onChange={(e) => setDailyCustomAddonInput(e.target.value)}
-                      className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] disabled:bg-neutral-50 disabled:text-neutral-400"
+                      type="checkbox"
+                      checked={dailyCustomAddonEnabled}
+                      onChange={(e) => setDailyCustomAddonEnabled(e.target.checked)}
+                      className="rounded border-black/20 text-[#0284c7]"
                     />
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label htmlFor="daily-custom-ot-rate" className="block text-xs font-semibold text-neutral-700">
-                        Day Overtime Rate ({data.settings.currency}/hr)
-                      </label>
-                      <label className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-700 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={dailyCustomOvertimeEnabled}
-                          onChange={(e) => setDailyCustomOvertimeEnabled(e.target.checked)}
-                          className="rounded border-neutral-300 text-[#111111]"
-                        />
-                        <span>Overtime</span>
-                      </label>
-                    </div>
-                    <input
-                      id="daily-custom-ot-rate"
-                      type="number"
-                      step="any"
-                      min="0"
-                      disabled={!dailyCustomOvertimeEnabled}
-                      value={dailyCustomExtraRateInput}
-                      onChange={(e) => setDailyCustomExtraRateInput(e.target.value)}
-                      className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] disabled:bg-neutral-50 disabled:text-neutral-400"
-                    />
-                  </div>
-
-                  <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2.5 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-neutral-600">
-                        Formula Pay ({dailyFormulaPreview.workingHours}h, {dailyFormulaPreview.extraHours}h OT)
-                      </span>
-                      <span className="font-mono font-bold text-[#111111]">
-                        {formatCurrency(dailyFormulaPreview.dailyEarnedSalary, data.settings.currency)}
-                      </span>
-                    </div>
-
-                    <label className="flex items-center gap-2 pt-2 border-t border-neutral-200 font-medium text-[#111111] cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={useDirectEarnedOverride}
-                        onChange={(e) => {
-                          setUseDirectEarnedOverride(e.target.checked);
-                          if (e.target.checked && !directEarnedSalaryInput) {
-                            setDirectEarnedSalaryInput(String(dailyFormulaPreview.dailyEarnedSalary));
-                          }
-                        }}
-                        className="rounded border-neutral-300 text-[#111111]"
-                      />
-                      <span>Override final earned amount (bonus, add-on, or adjustment)</span>
-                    </label>
-
-                    {useDirectEarnedOverride && (
-                      <div>
-                        <label htmlFor="daily-direct-earned" className="block text-[11px] font-semibold text-neutral-700 mb-1">
-                          Final Earned Salary for {dailyDate} ({data.settings.currency})
-                        </label>
-                        <input
-                          id="daily-direct-earned"
-                          type="number"
-                          step="any"
-                          min="0"
-                          required
-                          value={directEarnedSalaryInput}
-                          onChange={(e) => setDirectEarnedSalaryInput(e.target.value)}
-                          className="w-full px-3 py-2 text-sm font-mono bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-
-              <div>
-                <label htmlFor="daily-custom-notes" className="block text-xs font-semibold text-neutral-700 mb-1">
-                  Notes (Optional)
-                </label>
+                    <span>Add-on</span>
+                  </label>
+                </div>
                 <input
-                  id="daily-custom-notes"
-                  type="text"
-                  placeholder="e.g. Shift bonus +100 or holiday cover"
-                  value={dailyNotes}
-                  onChange={(e) => setDailyNotes(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
-                />
-              </div>
-
-              <div className="pt-3 flex justify-end gap-2 border-t border-neutral-100">
-                <button
-                  type="button"
-                  disabled={isSavingDaily}
-                  onClick={() => setIsDailyModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSavingDaily}
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  {isSavingDaily ? 'Saving...' : 'Save Day Salary'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* RECORD PAYMENT MODAL */}
-      {isPaymentModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40"
-          onClick={() => { if (!isSubmittingPayment) setIsPaymentModalOpen(false); }}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div
-            className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-black/[0.08] p-5 sm:p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-black/[0.06]">
-              <div>
-                <h3 className="font-bold text-base text-[#111111]">Record Salary Payout</h3>
-                <p className="text-xs text-neutral-500 font-mono">Period: {selectedMonth}</p>
-              </div>
-              <button
-                type="button"
-                disabled={isSubmittingPayment}
-                onClick={() => setIsPaymentModalOpen(false)}
-                className="p-1 text-neutral-400 hover:text-black cursor-pointer disabled:opacity-50"
-              >
-                ✕
-              </button>
-            </div>
-
-            {paymentError && (
-              <div className="mt-3 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                <span>{paymentError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleRecordPayment} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1">
-                  Payout Amount ({data.settings.currency}) *
-                </label>
-                <input
+                  id="daily-custom-addon"
                   type="number"
-                  step="0.01"
-                  min="0.01"
-                  required
-                  placeholder="0.00"
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
-                  className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
-                />
-                <p className="text-[11px] text-neutral-400 mt-1 font-mono">
-                  Calculated earned: {formatCurrency(monthlySummary.earnedSalary, data.settings.currency)} · Remaining: {formatCurrency(monthlySummary.remainingSalary, data.settings.currency)}
-                  {monthlySummary.overpaidAmount > 0
-                    ? ` · Overpaid: ${formatCurrency(monthlySummary.overpaidAmount, data.settings.currency)}`
-                    : ''}
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1">
-                  Payment Date *
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={paymentDate}
-                  onChange={(e) => setPaymentDate(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
+                  step="any"
+                  min="0"
+                  disabled={!dailyCustomAddonEnabled}
+                  value={dailyCustomAddonInput}
+                  onChange={(e) => setDailyCustomAddonInput(e.target.value)}
+                  className={MONO_INPUT_CLASS}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1">
-                  Notes / Payment Reference (Optional)
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label htmlFor="daily-custom-ot-rate" className="text-xs font-medium text-[#6e6e73]">
+                    Day Overtime Rate ({data.settings.currency}/hr)
+                  </label>
+                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1d1d1f] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={dailyCustomOvertimeEnabled}
+                      onChange={(e) => setDailyCustomOvertimeEnabled(e.target.checked)}
+                      className="rounded border-black/20 text-[#0284c7]"
+                    />
+                    <span>Overtime</span>
+                  </label>
+                </div>
                 <input
-                  type="text"
-                  placeholder="e.g. Bank deposit reference"
-                  value={paymentNotes}
-                  onChange={(e) => setPaymentNotes(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
+                  id="daily-custom-ot-rate"
+                  type="number"
+                  step="any"
+                  min="0"
+                  disabled={!dailyCustomOvertimeEnabled}
+                  value={dailyCustomExtraRateInput}
+                  onChange={(e) => setDailyCustomExtraRateInput(e.target.value)}
+                  className={MONO_INPUT_CLASS}
                 />
               </div>
 
-              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2">
-                <label className="flex items-center gap-2 text-xs text-neutral-800 font-medium cursor-pointer">
+              <div className="p-3.5 bg-[#f5f5f7] rounded-2xl space-y-2.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[#6e6e73]">
+                    Formula Pay ({dailyFormulaPreview.workingHours}h, {dailyFormulaPreview.extraHours}h OT)
+                  </span>
+                  <span className="font-mono font-semibold text-[#1d1d1f] tabular-nums">
+                    {formatCurrency(dailyFormulaPreview.dailyEarnedSalary, data.settings.currency)}
+                  </span>
+                </div>
+
+                <label className="flex items-center gap-2 pt-2 border-t border-black/[0.06] font-medium text-[#1d1d1f] cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={isSyncingToIncome}
-                    onChange={(e) => setIsSyncingToIncome(e.target.checked)}
-                    className="rounded text-[#111111] focus:ring-[#8ECFFF]"
+                    checked={useDirectEarnedOverride}
+                    onChange={(e) => {
+                      setUseDirectEarnedOverride(e.target.checked);
+                      if (e.target.checked && !directEarnedSalaryInput) {
+                        setDirectEarnedSalaryInput(String(dailyFormulaPreview.dailyEarnedSalary));
+                      }
+                    }}
+                    className="rounded border-black/20 text-[#0284c7]"
                   />
-                  <span>Automatically sync to Income Module</span>
+                  <span>Override final earned amount (bonus, add-on, or adjustment)</span>
                 </label>
 
-                {monthPayouts.length > 0 && (
-                  <div className="space-y-1 pt-1 border-t border-neutral-200">
-                    <label className="flex items-center gap-2 text-xs text-neutral-700 font-medium cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={allowReplace}
-                        onChange={(e) => setAllowReplace(e.target.checked)}
-                        className="rounded text-[#111111] focus:ring-[#8ECFFF]"
-                      />
-                      <span>Replace existing payout for {selectedMonth}</span>
+                {useDirectEarnedOverride && (
+                  <div>
+                    <label htmlFor="daily-direct-earned" className={LABEL_CLASS}>
+                      Final Earned Salary for {dailyDate} ({data.settings.currency})
                     </label>
-                    <p className="text-[11px] text-neutral-500 pl-6">
-                      Only 1 payout slip per month is stored. Enabling replace overwrites the current{' '}
-                      {formatCurrency(
-                        monthPayouts.reduce((sum, p) => sum + (p.amountPaid || 0), 0),
-                        data.settings.currency
-                      )}{' '}
-                      slip — enter the combined monthly total if adding another payment.
-                    </p>
+                    <input
+                      id="daily-direct-earned"
+                      type="number"
+                      step="any"
+                      min="0"
+                      required
+                      value={directEarnedSalaryInput}
+                      onChange={(e) => setDirectEarnedSalaryInput(e.target.value)}
+                      className={MONO_INPUT_CLASS}
+                    />
                   </div>
                 )}
               </div>
+            </>
+          )}
 
-              <div className="pt-3 flex justify-end gap-2 border-t border-neutral-100">
-                <button
-                  type="button"
-                  disabled={isSubmittingPayment}
-                  onClick={() => setIsPaymentModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingPayment}
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  {isSubmittingPayment ? 'Saving...' : 'Record Salary Payment'}
-                </button>
-              </div>
-            </form>
+          <div>
+            <label htmlFor="daily-custom-notes" className={LABEL_CLASS}>Notes (Optional)</label>
+            <input
+              id="daily-custom-notes"
+              type="text"
+              placeholder="e.g. Shift bonus +100 or holiday cover"
+              value={dailyNotes}
+              onChange={(e) => setDailyNotes(e.target.value)}
+              className={INPUT_CLASS}
+            />
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
 
-      {/* Delete Payout Confirmation */}
+      {/* RECORD PAYMENT MODAL */}
+      <Modal
+        isOpen={isPaymentModalOpen}
+        onClose={() => { if (!isSubmittingPayment) setIsPaymentModalOpen(false); }}
+        disableClose={isSubmittingPayment}
+        maxWidth="md"
+        title="Record Salary Payout"
+        subtitle={`Period: ${selectedMonth}`}
+        footer={
+          <>
+            <button
+              type="button"
+              disabled={isSubmittingPayment}
+              onClick={() => setIsPaymentModalOpen(false)}
+              className={SECONDARY_BUTTON_CLASS}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="salary-payout-form"
+              disabled={isSubmittingPayment}
+              className={PRIMARY_BUTTON_CLASS}
+            >
+              {isSubmittingPayment ? 'Saving…' : 'Record Salary Payment'}
+            </button>
+          </>
+        }
+      >
+        {paymentError && (
+          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+            <span>{paymentError}</span>
+          </div>
+        )}
+
+        <form id="salary-payout-form" onSubmit={handleRecordPayment} className="space-y-4">
+          <div>
+            <label className={LABEL_CLASS}>Payout Amount ({data.settings.currency}) *</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0.01"
+              required
+              placeholder="0.00"
+              value={paymentAmount}
+              onChange={(e) => setPaymentAmount(e.target.value)}
+              className={MONO_INPUT_CLASS}
+            />
+            <p className="text-xs text-[#6e6e73] mt-1 font-mono tabular-nums">
+              Earned: {formatCurrency(monthlySummary.earnedSalary, data.settings.currency)} · Remaining: {formatCurrency(monthlySummary.remainingSalary, data.settings.currency)}
+              {monthlySummary.overpaidAmount > 0
+                ? ` · Overpaid: ${formatCurrency(monthlySummary.overpaidAmount, data.settings.currency)}`
+                : ''}
+            </p>
+          </div>
+
+          <div>
+            <label className={LABEL_CLASS}>Payment Date *</label>
+            <input
+              type="date"
+              required
+              value={paymentDate}
+              onChange={(e) => setPaymentDate(e.target.value)}
+              className={INPUT_CLASS}
+            />
+          </div>
+
+          <div>
+            <label className={LABEL_CLASS}>Notes / Payment Reference (Optional)</label>
+            <input
+              type="text"
+              placeholder="e.g. Bank deposit reference"
+              value={paymentNotes}
+              onChange={(e) => setPaymentNotes(e.target.value)}
+              className={INPUT_CLASS}
+            />
+          </div>
+
+          <div className="p-3.5 bg-[#f5f5f7] rounded-2xl space-y-2.5">
+            <label className="flex items-center gap-2 text-xs text-[#1d1d1f] font-medium cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isSyncingToIncome}
+                onChange={(e) => setIsSyncingToIncome(e.target.checked)}
+                className="rounded border-black/20 text-[#0284c7]"
+              />
+              <span>Automatically sync to Income Module</span>
+            </label>
+
+            {monthPayouts.length > 0 && (
+              <div className="space-y-1 pt-2 border-t border-black/[0.06]">
+                <label className="flex items-center gap-2 text-xs text-[#1d1d1f] font-medium cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={allowReplace}
+                    onChange={(e) => setAllowReplace(e.target.checked)}
+                    className="rounded border-black/20 text-[#0284c7]"
+                  />
+                  <span>Replace existing payout for {selectedMonth}</span>
+                </label>
+                <p className="text-xs text-[#6e6e73] pl-6">
+                  Only 1 payout slip per month is stored. Enabling replace overwrites the current{' '}
+                  {formatCurrency(
+                    monthPayouts.reduce((sum, p) => sum + (p.amountPaid || 0), 0),
+                    data.settings.currency
+                  )}{' '}
+                  slip — enter the combined monthly total if adding another payment.
+                </p>
+              </div>
+            )}
+          </div>
+        </form>
+      </Modal>
+
       <ConfirmDialog
         isOpen={deleteTargetId !== null}
         title="Delete Salary Payout"
@@ -1778,7 +1643,6 @@ export const SalaryView: React.FC = () => {
         }}
       />
 
-      {/* Delete Daily Entry Confirmation */}
       <ConfirmDialog
         isOpen={deleteDailyTargetId !== null}
         title="Delete Daily Salary Entry"

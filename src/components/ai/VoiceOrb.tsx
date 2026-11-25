@@ -58,7 +58,7 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = React.memo(({
           initial={{ scale: 0.92, opacity: 0.5 }}
           animate={{ scale: 1.18, opacity: 0 }}
           transition={{ duration: 1.5, repeat: Infinity, ease: 'easeOut' }}
-          className="absolute inset-0 rounded-full border border-[#0284C7]/50 pointer-events-none"
+          className="absolute inset-0 rounded-full border border-[#0284c7]/50 pointer-events-none"
         />
       )}
 
@@ -68,7 +68,7 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = React.memo(({
           aria-hidden="true"
           animate={prefersReducedMotion ? undefined : { rotate: 360 }}
           transition={{ duration: 1.1, repeat: Infinity, ease: 'linear' }}
-          className="absolute inset-0.5 rounded-full border-2 border-black/[0.06] border-t-[#0284C7] pointer-events-none"
+          className="absolute inset-0.5 rounded-full border-2 border-black/[0.06] border-t-[#0284c7] pointer-events-none"
         />
       )}
 
@@ -82,12 +82,12 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = React.memo(({
           onClick={onPress}
           disabled={disabled || state === 'thinking'}
           aria-label={ariaLabel}
-          className={`relative rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer disabled:cursor-wait focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7] focus-visible:ring-offset-2 active:scale-95 ${buttonSizeClass} ${
+          className={`relative rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer disabled:cursor-wait focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7] focus-visible:ring-offset-2 active:scale-95 ${buttonSizeClass} ${
             state === 'listening'
-              ? 'bg-[#0284C7] text-white'
+              ? 'bg-[#0284c7] text-white'
               : state === 'error'
-                ? 'bg-[#111111] text-white ring-2 ring-rose-500/60'
-                : 'bg-[#111111] text-white hover:bg-black'
+                ? 'bg-[#1d1d1f] text-white ring-2 ring-rose-500/60'
+                : 'bg-[#1d1d1f] text-white hover:bg-black'
           }`}
         >
           {state === 'speaking' ? (

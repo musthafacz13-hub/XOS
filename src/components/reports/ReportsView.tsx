@@ -14,12 +14,26 @@ import {
 } from '../../utils/calculations';
 import { formatCurrency, getMonthString } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
+import {
+  INPUT_CLASS,
+  MetricCard,
+  PRIMARY_BUTTON_CLASS,
+  PageHeader,
+  SectionCard,
+  SegmentedControl
+} from '../ui';
 
 const PDFExportModal = lazy(() =>
   import('../modals/PDFExportModal').then(m => ({ default: m.PDFExportModal }))
 );
 
-const CHART_PALETTE = ['#87CEEB', '#111111', '#525252', '#737373', '#A3A3A3', '#D4D4D4'];
+const PERIOD_OPTIONS = [
+  { id: 'today' as const, label: 'Today' },
+  { id: 'this_month' as const, label: 'This Month' },
+  { id: 'last_month' as const, label: 'Last Month' },
+  { id: 'this_year' as const, label: 'This Year' },
+  { id: 'custom' as const, label: 'Custom' }
+];
 
 export const ReportsView: React.FC = () => {
   const data = useXOSData();
@@ -101,7 +115,6 @@ export const ReportsView: React.FC = () => {
     [data.debts, data.debtRepayments]
   );
 
-  // Group cash flow by date
   const cashFlowTimelineData = useMemo(() => {
     const dateMap: Record<string, { date: string; income: number; expense: number }> = {};
 
@@ -118,7 +131,6 @@ export const ReportsView: React.FC = () => {
     return Object.values(dateMap).sort((a, b) => a.date.localeCompare(b.date));
   }, [filteredIncomes, filteredExpenses]);
 
-  // Category breakdown
   const categoryData = useMemo(() => {
     const catMap: Record<string, number> = {};
     filteredExpenses.forEach(e => {
@@ -136,10 +148,10 @@ export const ReportsView: React.FC = () => {
   const attendancePieData = useMemo(
     () =>
       [
-        { name: 'Present', count: attStats.presentDays, fill: '#111111' },
-        { name: 'Absent', count: attStats.absentDays, fill: '#737373' },
-        { name: 'Leave', count: attStats.leaveDays, fill: '#A3A3A3' },
-        { name: 'Holiday', count: attStats.holidayDays, fill: '#87CEEB' }
+        { name: 'Present', count: attStats.presentDays, fill: '#0284c7' },
+        { name: 'Absent', count: attStats.absentDays, fill: '#6e6e73' },
+        { name: 'Leave', count: attStats.leaveDays, fill: '#a1a1aa' },
+        { name: 'Holiday', count: attStats.holidayDays, fill: '#1d1d1f' }
       ].filter(d => d.count > 0),
     [attStats.presentDays, attStats.absentDays, attStats.leaveDays, attStats.holidayDays]
   );
@@ -147,28 +159,31 @@ export const ReportsView: React.FC = () => {
   const hasData = data.incomes.length > 0 || data.expenses.length > 0 || data.attendance.length > 0;
   const salaryConfigured = isSalaryConfigured(data.settings.salaryConfig);
 
+  const tooltipStyle = {
+    backgroundColor: '#ffffff',
+    color: '#1d1d1f',
+    borderRadius: '12px',
+    fontSize: '12px',
+    border: '1px solid rgba(0,0,0,0.08)',
+    boxShadow: '0 8px 24px rgba(0,0,0,0.08)'
+  };
+
   return (
     <div className="space-y-6">
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-black/[0.06]">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-[#111111] tracking-tight">
-            Analytics & Reports
-          </h2>
-          <p className="text-xs sm:text-sm text-neutral-500 font-normal mt-0.5">
-            Monitor cash flow dynamics, expense allocations, and attendance breakdown.
-          </p>
-        </div>
-
-        <button
-          onClick={openPDFModal}
-          type="button"
-          className="self-start sm:self-auto flex items-center gap-1.5 px-3.5 py-2 bg-[#111111] text-white text-xs font-semibold rounded-xl hover:bg-black transition-colors shadow-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-        >
-          <FileText className="w-4 h-4 text-[#87CEEB]" />
-          <span>Export PDF Report</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Analytics & Reports"
+        description="Monitor cash flow dynamics, expense allocations, and attendance breakdown."
+        actions={
+          <button
+            onClick={openPDFModal}
+            type="button"
+            className={PRIMARY_BUTTON_CLASS}
+          >
+            <FileText className="w-4 h-4" />
+            <span>Export PDF Report</span>
+          </button>
+        }
+      />
 
       {!hasData ? (
         <EmptyState
@@ -178,28 +193,14 @@ export const ReportsView: React.FC = () => {
         />
       ) : (
         <>
-          {/* Date Range Selector Bar */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-neutral-50 p-2.5 rounded-2xl border border-neutral-200">
-            <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
-              {[
-                { id: 'today', label: 'Today' },
-                { id: 'this_month', label: 'This Month' },
-                { id: 'last_month', label: 'Last Month' },
-                { id: 'this_year', label: 'This Year' },
-                { id: 'custom', label: 'Custom' }
-              ].map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => setPeriodPreset(p.id as DateFilterPreset)}
-                  type="button"
-                  className={`px-3 py-1.5 text-xs font-medium rounded-xl transition-colors whitespace-nowrap cursor-pointer ${
-                    periodPreset === p.id ? 'bg-white text-[#111111] shadow-xs font-semibold' : 'text-neutral-600 hover:text-neutral-900'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
+          {/* Date Range Controls */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <SegmentedControl
+              options={PERIOD_OPTIONS}
+              value={periodPreset}
+              onChange={(val) => setPeriodPreset(val)}
+              ariaLabel="Select report period"
+            />
 
             {periodPreset === 'custom' && (
               <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
@@ -207,174 +208,145 @@ export const ReportsView: React.FC = () => {
                   type="date"
                   value={customStart}
                   onChange={(e) => setCustomStart(e.target.value)}
-                  className="flex-1 min-w-[140px] min-h-[40px] px-2.5 py-2 text-xs border border-neutral-300 rounded-lg bg-white"
+                  aria-label="Custom start date"
+                  className={`${INPUT_CLASS} sm:w-40`}
                 />
-                <span className="text-xs text-neutral-400 shrink-0">to</span>
+                <span className="text-xs text-[#6e6e73] shrink-0">to</span>
                 <input
                   type="date"
                   value={customEnd}
                   onChange={(e) => setCustomEnd(e.target.value)}
-                  className="flex-1 min-w-[140px] min-h-[40px] px-2.5 py-2 text-xs border border-neutral-300 rounded-lg bg-white"
+                  aria-label="Custom end date"
+                  className={`${INPUT_CLASS} sm:w-40`}
                 />
               </div>
             )}
           </div>
 
-          {/* Prominent Section Dashboard Grid */}
+          {/* KPI Overview */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4">
-            {/* Prominent Dark Summary Panel (Left Column) */}
-            <div className="lg:col-span-1 p-5 sm:p-6 rounded-2xl bg-[#111111] text-white flex flex-col justify-between space-y-4 shadow-xs">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">Net Cash Flow</span>
-                  <BarChart3 className="w-5 h-5 text-[#87CEEB]" />
-                </div>
-                <div>
-                  <div className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight text-white tabular-nums">
-                    {formatCurrency(totals.netCashFlow, data.settings.currency)}
-                  </div>
-                  <p className="text-xs text-neutral-400 mt-1">
-                    Period Income minus Expense
-                  </p>
-                </div>
-              </div>
+            <MetricCard
+              variant="focal"
+              label="Net Cash Flow"
+              tone={totals.netCashFlow >= 0 ? 'default' : 'negative'}
+              value={formatCurrency(totals.netCashFlow, data.settings.currency)}
+              sublabel="Period Income minus Expense"
+            />
 
-              <div className="space-y-2">
-                <button
-                  onClick={openPDFModal}
-                  type="button"
-                  className="w-full flex items-center justify-center gap-1.5 px-3.5 py-2 bg-[#87CEEB] text-[#111111] text-xs font-bold rounded-xl hover:bg-[#70c2e3] transition-colors cursor-pointer"
-                >
-                  <FileText className="w-4 h-4 text-[#111111]" />
-                  <span>Export PDF Report</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Section Key Metric Cards Grid (Right 3 Columns) */}
             <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs">
-                <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Period Revenue</span>
-                <div className="text-2xl font-bold font-mono text-emerald-600 tabular-nums">{formatCurrency(totals.totalIncome, data.settings.currency)}</div>
-                <span className="text-[11px] text-neutral-400">{filteredIncomes.length} Entries Logged</span>
-              </div>
+              <MetricCard
+                label="Period Revenue"
+                tone="positive"
+                value={formatCurrency(totals.totalIncome, data.settings.currency)}
+                sublabel={`${filteredIncomes.length} ${filteredIncomes.length === 1 ? 'entry' : 'entries'} logged`}
+              />
 
-              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs">
-                <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Period Expenses</span>
-                <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(totals.totalExpenses, data.settings.currency)}</div>
-                <span className="text-[11px] text-neutral-400">{filteredExpenses.length} Transactions</span>
-              </div>
+              <MetricCard
+                label="Period Expenses"
+                value={formatCurrency(totals.totalExpenses, data.settings.currency)}
+                sublabel={`${filteredExpenses.length} ${filteredExpenses.length === 1 ? 'transaction' : 'transactions'}`}
+              />
 
-              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs">
-                <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Total Reserves</span>
-                <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(totals.currentSavingsBalance, data.settings.currency)}</div>
-                <span className="text-[11px] text-neutral-400">Across {activeSavingsGoals.length} Funds</span>
-              </div>
+              <MetricCard
+                label="Total Reserves"
+                value={formatCurrency(totals.currentSavingsBalance, data.settings.currency)}
+                sublabel={`Across ${activeSavingsGoals.length} funds`}
+              />
 
-              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs">
-                <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Remaining Salary</span>
-                {!salaryConfigured && periodSalary.earnedSalary === 0 && periodSalary.salaryReceived === 0 ? (
-                  <>
-                    <div className="text-xl font-bold text-neutral-700">Not configured</div>
-                    <span className="text-[11px] text-neutral-400">Configure in Salary Settings</span>
-                  </>
-                ) : (
-                  <>
-                    <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(periodSalary.remainingSalary, data.settings.currency)}</div>
-                    <span className="text-[11px] text-neutral-400">Earned: {formatCurrency(periodSalary.earnedSalary, data.settings.currency)}</span>
-                  </>
-                )}
-              </div>
+              <MetricCard
+                label="Remaining Salary"
+                value={
+                  !salaryConfigured && periodSalary.earnedSalary === 0 && periodSalary.salaryReceived === 0 ? (
+                    <span className="text-lg font-medium text-[#6e6e73] font-sans">Not configured</span>
+                  ) : (
+                    formatCurrency(periodSalary.remainingSalary, data.settings.currency)
+                  )
+                }
+                sublabel={
+                  !salaryConfigured && periodSalary.earnedSalary === 0 && periodSalary.salaryReceived === 0
+                    ? 'Configure in Salary Settings'
+                    : `Earned: ${formatCurrency(periodSalary.earnedSalary, data.settings.currency)}`
+                }
+              />
 
-              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs">
-                <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Money Owed to Me</span>
-                <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(debtSummary.outstandingReceivable, data.settings.currency)}</div>
-                <span className="text-[11px] text-neutral-400">Outstanding Receivables</span>
-              </div>
+              <MetricCard
+                label="Money Owed to Me"
+                value={formatCurrency(debtSummary.outstandingReceivable, data.settings.currency)}
+                sublabel="Outstanding receivables"
+              />
 
-              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1 shadow-xs">
-                <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider">Money to Pay</span>
-                <div className="text-2xl font-bold font-mono text-[#111111] tabular-nums">{formatCurrency(totalToPay, data.settings.currency)}</div>
-                <span className="text-[11px] text-neutral-400">Outstanding Payables</span>
-              </div>
+              <MetricCard
+                label="Money to Pay"
+                value={formatCurrency(totalToPay, data.settings.currency)}
+                sublabel="Outstanding payables"
+              />
             </div>
           </div>
 
-          {/* Cash Flow Timeline Chart */}
-          <div className="p-5 sm:p-6 rounded-2xl bg-white border border-black/[0.08] space-y-4 shadow-xs">
-            <div className="flex items-center justify-between border-b border-black/[0.06] pb-3">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-[#87CEEB]" />
-                <h3 className="font-bold text-sm text-[#111111]">Income vs Expense Net Cash Flow Timeline</h3>
-              </div>
-              <span className="text-xs text-neutral-400">Timeline Analysis</span>
-            </div>
-
+          {/* Cash Flow Timeline */}
+          <SectionCard
+            title="Income vs Expense Timeline"
+            subtitle="Net cash flow across the selected period"
+          >
             {cashFlowTimelineData.length === 0 ? (
-              <div className="h-60 flex items-center justify-center text-xs text-neutral-400">
+              <div className="h-60 flex items-center justify-center text-xs text-[#86868b]">
                 No activity records exist for the selected date range.
               </div>
             ) : (
               <div className="h-60 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={cashFlowTimelineData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
+                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#6e6e73' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#6e6e73' }} axisLine={false} tickLine={false} />
                     <Tooltip
                       formatter={(val: any) => [formatCurrency(Number(val || 0), data.settings.currency)]}
-                      contentStyle={{ backgroundColor: '#111111', color: '#ffffff', borderRadius: '12px', fontSize: '12px', border: 'none' }}
+                      contentStyle={tooltipStyle}
                     />
-                    <Area type="monotone" dataKey="income" stroke="#87CEEB" fill="#87CEEB" fillOpacity={0.25} name="Income" />
-                    <Area type="monotone" dataKey="expense" stroke="#111111" fill="#111111" fillOpacity={0.12} name="Expense" />
+                    <Area type="monotone" dataKey="income" stroke="#0284c7" fill="#0284c7" fillOpacity={0.18} name="Income" />
+                    <Area type="monotone" dataKey="expense" stroke="#1d1d1f" fill="#1d1d1f" fillOpacity={0.08} name="Expense" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
             )}
-          </div>
+          </SectionCard>
 
           {/* Dual Column Analytics */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Category Spending Bar Chart */}
-            <div className="p-5 rounded-2xl bg-white border border-black/[0.08] space-y-3 shadow-xs">
-              <h3 className="font-bold text-sm text-[#111111]">Expense Category Breakdown</h3>
-
+            <SectionCard title="Expense Category Breakdown">
               {categoryData.length === 0 ? (
-                <div className="h-44 flex items-center justify-center text-xs text-neutral-400">
+                <div className="h-44 flex items-center justify-center text-xs text-[#86868b]">
                   No categorized expenses recorded in this period.
                 </div>
               ) : (
                 <div className="h-44 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={categoryData} layout="vertical" margin={{ top: 5, right: 10, left: 30, bottom: 5 }}>
-                      <XAxis type="number" tick={{ fontSize: 10 }} />
-                      <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={80} />
+                      <XAxis type="number" tick={{ fontSize: 11, fill: '#6e6e73' }} axisLine={false} tickLine={false} />
+                      <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: '#1d1d1f' }} width={80} axisLine={false} tickLine={false} />
                       <Tooltip
                         formatter={(val: any) => [formatCurrency(Number(val || 0), data.settings.currency), 'Amount']}
-                        contentStyle={{ backgroundColor: '#111111', color: '#ffffff', borderRadius: '12px', fontSize: '12px', border: 'none' }}
+                        contentStyle={tooltipStyle}
                       />
-                      <Bar dataKey="amount" fill="#111111" radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="amount" fill="#0284c7" radius={[0, 6, 6, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               )}
-            </div>
+            </SectionCard>
 
-            {/* Attendance Distribution Chart */}
-            <div className="p-5 rounded-2xl bg-white border border-black/[0.08] space-y-3 shadow-xs">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-sm text-[#111111]">
-                  Attendance Breakdown ({periodPreset === 'this_month' ? currentMonth : periodPreset.replace('_', ' ')})
-                </h3>
-                <span className="text-xs text-neutral-500 font-mono">
+            <SectionCard
+              title={`Attendance Breakdown (${periodPreset === 'this_month' ? currentMonth : periodPreset.replace('_', ' ')})`}
+              action={
+                <span className="text-xs text-[#6e6e73] font-mono tabular-nums">
                   {!salaryConfigured && periodSalary.earnedSalary === 0
                     ? 'Salary: Not configured'
                     : `Est Salary: ${formatCurrency(periodSalary.earnedSalary, data.settings.currency)}`}
                 </span>
-              </div>
-
+              }
+            >
               {attendancePieData.length === 0 ? (
-                <div className="h-44 flex items-center justify-center text-xs text-neutral-400">
+                <div className="h-44 flex items-center justify-center text-xs text-[#86868b]">
                   No attendance records logged for the selected period.
                 </div>
               ) : (
@@ -393,18 +365,17 @@ export const ReportsView: React.FC = () => {
                           <Cell key={`cell-${index}`} fill={entry.fill} />
                         ))}
                       </Pie>
-                      <Tooltip contentStyle={{ backgroundColor: '#111111', color: '#ffffff', borderRadius: '12px', fontSize: '12px', border: 'none' }} />
-                      <Legend wrapperStyle={{ fontSize: '11px' }} />
+                      <Tooltip contentStyle={tooltipStyle} />
+                      <Legend wrapperStyle={{ fontSize: '11px', color: '#6e6e73' }} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
               )}
-            </div>
+            </SectionCard>
           </div>
         </>
       )}
 
-      {/* PDF Export Options Modal (lazy-loaded on demand) */}
       {hasOpenedPDFModal && (
         <Suspense fallback={null}>
           <PDFExportModal

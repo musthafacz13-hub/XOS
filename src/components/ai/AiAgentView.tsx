@@ -1391,9 +1391,9 @@ export const AiAgentView: React.FC = () => {
               onClick={() => setIsHistoryMobileOpen(true)}
               aria-label="Open chat history"
               data-testid="mobile-history-toggle"
-              className="lg:hidden min-h-[44px] sm:min-h-[38px] px-3 inline-flex items-center gap-1.5 rounded-xl border border-black/[0.08] bg-white text-xs font-semibold text-[#111111] hover:bg-neutral-50 transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7]"
+              className="lg:hidden min-h-[44px] sm:min-h-[38px] px-3 inline-flex items-center gap-1.5 rounded-xl border border-black/[0.08] bg-white text-xs font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7]"
             >
-              <PanelLeft className="w-4 h-4 text-neutral-600 shrink-0" />
+              <PanelLeft className="w-4 h-4 text-[#6e6e73] shrink-0" />
               <span>Chats</span>
             </button>
 
@@ -1403,9 +1403,9 @@ export const AiAgentView: React.FC = () => {
                 onClick={() => setIsHistoryDesktopOpen(true)}
                 aria-label="Open chat history"
                 data-testid="desktop-history-toggle"
-                className="hidden lg:inline-flex min-h-[38px] px-3 items-center gap-1.5 rounded-xl border border-black/[0.08] bg-white text-xs font-semibold text-[#111111] hover:bg-neutral-50 transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7]"
+                className="hidden lg:inline-flex min-h-[38px] px-3 items-center gap-1.5 rounded-xl border border-black/[0.08] bg-white text-xs font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7]"
               >
-                <PanelLeft className="w-4 h-4 text-neutral-600 shrink-0" />
+                <PanelLeft className="w-4 h-4 text-[#6e6e73] shrink-0" />
                 <span>Chats</span>
               </button>
             )}
@@ -1418,7 +1418,7 @@ export const AiAgentView: React.FC = () => {
               />
             </div>
 
-            <span className="hidden md:inline-block text-xs text-neutral-400 truncate pl-1 min-w-0">
+            <span className="hidden md:inline-block text-xs text-[#86868b] truncate pl-1 min-w-0">
               {activeConversation ? activeConversation.title : 'Read-only until confirmed'}
             </span>
           </div>
@@ -1426,7 +1426,7 @@ export const AiAgentView: React.FC = () => {
           <div
             role="group"
             aria-label="Voice language"
-            className="w-full order-3 sm:order-2 sm:w-auto sm:shrink-0 grid grid-cols-3 sm:inline-flex items-center gap-1 bg-neutral-100/90 p-1 rounded-xl"
+            className="w-full order-3 sm:order-2 sm:w-auto sm:shrink-0 grid grid-cols-3 sm:inline-flex items-center gap-1 bg-[#f5f5f7] p-1 rounded-xl"
           >
             {LANGUAGE_OPTIONS.map((opt) => {
               const active = voice.voiceLanguage === opt.id;
@@ -1437,10 +1437,10 @@ export const AiAgentView: React.FC = () => {
                   onClick={() => handleLanguageChange(opt.id)}
                   disabled={isRecordingOrListening || isTranscribing || isSubmitting}
                   aria-pressed={active}
-                  className={`min-h-[40px] sm:min-h-[32px] px-2.5 sm:px-3 py-1.5 sm:py-1 text-xs font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7] disabled:opacity-60 ${
+                  className={`min-h-[44px] sm:min-h-[32px] px-2.5 sm:px-3 py-1.5 sm:py-1 text-xs font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7] disabled:opacity-60 ${
                     active
-                      ? 'bg-white text-[#111111] font-semibold shadow-2xs ring-1 ring-black/[0.04]'
-                      : 'text-neutral-600 hover:text-[#111111]'
+                      ? 'bg-white text-[#1d1d1f] font-semibold shadow-2xs ring-1 ring-black/[0.04]'
+                      : 'text-[#6e6e73] hover:text-[#1d1d1f]'
                   }`}
                 >
                   {opt.label}
@@ -1454,10 +1454,10 @@ export const AiAgentView: React.FC = () => {
               type="button"
               onClick={voice.toggleMute}
               aria-pressed={!voice.isMuted}
-              className={`min-h-[44px] min-w-[44px] sm:min-h-[38px] sm:min-w-[38px] flex items-center justify-center rounded-xl border transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284C7] ${
+              className={`min-h-[44px] min-w-[44px] sm:min-h-[38px] sm:min-w-[38px] flex items-center justify-center rounded-xl border transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7] ${
                 voice.isMuted
-                  ? 'border-black/[0.08] bg-white text-neutral-400 hover:text-[#111111] hover:bg-neutral-50'
-                  : 'border-[#0284C7]/25 bg-sky-50/70 text-[#0284C7] hover:bg-sky-50'
+                  ? 'border-black/[0.08] bg-white text-[#86868b] hover:text-[#1d1d1f] hover:bg-[#f5f5f7]'
+                  : 'border-[#0284c7]/25 bg-[#0284c7]/10 text-[#0284c7] hover:bg-[#0284c7]/15'
               }`}
               aria-label={voice.isMuted ? 'Unmute Jarvis voice output' : 'Mute Jarvis voice output'}
               title={voice.isMuted ? 'Voice muted' : 'Voice enabled'}
@@ -1472,7 +1472,7 @@ export const AiAgentView: React.FC = () => {
         </div>
 
         {activeConversation && (
-          <div className="md:hidden pt-2 text-[11px] font-medium text-neutral-400 truncate">
+          <div className="md:hidden pt-2 text-[11px] font-medium text-[#86868b] truncate">
             {activeConversation.title}
           </div>
         )}
@@ -1481,13 +1481,13 @@ export const AiAgentView: React.FC = () => {
         {isLoadingMessages ? (
           <div className="flex-1 py-6 space-y-4" aria-label="Loading conversation messages">
             <div className="flex justify-end">
-              <div className="h-10 w-48 rounded-2xl bg-neutral-100 animate-pulse" />
+              <div className="h-10 w-48 rounded-2xl bg-[#f5f5f7] animate-pulse" />
             </div>
             <div className="flex justify-start">
-              <div className="h-16 w-72 rounded-2xl bg-neutral-100/70 animate-pulse" />
+              <div className="h-16 w-72 rounded-2xl bg-[#f5f5f7]/70 animate-pulse" />
             </div>
             <div className="flex justify-end">
-              <div className="h-10 w-36 rounded-2xl bg-neutral-100 animate-pulse" />
+              <div className="h-10 w-36 rounded-2xl bg-[#f5f5f7] animate-pulse" />
             </div>
           </div>
         ) : messages.length === 0 ? (
@@ -1504,10 +1504,10 @@ export const AiAgentView: React.FC = () => {
             <p
               className={`text-sm font-medium tabular-nums transition-colors ${
                 isRecordingOrListening || voice.playbackPhase === 'playing'
-                  ? 'text-[#0284C7]'
+                  ? 'text-[#0284c7]'
                   : effectiveVoiceState === 'error'
                     ? 'text-rose-600'
-                    : 'text-[#111111]'
+                    : 'text-[#1d1d1f]'
               }`}
             >
               {statusText}
@@ -1519,7 +1519,7 @@ export const AiAgentView: React.FC = () => {
                   <button
                     type="button"
                     onClick={voice.stopListening}
-                    className="px-3 py-1.5 rounded-lg bg-[#0284C7] text-white text-xs font-medium hover:bg-[#0369A1] cursor-pointer min-h-[36px]"
+                    className="px-3 py-1.5 rounded-xl bg-[#0284c7] text-white text-xs font-medium hover:bg-[#0369a1] cursor-pointer min-h-[38px]"
                   >
                     Stop & Transcribe
                   </button>
@@ -1527,7 +1527,7 @@ export const AiAgentView: React.FC = () => {
                 <button
                   type="button"
                   onClick={voice.cancelRecording}
-                  className="px-3 py-1.5 rounded-lg border border-black/[0.08] text-xs font-medium text-neutral-600 hover:text-[#111111] cursor-pointer min-h-[36px]"
+                  className="px-3 py-1.5 rounded-xl border border-black/[0.08] text-xs font-medium text-[#6e6e73] hover:text-[#1d1d1f] cursor-pointer min-h-[38px]"
                 >
                   Cancel
                 </button>
@@ -1539,7 +1539,7 @@ export const AiAgentView: React.FC = () => {
                 <button
                   type="button"
                   onClick={voice.pausePlayback}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#0284C7] hover:bg-sky-50 cursor-pointer min-h-[36px]"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-[#0284c7] hover:bg-[#0284c7]/10 cursor-pointer min-h-[38px]"
                 >
                   <Pause className="w-3.5 h-3.5" />
                   <span>Pause</span>
@@ -1547,7 +1547,7 @@ export const AiAgentView: React.FC = () => {
                 <button
                   type="button"
                   onClick={voice.stopSpeaking}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-600 hover:bg-neutral-100 cursor-pointer min-h-[36px]"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-[#6e6e73] hover:bg-[#f5f5f7] cursor-pointer min-h-[38px]"
                 >
                   <Square className="w-3 h-3 fill-current" />
                   <span>Stop</span>
@@ -1564,7 +1564,7 @@ export const AiAgentView: React.FC = () => {
                 type="button"
                 disabled={isSubmitting || isRecordingOrListening || isTranscribing}
                 onClick={() => void handleSubmitQuery(item.query, false)}
-                className="px-3.5 py-2 rounded-xl border border-black/[0.08] bg-white hover:border-[#0284C7]/50 hover:bg-sky-50/40 hover:text-[#0284C7] text-xs font-medium text-neutral-700 transition-colors cursor-pointer disabled:opacity-50 min-h-[40px]"
+                className="px-3.5 py-2 rounded-xl border border-black/[0.08] bg-[#fbfbfd] hover:border-[#0284c7]/50 hover:bg-[#0284c7]/[0.05] hover:text-[#0284c7] text-xs font-medium text-[#1d1d1f] transition-colors cursor-pointer disabled:opacity-50 min-h-[44px] sm:min-h-[40px]"
               >
                 {item.label}
               </button>
@@ -1574,7 +1574,7 @@ export const AiAgentView: React.FC = () => {
       ) : (
         <>
           {/* Compact Voice Control Strip during active conversation */}
-          <div className="sticky top-[calc(4rem+env(safe-area-inset-top,0px))] md:top-16 z-10 bg-white/95 backdrop-blur-xs border-b border-black/[0.05] py-2 flex items-center justify-between gap-3">
+          <div className="sticky top-[calc(4rem+env(safe-area-inset-top,0px))] md:top-16 z-10 liquid-glass border-b border-black/[0.06] py-2 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0">
               <VoiceOrb
                 state={effectiveVoiceState}
@@ -1586,10 +1586,10 @@ export const AiAgentView: React.FC = () => {
               <span
                 className={`text-xs font-medium truncate tabular-nums ${
                   isRecordingOrListening || voice.playbackPhase === 'playing'
-                    ? 'text-[#0284C7]'
+                    ? 'text-[#0284c7]'
                     : effectiveVoiceState === 'error'
                       ? 'text-rose-600'
-                      : 'text-neutral-600'
+                      : 'text-[#6e6e73]'
                 }`}
               >
                 {statusText}
@@ -1602,14 +1602,14 @@ export const AiAgentView: React.FC = () => {
                   <button
                     type="button"
                     onClick={voice.stopListening}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-[#0284C7] hover:bg-sky-50 cursor-pointer min-h-[40px]"
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-[#0284c7] hover:bg-[#0284c7]/10 cursor-pointer min-h-[40px]"
                   >
                     Done
                   </button>
                   <button
                     type="button"
                     onClick={voice.cancelRecording}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-neutral-500 hover:bg-neutral-100 cursor-pointer min-h-[40px]"
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-[#6e6e73] hover:bg-[#f5f5f7] cursor-pointer min-h-[40px]"
                   >
                     Cancel
                   </button>
@@ -1619,7 +1619,7 @@ export const AiAgentView: React.FC = () => {
                 <button
                   type="button"
                   onClick={voice.cancelRecording}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-neutral-500 hover:bg-neutral-100 cursor-pointer min-h-[40px]"
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-[#6e6e73] hover:bg-[#f5f5f7] cursor-pointer min-h-[40px]"
                 >
                   Cancel
                 </button>
@@ -1629,14 +1629,14 @@ export const AiAgentView: React.FC = () => {
                   <button
                     type="button"
                     onClick={voice.pausePlayback}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-[#0284C7] hover:bg-sky-50 cursor-pointer min-h-[40px]"
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-[#0284c7] hover:bg-[#0284c7]/10 cursor-pointer min-h-[40px]"
                   >
                     Pause
                   </button>
                   <button
                     type="button"
                     onClick={voice.stopSpeaking}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-neutral-500 hover:bg-neutral-100 cursor-pointer min-h-[40px]"
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-[#6e6e73] hover:bg-[#f5f5f7] cursor-pointer min-h-[40px]"
                   >
                     Stop
                   </button>
@@ -1647,7 +1647,7 @@ export const AiAgentView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => void voice.playOrResume()}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0284C7] hover:bg-sky-50 cursor-pointer min-h-[40px]"
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0284c7] hover:bg-[#0284c7]/10 cursor-pointer min-h-[40px]"
                   >
                     {voice.playbackPhase === 'paused' ? 'Resume' : 'Play'}
                   </button>
@@ -1662,7 +1662,7 @@ export const AiAgentView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => void voice.replayLastResponse()}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-neutral-500 hover:text-[#0284C7] hover:bg-neutral-50 cursor-pointer min-h-[40px]"
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-[#6e6e73] hover:text-[#0284c7] hover:bg-[#f5f5f7] cursor-pointer min-h-[40px]"
                   >
                     Replay
                   </button>
@@ -1688,12 +1688,12 @@ export const AiAgentView: React.FC = () => {
                   className={msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'}
                 >
                   {msg.role === 'user' ? (
-                    <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-neutral-100 px-4 py-2.5 text-[15px] text-[#111111] leading-relaxed whitespace-pre-line break-words">
+                    <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-[#f5f5f7] px-4 py-2.5 text-[15px] text-[#1d1d1f] leading-relaxed whitespace-pre-line break-words">
                       {msg.text}
                     </div>
                   ) : (
                     <div className="max-w-[94%] space-y-1.5">
-                      <p className="text-[15px] text-[#111111] leading-relaxed whitespace-pre-line break-words">
+                      <p className="text-[15px] text-[#1d1d1f] leading-relaxed whitespace-pre-line break-words">
                         {msg.text}
                       </p>
                       {clarificationOptions?.messageId === msg.id && (
@@ -1707,7 +1707,7 @@ export const AiAgentView: React.FC = () => {
                               type="button"
                               disabled={isSavingTransaction || isSubmitting}
                               onClick={() => handleSelectDisambiguationOption(opt)}
-                              className="text-left px-3 py-2 rounded-xl border border-[#0284C7]/30 bg-sky-50/50 hover:bg-sky-100/70 text-xs font-medium text-[#111111] transition-colors cursor-pointer disabled:opacity-50 min-h-[38px]"
+                              className="text-left px-3 py-2 rounded-xl border border-[#0284c7]/30 bg-[#0284c7]/[0.05] hover:bg-[#0284c7]/[0.1] text-xs font-medium text-[#1d1d1f] transition-colors cursor-pointer disabled:opacity-50 min-h-[44px] sm:min-h-[38px]"
                             >
                               {opt.label}
                             </button>
@@ -1720,7 +1720,7 @@ export const AiAgentView: React.FC = () => {
                             <button
                               type="button"
                               onClick={voice.pausePlayback}
-                              className="inline-flex items-center gap-1 py-1 text-xs font-medium text-[#0284C7] hover:text-[#0369A1] cursor-pointer min-h-[34px]"
+                              className="inline-flex items-center gap-1 py-1 text-xs font-medium text-[#0284c7] hover:text-[#0369a1] cursor-pointer min-h-[34px]"
                             >
                               <Pause className="w-3.5 h-3.5" />
                               <span>Pause</span>
@@ -1728,7 +1728,7 @@ export const AiAgentView: React.FC = () => {
                             <button
                               type="button"
                               onClick={voice.stopSpeaking}
-                              className="inline-flex items-center gap-1 py-1 text-xs font-medium text-neutral-500 hover:text-[#111111] cursor-pointer min-h-[34px]"
+                              className="inline-flex items-center gap-1 py-1 text-xs font-medium text-[#6e6e73] hover:text-[#1d1d1f] cursor-pointer min-h-[34px]"
                             >
                               <Square className="w-3 h-3 fill-current" />
                               <span>Stop</span>
@@ -1745,7 +1745,7 @@ export const AiAgentView: React.FC = () => {
                                   langHint: msg.langHint || 'en'
                                 })
                               }
-                              className="inline-flex items-center gap-1 py-1 text-xs font-semibold text-[#0284C7] hover:text-[#0369A1] cursor-pointer min-h-[34px]"
+                              className="inline-flex items-center gap-1 py-1 text-xs font-semibold text-[#0284c7] hover:text-[#0369a1] cursor-pointer min-h-[34px]"
                             >
                               <Play className="w-3.5 h-3.5 fill-current" />
                               <span>Resume</span>
@@ -1753,7 +1753,7 @@ export const AiAgentView: React.FC = () => {
                             <button
                               type="button"
                               onClick={voice.stopSpeaking}
-                              className="inline-flex items-center gap-1 py-1 text-xs font-medium text-neutral-500 hover:text-[#111111] cursor-pointer min-h-[34px]"
+                              className="inline-flex items-center gap-1 py-1 text-xs font-medium text-[#6e6e73] hover:text-[#1d1d1f] cursor-pointer min-h-[34px]"
                             >
                               <Square className="w-3 h-3 fill-current" />
                               <span>Stop</span>
@@ -1769,7 +1769,7 @@ export const AiAgentView: React.FC = () => {
                                 langHint: msg.langHint || 'en'
                               })
                             }
-                            className="inline-flex items-center gap-1 py-1 text-xs font-semibold text-[#0284C7] hover:text-[#0369A1] cursor-pointer min-h-[34px]"
+                            className="inline-flex items-center gap-1 py-1 text-xs font-semibold text-[#0284c7] hover:text-[#0369a1] cursor-pointer min-h-[34px]"
                           >
                             <Play className="w-3.5 h-3.5 fill-current" />
                             <span>Play</span>
@@ -1778,7 +1778,7 @@ export const AiAgentView: React.FC = () => {
                           <button
                             type="button"
                             onClick={voice.stopSpeaking}
-                            className="inline-flex items-center gap-1 py-1 text-xs font-medium text-neutral-500 hover:text-[#111111] cursor-pointer min-h-[34px]"
+                            className="inline-flex items-center gap-1 py-1 text-xs font-medium text-[#6e6e73] hover:text-[#1d1d1f] cursor-pointer min-h-[34px]"
                           >
                             <Square className="w-3 h-3 fill-current" />
                             <span>Generating audio…</span>
@@ -1794,7 +1794,7 @@ export const AiAgentView: React.FC = () => {
                                 langHint: msg.langHint || 'en'
                               });
                             }}
-                            className="inline-flex items-center gap-1 py-1 text-xs font-medium text-neutral-400 hover:text-[#0284C7] transition-colors cursor-pointer min-h-[34px]"
+                            className="inline-flex items-center gap-1 py-1 text-xs font-medium text-[#86868b] hover:text-[#0284c7] transition-colors cursor-pointer min-h-[34px]"
                             aria-label="Play audio response"
                           >
                             <Volume2 className="w-3.5 h-3.5" />
@@ -1809,7 +1809,7 @@ export const AiAgentView: React.FC = () => {
             })}
 
             {isSubmitting && (
-              <div className="text-sm text-neutral-400 py-1">
+              <div className="text-sm text-[#86868b] py-1">
                 Thinking…
               </div>
             )}
@@ -1842,8 +1842,8 @@ export const AiAgentView: React.FC = () => {
 
       {/* Editable Transcript Review Bar (prevents silent auto-submit of uncertain voice recognition) */}
       {voice.inputPhase === 'completed' && inputText.trim() && (
-        <div className="mb-2 px-3.5 py-2.5 rounded-xl border border-sky-200/80 bg-sky-50/40 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2">
-          <p className="text-xs text-sky-900 leading-snug min-w-0">
+        <div className="mb-2 px-3.5 py-2.5 rounded-xl border border-[#0284c7]/25 bg-[#0284c7]/[0.05] flex flex-wrap sm:flex-nowrap items-center justify-between gap-2">
+          <p className="text-xs text-[#1d1d1f] leading-snug min-w-0">
             {voice.usingBrowserFallback
               ? 'Browser voice transcript ready — edit if needed and tap Send.'
               : 'Transcript ready — review or edit below, then tap Send.'}
@@ -1852,7 +1852,7 @@ export const AiAgentView: React.FC = () => {
             <button
               type="button"
               onClick={voice.retryRecording}
-              className="px-2.5 py-1 rounded-lg text-xs font-medium text-[#0284C7] hover:bg-sky-100/60 cursor-pointer min-h-[40px]"
+              className="px-2.5 py-1 rounded-lg text-xs font-medium text-[#0284c7] hover:bg-[#0284c7]/10 cursor-pointer min-h-[40px]"
             >
               Re-record
             </button>
@@ -1863,7 +1863,7 @@ export const AiAgentView: React.FC = () => {
                 setInputText('');
               }}
               aria-label="Discard transcript"
-              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg text-neutral-500 hover:text-[#111111] cursor-pointer"
+              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg text-[#6e6e73] hover:text-[#1d1d1f] cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -1878,20 +1878,20 @@ export const AiAgentView: React.FC = () => {
           data-request-id={activeErrorRefId || undefined}
           className={`mb-2.5 px-3.5 py-2.5 rounded-xl border flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 ${
             voice.playbackPhase === 'blocked'
-              ? 'border-sky-200/80 bg-sky-50/40'
+              ? 'border-[#0284c7]/25 bg-[#0284c7]/[0.05]'
               : 'border-rose-200/80 bg-rose-50/40'
           }`}
         >
           <div className="min-w-0 flex-1">
             <p
               className={`text-xs leading-snug ${
-                voice.playbackPhase === 'blocked' ? 'text-sky-900' : 'text-rose-800'
+                voice.playbackPhase === 'blocked' ? 'text-[#1d1d1f]' : 'text-rose-800'
               }`}
             >
               {activeBannerMessage}
             </p>
             {activeErrorRefId && (
-              <p className="text-[10px] text-neutral-400 mt-0.5 select-all truncate">
+              <p className="text-[10px] text-[#86868b] mt-0.5 select-all truncate">
                 Ref · {activeErrorRefId}
               </p>
             )}
@@ -1902,7 +1902,7 @@ export const AiAgentView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => void voice.playOrResume()}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0284C7] hover:bg-sky-100/70 transition-colors cursor-pointer min-h-[40px]"
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0284c7] hover:bg-[#0284c7]/10 transition-colors cursor-pointer min-h-[40px]"
               >
                 Play
               </button>
@@ -1920,7 +1920,7 @@ export const AiAgentView: React.FC = () => {
                     true
                   );
                 }}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0284C7] hover:bg-sky-50 transition-colors cursor-pointer min-h-[40px]"
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0284c7] hover:bg-[#0284c7]/10 transition-colors cursor-pointer min-h-[40px]"
               >
                 Retry audio
               </button>
@@ -1930,7 +1930,7 @@ export const AiAgentView: React.FC = () => {
               <button
                 type="button"
                 onClick={voice.startBrowserFallbackRecording}
-                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#0284C7] hover:bg-sky-50 transition-colors cursor-pointer min-h-[40px]"
+                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#0284c7] hover:bg-[#0284c7]/10 transition-colors cursor-pointer min-h-[40px]"
               >
                 Browser mic
               </button>
@@ -1940,7 +1940,7 @@ export const AiAgentView: React.FC = () => {
               <button
                 type="button"
                 onClick={voice.retryRecording}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0284C7] hover:bg-sky-50 transition-colors cursor-pointer min-h-[40px]"
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0284c7] hover:bg-[#0284c7]/10 transition-colors cursor-pointer min-h-[40px]"
               >
                 Retry
               </button>
@@ -1951,7 +1951,7 @@ export const AiAgentView: React.FC = () => {
                 type="button"
                 onClick={handleRetryFailedQuery}
                 disabled={isSubmitting}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0284C7] hover:bg-sky-50 transition-colors cursor-pointer disabled:opacity-50 min-h-[40px]"
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0284c7] hover:bg-[#0284c7]/10 transition-colors cursor-pointer disabled:opacity-50 min-h-[40px]"
               >
                 Retry
               </button>
@@ -1963,9 +1963,9 @@ export const AiAgentView: React.FC = () => {
       {/* Minimal Expanding Chat Input (Docked cleanly above MobileBottomNav) */}
       <form
         onSubmit={handleTextSubmit}
-        className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom,0px))] md:bottom-0 z-10 bg-white/95 backdrop-blur-xs pt-2 pb-1"
+        className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom,0px))] md:bottom-0 z-10 liquid-glass pt-2 pb-1"
       >
-        <div className="flex items-end gap-1.5 border border-black/[0.12] focus-within:border-[#0284C7] rounded-2xl bg-white pl-3.5 pr-1.5 py-1.5 transition-colors">
+        <div className="flex items-end gap-1.5 border border-black/[0.12] focus-within:border-[#0284c7] focus-within:ring-2 focus-within:ring-[#0284c7]/15 rounded-2xl bg-white pl-3.5 pr-1.5 py-1.5 transition-all">
           <textarea
             ref={textareaRef}
             rows={1}
@@ -1980,7 +1980,7 @@ export const AiAgentView: React.FC = () => {
             placeholder="Message Jarvis AI…"
             disabled={isSubmitting}
             aria-label="Message Jarvis AI"
-            className="flex-1 resize-none bg-transparent py-2.5 sm:py-2 text-[16px] sm:text-sm text-[#111111] placeholder:text-neutral-400 focus:outline-none max-h-[120px] leading-snug disabled:opacity-60"
+            className="flex-1 resize-none bg-transparent py-2.5 sm:py-2 text-base sm:text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none max-h-[120px] leading-snug disabled:opacity-60"
           />
 
           <button
@@ -1990,8 +1990,8 @@ export const AiAgentView: React.FC = () => {
             aria-label={isRecordingOrListening ? 'Stop microphone' : 'Speak a message'}
             className={`min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:min-w-[40px] rounded-xl flex items-center justify-center transition-colors cursor-pointer shrink-0 disabled:opacity-40 ${
               isRecordingOrListening
-                ? 'bg-[#0284C7] text-white'
-                : 'text-neutral-500 hover:text-[#0284C7] hover:bg-neutral-50'
+                ? 'bg-[#0284c7] text-white'
+                : 'text-[#6e6e73] hover:text-[#0284c7] hover:bg-[#f5f5f7]'
             }`}
           >
             {isRecordingOrListening ? (
@@ -2005,7 +2005,7 @@ export const AiAgentView: React.FC = () => {
             type="submit"
             disabled={!inputText.trim() || isSubmitting}
             aria-label="Send message"
-            className="min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:min-w-[40px] rounded-xl bg-[#0284C7] hover:bg-[#0369A1] text-white flex items-center justify-center transition-colors cursor-pointer shrink-0 disabled:bg-neutral-100 disabled:text-neutral-400 disabled:cursor-not-allowed"
+            className="min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:min-w-[40px] rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white flex items-center justify-center transition-colors cursor-pointer shrink-0 disabled:bg-[#f5f5f7] disabled:text-[#86868b] disabled:cursor-not-allowed"
           >
             <ArrowUp className="w-4 h-4" />
           </button>

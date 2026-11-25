@@ -1,13 +1,10 @@
 import React from 'react';
-import { Plus, Calendar, ShieldCheck } from 'lucide-react';
-import { motion } from 'motion/react';
+import { Plus } from 'lucide-react';
 import { DateFilterPreset, DateRangeFilter, UserSettings } from '../../types';
 import { ActiveTab, NAV_ITEMS } from './Sidebar';
-import { WaterRippleContainer } from '../common/WaterRipple';
-import { MOTION_SPRINGS } from '../../utils/motion';
-import { useAuth } from '../../context/AuthContext';
 import { XOSLogo } from '../common/XOSLogo';
 import { JarvisLogo } from '../ai/JarvisLogo';
+import { SegmentedControl } from '../ui/SegmentedControl';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -30,7 +27,6 @@ export const Header: React.FC<HeaderProps> = React.memo(({
   setDateFilter,
   onOpenQuickAction
 }) => {
-  const { user, isConfigured } = useAuth();
   const isJarvisAi = activeTab === 'ai-agent';
   const activeNavItem = NAV_ITEMS.find(item => item.id === activeTab);
   const title = isJarvisAi
@@ -55,60 +51,34 @@ export const Header: React.FC<HeaderProps> = React.memo(({
   const showDateFilter = activeTab === 'dashboard';
 
   return (
-    <header className="pt-[env(safe-area-inset-top,0px)] min-h-[calc(4rem+env(safe-area-inset-top,0px))] border-b border-black/[0.06] liquid-glass px-3.5 sm:px-6 flex items-center justify-between gap-2 sm:gap-4 sticky top-0 z-20">
-      {/* Title & Section Logo */}
+    <header className="pt-[env(safe-area-inset-top,0px)] min-h-[calc(4rem+env(safe-area-inset-top,0px))] border-b border-black/[0.06] liquid-glass px-4 sm:px-6 flex items-center justify-between gap-3 sticky top-0 z-20">
+      {/* Title & Section Identity */}
       <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
         {isJarvisAi ? (
           <JarvisLogo size="sm" />
         ) : (
           <XOSLogo size="xs" className="md:hidden" />
         )}
-        <h1 className="text-base sm:text-lg font-bold text-[#111111] tracking-tight truncate leading-none">
+        <h1 className="text-[17px] sm:text-lg font-semibold text-[#1d1d1f] tracking-[-0.015em] truncate leading-none">
           {title}
         </h1>
         {!isJarvisAi && (
-          <>
-            <span className="hidden lg:inline-block text-neutral-300 font-light" aria-hidden="true">/</span>
-            <div className="hidden lg:flex items-center gap-1.5 text-xs text-neutral-500 font-normal">
-              <Calendar className="w-3.5 h-3.5 text-neutral-400" />
-              <span>{todayStr}</span>
-            </div>
-            <span className="hidden xl:inline-block text-neutral-300 font-light" aria-hidden="true">/</span>
-            <div 
-              className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/[0.04] border border-black/[0.05] text-[11px] font-medium text-neutral-700" 
-              title={user ? `Authenticated as ${user.email}` : "Session workspace active"}
-            >
-              {user ? (
-                <>
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="font-semibold text-neutral-900 truncate max-w-[140px]">{user.email}</span>
-                  <span className="text-neutral-300">•</span>
-                  <span className="text-emerald-600 font-medium">Supabase Online</span>
-                </>
-              ) : (
-                <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>Workspace Active</span>
-                  <span className="text-neutral-300">•</span>
-                  <span className="text-neutral-500 font-normal">{isConfigured ? 'Connected' : 'Local Session'}</span>
-                </>
-              )}
-            </div>
-          </>
+          <span className="hidden lg:inline-block text-xs text-[#86868b] font-normal pl-2 border-l border-black/[0.08]">
+            {todayStr}
+          </span>
         )}
       </div>
 
       {/* Date Filter & Quick Action (omitted on Jarvis AI header) */}
       {!isJarvisAi && (
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0">
           {showDateFilter && (
             <>
-              {/* Mobile Native Select (< 768px) */}
               <div className="md:hidden">
                 <select
                   value={dateFilter.preset}
                   onChange={(e) => handlePresetChange(e.target.value as DateFilterPreset)}
-                  className="min-h-[38px] max-w-[136px] px-2.5 py-1.5 text-xs font-semibold text-neutral-800 bg-white/90 border border-black/[0.08] rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+                  className="min-h-[40px] max-w-[140px] px-2.5 py-1.5 text-base sm:text-xs font-medium text-[#1d1d1f] bg-[#f5f5f7] border border-transparent rounded-xl focus:outline-none focus:bg-white focus:border-[#0284c7]"
                   aria-label="Filter timeline"
                 >
                   {PRESET_OPTIONS.map(opt => (
@@ -117,52 +87,28 @@ export const Header: React.FC<HeaderProps> = React.memo(({
                 </select>
               </div>
 
-              {/* Desktop Segmented Buttons (>= 768px) with Fluid Sliding Capsule */}
-              <div className="hidden md:flex items-center gap-1 bg-black/[0.04] p-1 rounded-xl border border-black/[0.04] relative">
-                {PRESET_OPTIONS.map((opt) => {
-                  const isSelected = dateFilter.preset === opt.id;
-                  return (
-                    <motion.button
-                      key={opt.id}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => handlePresetChange(opt.id)}
-                      type="button"
-                      className={`px-3 py-1 text-xs font-medium rounded-lg whitespace-nowrap cursor-pointer relative z-10 transition-colors duration-150 ${
-                        isSelected
-                          ? 'text-[#111111] font-bold'
-                          : 'text-neutral-600 hover:text-neutral-900'
-                      }`}
-                    >
-                      {isSelected && (
-                        <motion.div
-                          layoutId="headerDatePresetActive"
-                          transition={MOTION_SPRINGS.tactile}
-                          className="absolute inset-0 bg-white rounded-lg shadow-xs z-0"
-                        />
-                      )}
-                      <span className="relative z-10">{opt.label}</span>
-                    </motion.button>
-                  );
-                })}
+              <div className="hidden md:block">
+                <SegmentedControl
+                  options={PRESET_OPTIONS}
+                  value={dateFilter.preset}
+                  onChange={handlePresetChange}
+                  ariaLabel="Dashboard date range"
+                  size="sm"
+                />
               </div>
             </>
           )}
 
-          {/* Global Quick Activity Button with Tactile Ripple & Scale */}
-          <WaterRippleContainer className="rounded-xl">
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => onOpenQuickAction()}
-              type="button"
-              className="h-9 sm:h-10 flex items-center gap-1.5 px-3.5 sm:px-4 rounded-xl bg-[#111111] text-white text-xs font-semibold hover:bg-black transition-colors shadow-xs shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-              aria-label="Log New Activity"
-            >
-              <Plus className="w-4 h-4 text-[#87CEEB]" />
-              <span className="hidden sm:inline">Log Activity</span>
-              <span className="sm:hidden">Log</span>
-            </motion.button>
-          </WaterRippleContainer>
+          <button
+            onClick={() => onOpenQuickAction()}
+            type="button"
+            className="min-h-[40px] inline-flex items-center gap-1.5 px-3.5 sm:px-4 rounded-xl bg-[#1d1d1f] text-white text-[13px] font-medium hover:bg-black transition-colors shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7]"
+            aria-label="Log New Activity"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Log Activity</span>
+            <span className="sm:hidden">Log</span>
+          </button>
         </div>
       )}
     </header>

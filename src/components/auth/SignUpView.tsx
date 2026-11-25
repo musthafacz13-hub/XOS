@@ -5,11 +5,12 @@
  */
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Eye, EyeOff, Loader2, ArrowRight, Check, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, Loader2, ArrowRight, Check, CheckCircle2 } from 'lucide-react';
 import { AuthLayout } from './AuthLayout';
 import { useAuth } from '../../context/AuthContext';
 import { tapScale } from '../../utils/motion';
 import { validateSignUpInputs, normalizeAuthEmail } from '../../utils/authValidation';
+import { INPUT_CLASS, LABEL_CLASS, ACCENT_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from '../ui/FormControls';
 
 interface SignUpViewProps {
   onNavigate: (view: 'welcome' | 'login' | 'verify-email' | 'magic-link') => void;
@@ -100,9 +101,9 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
         {errorMessage && (
           <div
             role="alert"
-            className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start gap-2"
+            className="p-3 bg-rose-50 border border-rose-200/80 text-rose-800 text-xs rounded-xl flex items-start gap-2"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 shrink-0" />
+            <AlertCircle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
             <span className="leading-relaxed">{errorMessage}</span>
           </div>
         )}
@@ -111,7 +112,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
         {successMessage && (
           <div
             role="status"
-            className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2"
+            className="p-3 bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs rounded-xl flex items-center gap-2"
           >
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span className="leading-relaxed">{successMessage}</span>
@@ -120,8 +121,8 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
 
         {/* Supabase Not Configured Notice (if applicable) */}
         {!isConfigured && (
-          <div className="p-3 bg-neutral-100 rounded-xl border border-neutral-200 text-xs text-neutral-600 space-y-1">
-            <span className="font-semibold text-neutral-900 block">Supabase Connection Pending</span>
+          <div className="p-3 bg-[#f5f5f7] rounded-xl text-xs text-[#6e6e73] space-y-1">
+            <span className="font-semibold text-[#1d1d1f] block">Supabase Connection Pending</span>
             <p className="text-[11px] leading-relaxed">
               Environment variables for Supabase are not yet configured. Sign up will be enabled as soon as credentials are supplied.
             </p>
@@ -129,8 +130,8 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
         )}
 
         {/* Full Name */}
-        <div className="space-y-1.5 text-left">
-          <label htmlFor="signup-name" className="block text-xs font-semibold text-neutral-700">
+        <div className="text-left">
+          <label htmlFor="signup-name" className={LABEL_CLASS}>
             Full name
           </label>
           <input
@@ -145,13 +146,13 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
               setFullName(e.target.value);
               if (errorMessage) setErrorMessage(null);
             }}
-            className="w-full min-h-[44px] px-3.5 py-2.5 text-base md:text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] transition-all disabled:opacity-60"
+            className={`${INPUT_CLASS} min-h-[44px]`}
           />
         </div>
 
         {/* Email Address */}
-        <div className="space-y-1.5 text-left">
-          <label htmlFor="signup-email" className="block text-xs font-semibold text-neutral-700">
+        <div className="text-left">
+          <label htmlFor="signup-email" className={LABEL_CLASS}>
             Email address
           </label>
           <input
@@ -170,13 +171,13 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
               setEmail(e.target.value);
               if (errorMessage) setErrorMessage(null);
             }}
-            className="w-full min-h-[44px] px-3.5 py-2.5 text-base md:text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] transition-all disabled:opacity-60"
+            className={`${INPUT_CLASS} min-h-[44px]`}
           />
         </div>
 
         {/* Password */}
-        <div className="space-y-1.5 text-left">
-          <label htmlFor="signup-password" className="block text-xs font-semibold text-neutral-700">
+        <div className="text-left">
+          <label htmlFor="signup-password" className={LABEL_CLASS}>
             Password (minimum 8 characters)
           </label>
           <div className="relative">
@@ -192,13 +193,13 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
                 setPassword(e.target.value);
                 if (errorMessage) setErrorMessage(null);
               }}
-              className="w-full min-h-[44px] pl-3.5 pr-12 py-2.5 text-base md:text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] transition-all disabled:opacity-60"
+              className={`${INPUT_CLASS} min-h-[44px] pr-12`}
             />
             <button
               type="button"
               disabled={loading}
               onClick={() => setShowPassword(prev => !prev)}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100/80 transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7]"
               aria-label={showPassword ? 'Hide password' : 'Show password'}
               aria-pressed={showPassword}
             >
@@ -208,7 +209,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
 
           {/* Clean minimal password checklist */}
           {password.length > 0 && (
-            <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px] text-neutral-500">
+            <div className="flex flex-wrap items-center gap-3 pt-1.5 text-[11px] text-[#6e6e73]">
               <span className={`flex items-center gap-1 ${hasMinLength ? 'text-emerald-600 font-semibold' : ''}`}>
                 <Check className="w-3 h-3" /> 8+ chars
               </span>
@@ -223,8 +224,8 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
         </div>
 
         {/* Confirm Password */}
-        <div className="space-y-1.5 text-left">
-          <label htmlFor="signup-confirm" className="block text-xs font-semibold text-neutral-700">
+        <div className="text-left">
+          <label htmlFor="signup-confirm" className={LABEL_CLASS}>
             Confirm password
           </label>
           <input
@@ -239,7 +240,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
               setConfirmPassword(e.target.value);
               if (errorMessage) setErrorMessage(null);
             }}
-            className="w-full min-h-[44px] px-3.5 py-2.5 text-base md:text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] transition-all disabled:opacity-60"
+            className={`${INPUT_CLASS} min-h-[44px]`}
           />
         </div>
 
@@ -248,50 +249,50 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
           whileTap={tapScale.button}
           type="submit"
           disabled={loading}
-          className="w-full min-h-[48px] flex items-center justify-center gap-2 py-3 bg-[#111318] text-white text-sm font-semibold rounded-xl hover:bg-black transition-colors shadow-sm disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] mt-2"
+          className={`${ACCENT_BUTTON_CLASS} w-full min-h-[48px] text-sm font-semibold mt-2`}
         >
           {loading ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin text-[#87CEEB]" />
+              <Loader2 className="w-4 h-4 animate-spin" />
               <span>Creating Workspace...</span>
             </>
           ) : (
             <>
               <span>Create Account</span>
-              <ArrowRight className="w-4 h-4 text-[#87CEEB]" />
+              <ArrowRight className="w-4 h-4" />
             </>
           )}
         </motion.button>
 
         {/* Alternative Magic Link Option & Notice */}
-        <div className="space-y-2 pt-1">
+        <div className="space-y-2.5 pt-1">
           <button
             type="button"
             disabled={loading}
             onClick={() => onNavigate('magic-link')}
-            className="w-full min-h-[44px] flex items-center justify-center gap-2 py-2.5 bg-neutral-50 hover:bg-neutral-100 text-neutral-700 text-xs font-semibold rounded-xl border border-neutral-200 transition-colors cursor-pointer disabled:opacity-50"
+            className={`${SECONDARY_BUTTON_CLASS} w-full min-h-[44px] text-xs`}
           >
             <span>Or sign in with Magic Link</span>
           </button>
 
           {/* Free Plan Magic Link Notice */}
-          <div className="text-[11px] text-neutral-500 leading-relaxed space-y-1 px-3 py-2.5 bg-neutral-50/60 rounded-xl border border-neutral-200/60 text-left">
-            <span className="font-semibold text-neutral-800 block">Free Plan Notice</span>
+          <div className="text-[11px] text-[#6e6e73] leading-relaxed space-y-1 px-3.5 py-2.5 bg-[#f5f5f7] rounded-xl text-left">
+            <span className="font-semibold text-[#1d1d1f] block">Free Plan Notice</span>
             <p>On the free plan, you can request up to 2 magic links per hour. This limit helps prevent abuse and maintain reliable service.</p>
             <p>Please wait until your hourly limit resets before requesting another magic link.</p>
           </div>
         </div>
 
         {/* Route to Login */}
-        <div className="pt-3 text-center text-xs text-neutral-500 border-t border-black/[0.04]">
+        <div className="pt-3 text-center text-xs text-[#6e6e73] border-t border-black/[0.06]">
           <span>Already have an account? </span>
           <button
             type="button"
             disabled={loading}
             onClick={() => onNavigate('login')}
-            className="font-semibold text-[#111111] hover:underline cursor-pointer disabled:opacity-50"
+            className="font-semibold text-[#0284c7] hover:underline cursor-pointer disabled:opacity-50"
           >
-            Log In
+            Sign in
           </button>
         </div>
       </form>

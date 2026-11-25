@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { TrendingUp, Plus, Search, Trash2, Edit3, Banknote, ShieldCheck, X } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { TrendingUp, Plus, Trash2, Edit3 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { useXOSData } from '../../hooks/useXOSData';
 import { Income, IncomeSource } from '../../types';
@@ -7,8 +7,22 @@ import { formatCurrency, formatHumanDate, getTodayString } from '../../utils/for
 import { EmptyState } from '../common/EmptyState';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
+import {
+  ActionIconButton,
+  FilterBar,
+  INPUT_CLASS,
+  LABEL_CLASS,
+  MONO_INPUT_CLASS,
+  MetricCard,
+  Modal,
+  PRIMARY_BUTTON_CLASS,
+  PageHeader,
+  SECONDARY_BUTTON_CLASS,
+  SELECT_CLASS,
+  SectionCard
+} from '../ui';
 
-const BAR_COLORS = ['#87CEEB', '#111111', '#525252', '#737373', '#A3A3A3', '#38BDF8'];
+const BAR_COLORS = ['#0284c7', '#1d1d1f', '#38bdf8', '#6e6e73', '#a1a1aa', '#0369a1'];
 
 export const IncomeView: React.FC = () => {
   const data = useXOSData();
@@ -35,17 +49,6 @@ export const IncomeView: React.FC = () => {
   const [date, setDate] = useState(getTodayString());
   const [time, setTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [notes, setNotes] = useState('');
-
-  // Escape key handler for modal
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isModalOpen && !isSubmitting) {
-        setIsModalOpen(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isModalOpen, isSubmitting]);
 
   const openCreateModal = () => {
     setEditingIncome(null);
@@ -181,79 +184,56 @@ export const IncomeView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-black/[0.06]">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-[#111111] tracking-tight">
-            Income
-          </h2>
-          <p className="text-xs sm:text-sm text-neutral-500 font-normal mt-0.5">
-            Track salaries, freelance earnings, investments, and other revenue streams.
-          </p>
-        </div>
-
-        <button
-          onClick={openCreateModal}
-          type="button"
-          className="self-start sm:self-auto flex items-center gap-1.5 px-3.5 py-2 bg-[#111111] text-white text-xs font-semibold rounded-xl hover:bg-black transition-colors shadow-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-        >
-          <Plus className="w-4 h-4 text-[#87CEEB]" />
-          <span>Log Income</span>
-        </button>
-      </div>
-
-      {/* Main Dashboard Summary Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Prominent Dark Summary Panel */}
-        <div className="p-5 rounded-2xl bg-[#111111] text-white flex flex-col justify-between space-y-4 shadow-xs">
-          <div>
-            <div className="flex items-center justify-between text-neutral-400">
-              <span className="text-[11px] font-semibold uppercase tracking-wider">Total Revenue</span>
-              <span className="text-[11px] font-mono text-[#87CEEB] tabular-nums">{filteredIncomes.length} entries</span>
-            </div>
-            <div className="mt-3">
-              <div className="text-3xl font-extrabold font-mono tracking-tight text-white tabular-nums">
-                {formatCurrency(totalIncomeSum, data.settings.currency)}
-              </div>
-              <p className="text-xs text-neutral-400 mt-1">
-                Across {sourceChartData.length} active revenue sources
-              </p>
-            </div>
-          </div>
-
+      <PageHeader
+        title="Income"
+        description="Track salaries, freelance earnings, investments, and other revenue streams."
+        actions={
           <button
             onClick={openCreateModal}
             type="button"
-            className="w-full py-2.5 bg-[#87CEEB] text-[#111111] text-xs font-bold rounded-xl hover:bg-sky-300 transition-colors text-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white flex items-center justify-center gap-1.5"
+            className={PRIMARY_BUTTON_CLASS}
           >
             <Plus className="w-4 h-4" />
-            <span>Log Revenue Entry</span>
+            <span>Log Income</span>
           </button>
-        </div>
+        }
+      />
 
-        {/* Revenue Streams Breakdown Chart */}
-        <div className="lg:col-span-3 p-5 rounded-2xl bg-white border border-black/[0.08] space-y-3 shadow-xs">
-          <div className="flex items-center justify-between border-b border-black/[0.06] pb-2.5">
-            <h3 className="font-bold text-sm text-[#111111] flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-[#87CEEB]" />
-              Revenue Streams Breakdown by Source
-            </h3>
-            <span className="text-xs text-neutral-400">By Income Source</span>
-          </div>
+      {/* Summary & Chart */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-stretch">
+        <MetricCard
+          variant="focal"
+          tone="positive"
+          label="Total Revenue"
+          value={formatCurrency(totalIncomeSum, data.settings.currency)}
+          sublabel={`${filteredIncomes.length} ${filteredIncomes.length === 1 ? 'entry' : 'entries'} · ${sourceChartData.length} ${sourceChartData.length === 1 ? 'source' : 'sources'}`}
+        />
 
+        <SectionCard
+          title="Revenue by Source"
+          subtitle="Earnings across income categories"
+          className="lg:col-span-3"
+        >
           {sourceChartData.length === 0 ? (
-            <div className="h-36 flex items-center justify-center text-xs text-neutral-400">
-              No revenue entries logged yet. Click "Log Revenue Entry" above to record income.
+            <div className="h-40 flex items-center justify-center text-xs text-[#86868b]">
+              No revenue entries logged yet. Log income to view breakdown by source.
             </div>
           ) : (
-            <div className="h-36 w-full">
+            <div className="h-40 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={sourceChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
+                <BarChart data={sourceChartData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#6e6e73' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#6e6e73' }} axisLine={false} tickLine={false} />
                   <Tooltip
                     formatter={(val: any) => [formatCurrency(Number(val || 0), data.settings.currency), 'Amount']}
-                    contentStyle={{ backgroundColor: '#111111', color: '#ffffff', borderRadius: '12px', fontSize: '12px', border: 'none' }}
+                    contentStyle={{
+                      backgroundColor: '#ffffff',
+                      color: '#1d1d1f',
+                      borderRadius: '12px',
+                      fontSize: '12px',
+                      border: '1px solid rgba(0,0,0,0.08)',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.08)'
+                    }}
                   />
                   <Bar dataKey="amount" radius={[6, 6, 0, 0]}>
                     {sourceChartData.map((_, index) => (
@@ -264,35 +244,31 @@ export const IncomeView: React.FC = () => {
               </ResponsiveContainer>
             </div>
           )}
-        </div>
+        </SectionCard>
       </div>
 
-      {/* Controls Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-neutral-50 p-2.5 rounded-2xl border border-neutral-200">
-        <div className="relative flex-1 min-w-0">
-          <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search income descriptions or notes..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full min-h-[40px] pl-9 pr-3 py-2 text-xs border border-neutral-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-          />
-        </div>
+      {/* Filters */}
+      <FilterBar
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search income descriptions or notes…"
+        searchAriaLabel="Search income"
+        filters={
+          <select
+            value={selectedSource}
+            onChange={(e) => setSelectedSource(e.target.value)}
+            aria-label="Filter by income source"
+            className={`${SELECT_CLASS} sm:w-52`}
+          >
+            <option value="all">All Income Sources</option>
+            {filterSourceOptions.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        }
+      />
 
-        <select
-          value={selectedSource}
-          onChange={(e) => setSelectedSource(e.target.value)}
-          className="w-full sm:w-auto min-h-[40px] px-2.5 py-2 text-xs border border-neutral-200 rounded-lg bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-        >
-          <option value="all">All Income Sources</option>
-          {filterSourceOptions.map(s => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Data Presentation: Desktop Table vs Mobile Cards */}
+      {/* Data Presentation */}
       {filteredIncomes.length === 0 ? (
         <EmptyState
           icon={TrendingUp}
@@ -307,131 +283,124 @@ export const IncomeView: React.FC = () => {
         />
       ) : (
         <>
-          {/* Mobile Card List (widths < 768px: 320px, 360px, 375px, 390px, etc.) */}
-          <div className="md:hidden space-y-2.5">
-            {filteredIncomes.map((inc) => (
-              <div key={inc.id} className="cv-auto p-4 rounded-2xl border border-black/[0.08] bg-white space-y-2.5 shadow-xs">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <span className="font-semibold text-sm text-[#111111] block truncate">{inc.title}</span>
-                    <span className="text-[11px] text-neutral-500 block truncate">
-                      {inc.source}
-                    </span>
+          {/* Mobile List */}
+          <div className="md:hidden divide-y divide-black/[0.06] bg-white rounded-2xl border border-black/[0.08] overflow-hidden">
+            {filteredIncomes.map((inc) => {
+              const isSynced = Boolean(inc.salaryPayoutId && syncedPayoutIds.has(inc.salaryPayoutId));
+              return (
+                <div key={inc.id} className="cv-auto p-4 space-y-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="font-medium text-sm text-[#1d1d1f] block truncate">{inc.title}</span>
+                      <span className="text-xs text-[#6e6e73] block truncate mt-0.5">
+                        {inc.source}
+                        {isSynced ? ' · Payout Synced' : ''}
+                      </span>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="font-mono font-semibold text-sm text-emerald-700 block tabular-nums">
+                        +{formatCurrency(inc.amount, data.settings.currency)}
+                      </span>
+                      <span className="text-[11px] text-[#86868b] font-mono tabular-nums block">
+                        {formatHumanDate(inc.date)}{inc.time ? ` · ${inc.time}` : ''}
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <span className="font-mono font-bold text-sm text-[#111111] block tabular-nums">
-                      +{formatCurrency(inc.amount, data.settings.currency)}
-                    </span>
-                    <span className="text-[10px] text-neutral-400 font-mono block">
-                      {formatHumanDate(inc.date)} {inc.time ? `· ${inc.time}` : ''}
-                    </span>
-                  </div>
-                </div>
 
-                {inc.salaryPayoutId && syncedPayoutIds.has(inc.salaryPayoutId) && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-neutral-100 text-neutral-700 border border-neutral-200 font-mono">
-                    <Banknote className="w-3 h-3 text-[#87CEEB]" /> Payout Synced
-                  </span>
-                )}
-
-                {inc.notes && (
-                  <p className="text-xs text-neutral-500 bg-neutral-50 p-2 rounded-lg font-normal">
-                    {inc.notes}
-                  </p>
-                )}
-
-                <div className="pt-2 border-t border-neutral-100 flex items-center justify-end gap-2 text-xs text-neutral-400">
-                  {inc.salaryPayoutId && syncedPayoutIds.has(inc.salaryPayoutId) ? (
-                    <span className="text-[11px] font-medium text-neutral-500">
-                      Managed via Salary Payout
-                    </span>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => openEditModal(inc)}
-                        className="p-1 text-neutral-500 hover:text-black cursor-pointer"
-                        title="Edit"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(inc.id)}
-                        className="p-1 text-neutral-500 hover:text-rose-600 cursor-pointer"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </>
+                  {inc.notes && (
+                    <p className="text-xs text-[#6e6e73] leading-relaxed">
+                      {inc.notes}
+                    </p>
                   )}
+
+                  <div className="flex items-center justify-end pt-1 text-xs text-[#86868b]">
+                    {isSynced ? (
+                      <span className="text-xs text-[#6e6e73]">Managed via Salary Payout</span>
+                    ) : (
+                      <div className="flex items-center gap-1 -mr-1">
+                        <ActionIconButton
+                          icon={Edit3}
+                          label="Edit income"
+                          variant="edit"
+                          onClick={() => openEditModal(inc)}
+                        />
+                        <ActionIconButton
+                          icon={Trash2}
+                          label="Delete income"
+                          variant="delete"
+                          onClick={() => handleDelete(inc.id)}
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
-          {/* Desktop Table (widths >= 768px) */}
-          <div className="hidden md:block bg-white rounded-2xl border border-black/[0.08] overflow-hidden shadow-xs">
+          {/* Desktop Table */}
+          <div className="hidden md:block bg-white rounded-2xl border border-black/[0.08] overflow-hidden">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-neutral-50/80 border-b border-black/[0.06] text-[11px] font-bold text-neutral-500 uppercase tracking-wider">
-                  <th className="py-3 px-4">Title & Details</th>
+                <tr className="bg-[#fbfbfd] border-b border-black/[0.06] text-[11px] font-medium text-[#6e6e73]">
+                  <th className="py-3 px-4">Title &amp; Details</th>
                   <th className="py-3 px-4">Source</th>
                   <th className="py-3 px-4">Date Received</th>
                   <th className="py-3 px-4 text-right">Amount</th>
-                  <th className="py-3 px-4 text-center">Actions</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-black/[0.06] text-xs text-neutral-700">
-                {filteredIncomes.map((inc) => (
-                  <tr key={inc.id} className="hover:bg-neutral-50/70 transition-colors">
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-[#111111] block">{inc.title}</span>
-                        {inc.salaryPayoutId && syncedPayoutIds.has(inc.salaryPayoutId) && (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] bg-neutral-100 text-neutral-700 border border-neutral-200 font-semibold flex items-center gap-1">
-                            <Banknote className="w-3 h-3 text-[#87CEEB]" /> Payout Synced
-                          </span>
-                        )}
-                      </div>
-                      {inc.notes && <span className="text-[11px] text-neutral-400 block">{inc.notes}</span>}
-                    </td>
-                    <td className="py-3 px-4 font-medium text-neutral-800">
-                      {inc.source}
-                    </td>
-                    <td className="py-3 px-4 font-mono text-neutral-600 tabular-nums">
-                      {formatHumanDate(inc.date)} {inc.time ? `(${inc.time})` : ''}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-[#111111] tabular-nums">
-                      +{formatCurrency(inc.amount, data.settings.currency)}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {inc.salaryPayoutId && syncedPayoutIds.has(inc.salaryPayoutId) ? (
-                        <span
-                          className="text-[11px] font-medium text-neutral-400"
-                          title="Manage or delete this payout inside the Salary section"
-                        >
-                          Managed in Salary
+              <tbody className="divide-y divide-black/[0.06] text-[13px] text-[#1d1d1f]">
+                {filteredIncomes.map((inc) => {
+                  const isSynced = Boolean(inc.salaryPayoutId && syncedPayoutIds.has(inc.salaryPayoutId));
+                  return (
+                    <tr key={inc.id} className="hover:bg-[#f5f5f7]/60 transition-colors">
+                      <td className="py-3 px-4">
+                        <span className="font-medium text-[#1d1d1f] block">
+                          {inc.title}
+                          {isSynced && (
+                            <span className="ml-2 text-xs font-normal text-[#0284c7]">· Payout Synced</span>
+                          )}
                         </span>
-                      ) : (
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => openEditModal(inc)}
-                            className="p-1 text-neutral-400 hover:text-black cursor-pointer"
-                            title="Edit"
+                        {inc.notes && <span className="text-xs text-[#6e6e73] block mt-0.5">{inc.notes}</span>}
+                      </td>
+                      <td className="py-3 px-4 text-[#1d1d1f]">
+                        {inc.source}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-xs text-[#6e6e73] tabular-nums">
+                        {formatHumanDate(inc.date)} {inc.time ? `· ${inc.time}` : ''}
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono font-semibold text-emerald-700 tabular-nums">
+                        +{formatCurrency(inc.amount, data.settings.currency)}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        {isSynced ? (
+                          <span
+                            className="text-xs text-[#86868b]"
+                            title="Manage or delete this payout inside the Salary section"
                           >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(inc.id)}
-                            className="p-1 text-neutral-400 hover:text-rose-600 cursor-pointer"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                            Managed in Salary
+                          </span>
+                        ) : (
+                          <div className="inline-flex items-center justify-end gap-0.5">
+                            <ActionIconButton
+                              icon={Edit3}
+                              label="Edit income"
+                              variant="edit"
+                              onClick={() => openEditModal(inc)}
+                            />
+                            <ActionIconButton
+                              icon={Trash2}
+                              label="Delete income"
+                              variant="delete"
+                              onClick={() => handleDelete(inc.id)}
+                            />
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -439,131 +408,112 @@ export const IncomeView: React.FC = () => {
       )}
 
       {/* Modal Add / Edit Income */}
-      {isModalOpen && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
-          onClick={() => { if (!isSubmitting) setIsModalOpen(false); }}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div 
-            className="bg-white rounded-2xl max-w-lg w-full border border-black/[0.08] shadow-2xl p-5 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
-              <h3 className="font-bold text-base sm:text-lg text-[#111111]">
-                {editingIncome ? 'Edit Income Record' : 'Log Income Entry'}
-              </h3>
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={() => setIsModalOpen(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-black cursor-pointer disabled:opacity-50"
-              >
-                <X className="w-5 h-5" />
-              </button>
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => { if (!isSubmitting) setIsModalOpen(false); }}
+        disableClose={isSubmitting}
+        title={editingIncome ? 'Edit Income' : 'Log Income'}
+        subtitle="Record received earnings and revenue source."
+        footer={
+          <>
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => setIsModalOpen(false)}
+              className={SECONDARY_BUTTON_CLASS}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="income-form"
+              disabled={isSubmitting}
+              className={PRIMARY_BUTTON_CLASS}
+            >
+              {isSubmitting ? 'Saving…' : (editingIncome ? 'Update Income' : 'Save Income')}
+            </button>
+          </>
+        }
+      >
+        <form id="income-form" onSubmit={handleSubmit} className="space-y-4">
+          {formError && (
+            <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-medium">
+              {formError}
             </div>
+          )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {formError && (
-                <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-medium">
-                  {formError}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Title *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Monthly Salary"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Amount ({data.settings.currency}) *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    placeholder="0.00"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Source</label>
-                  <select
-                    value={source}
-                    onChange={(e) => setSource(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                  >
-                    {modalSourceOptions.map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Date Received</label>
-                  <input
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Time (HH:mm)</label>
-                  <input
-                    type="time"
-                    value={time}
-                    onChange={(e) => setTime(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1">Notes</label>
-                <input
-                  type="text"
-                  placeholder="Optional details"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                />
-              </div>
-
-              <div className="pt-3 flex justify-end gap-2 border-t border-neutral-100">
-                <button
-                  type="button"
-                  disabled={isSubmitting}
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Saving to Database...' : (editingIncome ? 'Update Income' : 'Save Income')}
-                </button>
-              </div>
-            </form>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <div>
+              <label className={LABEL_CLASS}>Title *</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Monthly Salary"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className={INPUT_CLASS}
+              />
+            </div>
+            <div>
+              <label className={LABEL_CLASS}>Amount ({data.settings.currency}) *</label>
+              <input
+                type="number"
+                step="0.01"
+                required
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className={MONO_INPUT_CLASS}
+              />
+            </div>
           </div>
-        </div>
-      )}
 
-      {/* Accessible Confirmation Dialog */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            <div>
+              <label className={LABEL_CLASS}>Source</label>
+              <select
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+                className={SELECT_CLASS}
+              >
+                {modalSourceOptions.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={LABEL_CLASS}>Date Received</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className={INPUT_CLASS}
+              />
+            </div>
+            <div>
+              <label className={LABEL_CLASS}>Time (HH:mm)</label>
+              <input
+                type="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                className={MONO_INPUT_CLASS}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className={LABEL_CLASS}>Notes</label>
+            <input
+              type="text"
+              placeholder="Optional details"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className={INPUT_CLASS}
+            />
+          </div>
+        </form>
+      </Modal>
+
       <ConfirmDialog
         isOpen={deleteTargetId !== null}
         title="Delete Income Record"

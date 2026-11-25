@@ -43,7 +43,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
     if (charCount < currentText.length) {
       const timer = setTimeout(() => {
         setCharCount(prev => prev + 1);
-      }, 28);
+      }, 24);
       return () => clearTimeout(timer);
     }
 
@@ -54,7 +54,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
     const pauseTimer = setTimeout(() => {
       setMessageIndex(prev => Math.min(prev + 1, LOADING_MESSAGES.length - 1));
       setCharCount(0);
-    }, 950);
+    }, 900);
     return () => clearTimeout(pauseTimer);
   }, [charCount, messageIndex, reducedMotion, error]);
 
@@ -64,21 +64,21 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
 
   return (
     <div
-      className="min-h-screen min-h-[100dvh] bg-white text-[#111318] flex flex-col items-center justify-center px-6 pt-[max(1.5rem,env(safe-area-inset-top,0px))] pb-[max(1.5rem,env(safe-area-inset-bottom,0px))]"
+      className="min-h-screen min-h-[100dvh] bg-white text-[#1d1d1f] flex flex-col items-center justify-center px-6 pt-[max(1.5rem,env(safe-area-inset-top,0px))] pb-[max(1.5rem,env(safe-area-inset-bottom,0px))]"
       role={error ? 'alert' : 'status'}
       aria-live="polite"
     >
       <div className="w-full max-w-xs flex flex-col items-center text-center space-y-5">
-        <XOSLogo size="lg" className="border-neutral-200/80 shadow-xs" />
+        <XOSLogo size="lg" className="border-black/[0.08]" />
 
         <div className="space-y-2 w-full">
-          <span className="block text-base font-bold tracking-tight text-[#111318]">
+          <span className="block text-base font-semibold tracking-tight text-[#1d1d1f]">
             XOS
           </span>
 
           {error ? (
             <div className="pt-2 space-y-4">
-              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs leading-relaxed flex items-start gap-2.5 text-left">
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs leading-relaxed flex items-start gap-2.5 text-left">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                 <span>{error}</span>
               </div>
@@ -88,9 +88,9 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                   <button
                     type="button"
                     onClick={onRetry}
-                    className="w-full min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#111318] hover:bg-black text-white text-xs font-semibold transition-colors cursor-pointer"
+                    className="w-full min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#1d1d1f] hover:bg-black text-white text-[13px] font-medium transition-colors cursor-pointer"
                   >
-                    <RotateCcw className="w-3.5 h-3.5 text-[#8ECFFF]" />
+                    <RotateCcw className="w-3.5 h-3.5" />
                     <span>Try Again</span>
                   </button>
                 )}
@@ -98,7 +98,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                   <button
                     type="button"
                     onClick={onContinue}
-                    className="w-full min-h-[44px] inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-white hover:bg-neutral-50 border border-neutral-200 text-[#111318] text-xs font-semibold transition-colors cursor-pointer"
+                    className="w-full min-h-[44px] inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-[#f5f5f7] hover:bg-[#e8e8ed] text-[#1d1d1f] text-[13px] font-medium transition-colors cursor-pointer"
                   >
                     Continue to Welcome
                   </button>
@@ -108,19 +108,13 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
           ) : (
             <>
               <div className="min-h-[20px] flex items-center justify-center">
-                <p className="text-xs text-[#687482] font-medium tracking-normal">
+                <p className="text-xs text-[#6e6e73] font-medium tracking-normal">
                   <span>{displayedText}</span>
-                  {!reducedMotion && (
-                    <span
-                      aria-hidden="true"
-                      className="inline-block w-[1.5px] h-3.5 bg-[#8ECFFF] align-middle ml-0.5 animate-pulse"
-                    />
-                  )}
                 </p>
               </div>
 
-              <div className="w-28 h-1 mx-auto rounded-full bg-[#EAF6FF] overflow-hidden mt-3">
-                <div className="h-full w-1/2 rounded-full bg-[#8ECFFF] animate-[pulse_1.4s_ease-in-out_infinite]" />
+              <div className="w-24 h-1 mx-auto rounded-full bg-[#f5f5f7] overflow-hidden mt-3">
+                <div className="h-full w-1/2 rounded-full bg-[#0284c7] animate-[pulse_1.4s_ease-in-out_infinite]" />
               </div>
             </>
           )}

@@ -346,17 +346,21 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
     ])
   );
 
+  const fieldInputClass =
+    'w-full min-h-[44px] sm:min-h-[38px] rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-base sm:text-sm text-[#1d1d1f] focus:outline-none focus:border-[#0284c7] focus:ring-2 focus:ring-[#0284c7]/15';
+
   return (
     <div
       data-testid="transaction-preview-card"
-      className="mb-3 rounded-2xl border border-[#0284C7]/25 bg-sky-50/35 p-4 space-y-3"
+      className="mb-3 rounded-2xl border border-black/[0.08] bg-[#f5f5f7] p-4 space-y-3"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-[#0284C7]/10 text-[#0284C7] text-xs font-semibold">
+          <span className="text-xs font-semibold text-[#0284c7] truncate">
             {getIntentBadge(tx)}
           </span>
-          <span className="text-[11px] text-neutral-500 truncate">
+          <span aria-hidden="true" className="text-[#86868b] text-xs">·</span>
+          <span className="text-xs text-[#6e6e73] truncate">
             Requires confirmation
           </span>
         </div>
@@ -366,7 +370,7 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
             type="button"
             onClick={onStartEdit}
             disabled={isSaving}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-neutral-600 hover:text-[#111111] hover:bg-white cursor-pointer disabled:opacity-50 min-h-[32px]"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-white cursor-pointer disabled:opacity-50 min-h-[36px]"
           >
             <Pencil className="w-3.5 h-3.5" />
             <span>Edit</span>
@@ -378,35 +382,35 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
         <form onSubmit={handleSaveEdit} className="space-y-2.5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <label className="block space-y-1">
-              <span className="text-[11px] font-medium text-neutral-600">Amount</span>
+              <span className="text-[11px] font-medium text-[#6e6e73]">Amount</span>
               <input
                 type="number"
                 step="0.01"
                 min="0.01"
                 value={draft.amount}
                 onChange={(e) => setDraft(prev => ({ ...prev, amount: e.target.value }))}
-                className="w-full rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-sm text-[#111111] focus:outline-none focus:border-[#0284C7]"
+                className={`${fieldInputClass} font-mono tabular-nums`}
               />
             </label>
 
             <label className="block space-y-1">
-              <span className="text-[11px] font-medium text-neutral-600">Date</span>
+              <span className="text-[11px] font-medium text-[#6e6e73]">Date</span>
               <input
                 type="date"
                 value={draft.date}
                 onChange={(e) => setDraft(prev => ({ ...prev, date: e.target.value }))}
-                className="w-full rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-sm text-[#111111] focus:outline-none focus:border-[#0284C7]"
+                className={fieldInputClass}
               />
             </label>
 
             {tx.intent === 'create_expense' && (
               <>
                 <label className="block space-y-1">
-                  <span className="text-[11px] font-medium text-neutral-600">Category</span>
+                  <span className="text-[11px] font-medium text-[#6e6e73]">Category</span>
                   <select
                     value={draft.category}
                     onChange={(e) => setDraft(prev => ({ ...prev, category: e.target.value }))}
-                    className="w-full rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-sm text-[#111111] focus:outline-none focus:border-[#0284C7]"
+                    className={fieldInputClass}
                   >
                     {expenseCatOptions.map(cat => (
                       <option key={cat} value={cat}>
@@ -417,7 +421,7 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
                 </label>
 
                 <label className="block space-y-1">
-                  <span className="text-[11px] font-medium text-neutral-600">Payment Method</span>
+                  <span className="text-[11px] font-medium text-[#6e6e73]">Payment Method</span>
                   <select
                     value={draft.paymentMethod}
                     onChange={(e) =>
@@ -426,7 +430,7 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
                         paymentMethod: e.target.value as ValidPaymentMethod
                       }))
                     }
-                    className="w-full rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-sm text-[#111111] focus:outline-none focus:border-[#0284C7]"
+                    className={fieldInputClass}
                   >
                     {ALLOWED_PAYMENT_METHODS.map(pm => (
                       <option key={pm} value={pm}>
@@ -437,12 +441,12 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
                 </label>
 
                 <label className="block space-y-1 sm:col-span-2">
-                  <span className="text-[11px] font-medium text-neutral-600">Description</span>
+                  <span className="text-[11px] font-medium text-[#6e6e73]">Description</span>
                   <input
                     type="text"
                     value={draft.title}
                     onChange={(e) => setDraft(prev => ({ ...prev, title: e.target.value }))}
-                    className="w-full rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-sm text-[#111111] focus:outline-none focus:border-[#0284C7]"
+                    className={fieldInputClass}
                   />
                 </label>
               </>
@@ -451,11 +455,11 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
             {tx.intent === 'create_income' && (
               <>
                 <label className="block space-y-1">
-                  <span className="text-[11px] font-medium text-neutral-600">Source</span>
+                  <span className="text-[11px] font-medium text-[#6e6e73]">Source</span>
                   <select
                     value={draft.source}
                     onChange={(e) => setDraft(prev => ({ ...prev, source: e.target.value }))}
-                    className="w-full rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-sm text-[#111111] focus:outline-none focus:border-[#0284C7]"
+                    className={fieldInputClass}
                   >
                     {incomeSrcOptions.map(src => (
                       <option key={src} value={src}>
@@ -466,12 +470,12 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
                 </label>
 
                 <label className="block space-y-1">
-                  <span className="text-[11px] font-medium text-neutral-600">Description</span>
+                  <span className="text-[11px] font-medium text-[#6e6e73]">Description</span>
                   <input
                     type="text"
                     value={draft.title}
                     onChange={(e) => setDraft(prev => ({ ...prev, title: e.target.value }))}
-                    className="w-full rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-sm text-[#111111] focus:outline-none focus:border-[#0284C7]"
+                    className={fieldInputClass}
                   />
                 </label>
               </>
@@ -480,32 +484,32 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
             {(tx.intent === 'create_debt_receivable' || tx.intent === 'create_debt_payable') && (
               <>
                 <label className="block space-y-1">
-                  <span className="text-[11px] font-medium text-neutral-600">Person</span>
+                  <span className="text-[11px] font-medium text-[#6e6e73]">Person</span>
                   <input
                     type="text"
                     value={draft.personName}
                     onChange={(e) => setDraft(prev => ({ ...prev, personName: e.target.value }))}
-                    className="w-full rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-sm text-[#111111] focus:outline-none focus:border-[#0284C7]"
+                    className={fieldInputClass}
                   />
                 </label>
 
                 <label className="block space-y-1">
-                  <span className="text-[11px] font-medium text-neutral-600">Due Date (Optional)</span>
+                  <span className="text-[11px] font-medium text-[#6e6e73]">Due Date (Optional)</span>
                   <input
                     type="date"
                     value={draft.dueDate}
                     onChange={(e) => setDraft(prev => ({ ...prev, dueDate: e.target.value }))}
-                    className="w-full rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-sm text-[#111111] focus:outline-none focus:border-[#0284C7]"
+                    className={fieldInputClass}
                   />
                 </label>
 
                 <label className="block space-y-1 sm:col-span-2">
-                  <span className="text-[11px] font-medium text-neutral-600">Description</span>
+                  <span className="text-[11px] font-medium text-[#6e6e73]">Description</span>
                   <input
                     type="text"
                     value={draft.description}
                     onChange={(e) => setDraft(prev => ({ ...prev, description: e.target.value }))}
-                    className="w-full rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-sm text-[#111111] focus:outline-none focus:border-[#0284C7]"
+                    className={fieldInputClass}
                   />
                 </label>
               </>
@@ -513,7 +517,7 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
 
             {tx.intent === 'record_debt_repayment' && (
               <label className="block space-y-1 sm:col-span-2">
-                <span className="text-[11px] font-medium text-neutral-600">Payment Method</span>
+                <span className="text-[11px] font-medium text-[#6e6e73]">Payment Method</span>
                 <select
                   value={draft.paymentMethod}
                   onChange={(e) =>
@@ -522,7 +526,7 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
                       paymentMethod: e.target.value as ValidPaymentMethod
                     }))
                   }
-                  className="w-full rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-sm text-[#111111] focus:outline-none focus:border-[#0284C7]"
+                  className={fieldInputClass}
                 >
                   {ALLOWED_PAYMENT_METHODS.map(pm => (
                     <option key={pm} value={pm}>
@@ -537,11 +541,11 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
               <>
                 {catalog.activeSavingsGoals.length > 0 && (
                   <label className="block space-y-1">
-                    <span className="text-[11px] font-medium text-neutral-600">Savings Goal</span>
+                    <span className="text-[11px] font-medium text-[#6e6e73]">Savings Goal</span>
                     <select
                       value={draft.savingsGoalId}
                       onChange={(e) => setDraft(prev => ({ ...prev, savingsGoalId: e.target.value }))}
-                      className="w-full rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-sm text-[#111111] focus:outline-none focus:border-[#0284C7]"
+                      className={fieldInputClass}
                     >
                       {catalog.activeSavingsGoals.map(goal => (
                         <option key={goal.id} value={goal.id}>
@@ -553,7 +557,7 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
                 )}
 
                 <label className="block space-y-1">
-                  <span className="text-[11px] font-medium text-neutral-600">Type</span>
+                  <span className="text-[11px] font-medium text-[#6e6e73]">Type</span>
                   <select
                     value={draft.transactionType}
                     onChange={(e) =>
@@ -562,7 +566,7 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
                         transactionType: e.target.value as 'deposit' | 'withdrawal'
                       }))
                     }
-                    className="w-full rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-sm text-[#111111] focus:outline-none focus:border-[#0284C7]"
+                    className={fieldInputClass}
                   >
                     <option value="deposit">Deposit</option>
                     <option value="withdrawal">Withdrawal</option>
@@ -572,13 +576,13 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
             )}
 
             <label className="block space-y-1 sm:col-span-2">
-              <span className="text-[11px] font-medium text-neutral-600">Notes (Optional)</span>
+              <span className="text-[11px] font-medium text-[#6e6e73]">Notes (Optional)</span>
               <input
                 type="text"
                 value={draft.notes}
                 onChange={(e) => setDraft(prev => ({ ...prev, notes: e.target.value }))}
                 placeholder="Optional note"
-                className="w-full rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-sm text-[#111111] focus:outline-none focus:border-[#0284C7]"
+                className={fieldInputClass}
               />
             </label>
           </div>
@@ -593,13 +597,13 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
             <button
               type="button"
               onClick={onCancelEdit}
-              className="px-3 py-2 rounded-xl border border-black/[0.1] bg-white text-xs font-medium text-neutral-700 hover:text-[#111111] cursor-pointer min-h-[38px]"
+              className="px-3.5 py-2 rounded-xl border border-black/[0.12] bg-white text-xs font-medium text-[#1d1d1f] hover:bg-[#fbfbfd] cursor-pointer min-h-[44px] sm:min-h-[38px]"
             >
               Back
             </button>
             <button
               type="submit"
-              className="px-3.5 py-2 rounded-xl bg-[#0284C7] hover:bg-[#0369A1] text-white text-xs font-semibold cursor-pointer min-h-[38px]"
+              className="px-4 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold cursor-pointer min-h-[44px] sm:min-h-[38px]"
             >
               Apply Changes
             </button>
@@ -607,37 +611,37 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
         </form>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl bg-white border border-black/[0.06] p-3 text-xs">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 rounded-xl bg-white p-3.5 text-xs">
             <div>
-              <span className="text-neutral-400 block">Amount</span>
-              <span className="font-semibold text-[#111111] text-sm tabular-nums">
+              <span className="text-[#86868b] block">Amount</span>
+              <span className="font-semibold text-[#1d1d1f] text-sm font-mono tabular-nums">
                 {fmt(tx.amount)}
               </span>
             </div>
 
             <div>
-              <span className="text-neutral-400 block">Date</span>
-              <span className="font-medium text-[#111111] tabular-nums">{tx.date}</span>
+              <span className="text-[#86868b] block">Date</span>
+              <span className="font-medium text-[#1d1d1f] tabular-nums">{tx.date}</span>
             </div>
 
             {tx.intent === 'create_expense' && (
               <>
                 <div>
-                  <span className="text-neutral-400 block">Category</span>
-                  <span className="font-medium text-[#111111]">{tx.category}</span>
+                  <span className="text-[#86868b] block">Category</span>
+                  <span className="font-medium text-[#1d1d1f]">{tx.category}</span>
                 </div>
                 <div>
-                  <span className="text-neutral-400 block">Payment</span>
-                  <span className="font-medium text-[#111111]">{tx.paymentMethod}</span>
+                  <span className="text-[#86868b] block">Payment</span>
+                  <span className="font-medium text-[#1d1d1f]">{tx.paymentMethod}</span>
                 </div>
                 <div className="col-span-2">
-                  <span className="text-neutral-400 block">Description</span>
-                  <span className="font-medium text-[#111111]">{tx.title}</span>
+                  <span className="text-[#86868b] block">Description</span>
+                  <span className="font-medium text-[#1d1d1f]">{tx.title}</span>
                 </div>
                 {tx.notes && (
                   <div className="col-span-2">
-                    <span className="text-neutral-400 block">Notes</span>
-                    <span className="text-neutral-700">{tx.notes}</span>
+                    <span className="text-[#86868b] block">Notes</span>
+                    <span className="text-[#6e6e73]">{tx.notes}</span>
                   </div>
                 )}
               </>
@@ -646,17 +650,17 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
             {tx.intent === 'create_income' && (
               <>
                 <div>
-                  <span className="text-neutral-400 block">Source</span>
-                  <span className="font-medium text-[#111111]">{tx.source}</span>
+                  <span className="text-[#86868b] block">Source</span>
+                  <span className="font-medium text-[#1d1d1f]">{tx.source}</span>
                 </div>
                 <div>
-                  <span className="text-neutral-400 block">Description</span>
-                  <span className="font-medium text-[#111111]">{tx.title}</span>
+                  <span className="text-[#86868b] block">Description</span>
+                  <span className="font-medium text-[#1d1d1f]">{tx.title}</span>
                 </div>
                 {tx.notes && (
                   <div className="col-span-2">
-                    <span className="text-neutral-400 block">Notes</span>
-                    <span className="text-neutral-700">{tx.notes}</span>
+                    <span className="text-[#86868b] block">Notes</span>
+                    <span className="text-[#6e6e73]">{tx.notes}</span>
                   </div>
                 )}
               </>
@@ -665,25 +669,25 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
             {(tx.intent === 'create_debt_receivable' || tx.intent === 'create_debt_payable') && (
               <>
                 <div>
-                  <span className="text-neutral-400 block">Person</span>
-                  <span className="font-medium text-[#111111]">{tx.personName}</span>
+                  <span className="text-[#86868b] block">Person</span>
+                  <span className="font-medium text-[#1d1d1f]">{tx.personName}</span>
                 </div>
                 <div>
-                  <span className="text-neutral-400 block">Direction</span>
-                  <span className="font-medium text-[#111111]">
+                  <span className="text-[#86868b] block">Direction</span>
+                  <span className="font-medium text-[#1d1d1f]">
                     {tx.direction === 'receive' ? 'Money to Receive' : 'Money to Pay'}
                   </span>
                 </div>
                 {tx.dueDate && (
                   <div>
-                    <span className="text-neutral-400 block">Due Date</span>
-                    <span className="font-medium text-[#111111] tabular-nums">{tx.dueDate}</span>
+                    <span className="text-[#86868b] block">Due Date</span>
+                    <span className="font-medium text-[#1d1d1f] tabular-nums">{tx.dueDate}</span>
                   </div>
                 )}
                 {tx.description && (
                   <div className="col-span-2">
-                    <span className="text-neutral-400 block">Description</span>
-                    <span className="text-neutral-700">{tx.description}</span>
+                    <span className="text-[#86868b] block">Description</span>
+                    <span className="text-[#6e6e73]">{tx.description}</span>
                   </div>
                 )}
               </>
@@ -692,21 +696,21 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
             {tx.intent === 'record_debt_repayment' && (
               <>
                 <div>
-                  <span className="text-neutral-400 block">Person</span>
-                  <span className="font-medium text-[#111111]">{tx.personName}</span>
+                  <span className="text-[#86868b] block">Person</span>
+                  <span className="font-medium text-[#1d1d1f]">{tx.personName}</span>
                 </div>
                 <div>
-                  <span className="text-neutral-400 block">Payment</span>
-                  <span className="font-medium text-[#111111]">{tx.paymentMethod}</span>
+                  <span className="text-[#86868b] block">Payment</span>
+                  <span className="font-medium text-[#1d1d1f]">{tx.paymentMethod}</span>
                 </div>
                 <div className="col-span-2">
-                  <span className="text-neutral-400 block">Remaining Balance</span>
-                  <span className="font-medium text-[#111111] tabular-nums">
+                  <span className="text-[#86868b] block">Remaining Balance</span>
+                  <span className="font-medium text-[#1d1d1f] font-mono tabular-nums">
                     {fmt(tx.remainingBefore)} → {fmt(tx.remainingAfter)}
                   </span>
                 </div>
                 {tx.direction === 'pay' && (
-                  <div className="col-span-2 text-[11px] text-[#0284C7]">
+                  <div className="col-span-2 text-[11px] text-[#0284c7]">
                     Also logs a linked Debt Repayment expense automatically.
                   </div>
                 )}
@@ -716,30 +720,30 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
             {tx.intent === 'create_savings_transaction' && (
               <>
                 <div>
-                  <span className="text-neutral-400 block">Savings Goal</span>
-                  <span className="font-medium text-[#111111]">{tx.savingsGoalName}</span>
+                  <span className="text-[#86868b] block">Savings Goal</span>
+                  <span className="font-medium text-[#1d1d1f]">{tx.savingsGoalName}</span>
                 </div>
                 <div>
-                  <span className="text-neutral-400 block">Type</span>
-                  <span className="font-medium text-[#111111] capitalize">{tx.transactionType}</span>
+                  <span className="text-[#86868b] block">Type</span>
+                  <span className="font-medium text-[#1d1d1f] capitalize">{tx.transactionType}</span>
                 </div>
                 <div className="col-span-2">
-                  <span className="text-neutral-400 block">Updated Balance</span>
-                  <span className="font-medium text-[#111111] tabular-nums">
+                  <span className="text-[#86868b] block">Updated Balance</span>
+                  <span className="font-medium text-[#1d1d1f] font-mono tabular-nums">
                     {fmt(tx.currentBalanceBefore)} → {fmt(tx.balanceAfter)}
                   </span>
                 </div>
                 {tx.note && (
                   <div className="col-span-2">
-                    <span className="text-neutral-400 block">Note</span>
-                    <span className="text-neutral-700">{tx.note}</span>
+                    <span className="text-[#86868b] block">Note</span>
+                    <span className="text-[#6e6e73]">{tx.note}</span>
                   </div>
                 )}
               </>
             )}
           </div>
 
-          <p className="text-[11px] text-neutral-500">
+          <p className="text-[11px] text-[#6e6e73]">
             Tap Confirm &amp; Save, or speak “Yes, confirm” / “അതെ, save ചെയ്യൂ”.
           </p>
 
@@ -748,7 +752,7 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
               type="button"
               onClick={onConfirm}
               disabled={isSaving}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0284C7] hover:bg-[#0369A1] text-white text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 min-h-[40px]"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 min-h-[44px] sm:min-h-[40px]"
             >
               <Check className="w-3.5 h-3.5" />
               <span>{isSaving ? 'Saving…' : 'Confirm & Save'}</span>
@@ -758,7 +762,7 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
               type="button"
               onClick={onCancel}
               disabled={isSaving}
-              className="inline-flex items-center justify-center gap-1 px-3.5 py-2.5 rounded-xl border border-black/[0.1] bg-white hover:bg-neutral-50 text-xs font-medium text-neutral-700 cursor-pointer disabled:opacity-60 min-h-[40px]"
+              className="inline-flex items-center justify-center gap-1 px-3.5 py-2.5 rounded-xl border border-black/[0.12] bg-white hover:bg-[#fbfbfd] text-xs font-medium text-[#1d1d1f] cursor-pointer disabled:opacity-60 min-h-[44px] sm:min-h-[40px]"
             >
               <X className="w-3.5 h-3.5" />
               <span>Cancel</span>

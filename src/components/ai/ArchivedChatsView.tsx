@@ -24,12 +24,12 @@ export const ArchivedChatsView: React.FC<ArchivedChatsViewProps> = ({
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-semibold text-[#111111] hover:bg-neutral-100 cursor-pointer min-h-[36px]"
+          className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-semibold text-[#1d1d1f] hover:bg-[#f5f5f7] cursor-pointer min-h-[36px]"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Back to Chats</span>
         </button>
-        <span className="text-[11px] text-neutral-400 tabular-nums">
+        <span className="text-[11px] text-[#86868b] tabular-nums">
           {conversations.length} archived
         </span>
       </div>
@@ -37,8 +37,8 @@ export const ArchivedChatsView: React.FC<ArchivedChatsViewProps> = ({
       <div className="flex-1 overflow-y-auto overscroll-contain space-y-1.5 py-1">
         {conversations.length === 0 ? (
           <div className="px-4 py-10 text-center space-y-1.5">
-            <p className="text-xs font-medium text-neutral-600">No archived conversations</p>
-            <p className="text-[11px] text-neutral-400 leading-relaxed">
+            <p className="text-xs font-medium text-[#6e6e73]">No archived conversations</p>
+            <p className="text-[11px] text-[#86868b] leading-relaxed">
               Archived chats retain all messages here until you restore or permanently delete them.
             </p>
           </div>
@@ -57,14 +57,14 @@ export const ArchivedChatsView: React.FC<ArchivedChatsViewProps> = ({
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-[13px] font-semibold text-[#111111] truncate">
+                    <p className="text-[13px] font-semibold text-[#1d1d1f] truncate">
                       {conv.title}
                     </p>
-                    <p className="text-xs text-neutral-500 truncate mt-0.5">
+                    <p className="text-xs text-[#6e6e73] truncate mt-0.5">
                       {conv.lastMessagePreview || 'Saved conversation'}
                     </p>
                   </div>
-                  <span className="text-[11px] text-neutral-400 tabular-nums shrink-0">
+                  <span className="text-[11px] text-[#86868b] tabular-nums shrink-0">
                     {timeLabel}
                   </span>
                 </div>
@@ -74,7 +74,7 @@ export const ArchivedChatsView: React.FC<ArchivedChatsViewProps> = ({
                     type="button"
                     disabled={isBusy}
                     onClick={() => onRestore(conv)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#0284C7]/10 text-[#0284C7] hover:bg-[#0284C7]/15 text-xs font-semibold cursor-pointer disabled:opacity-50 min-h-[34px]"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#0284c7]/10 text-[#0284c7] hover:bg-[#0284c7]/15 text-xs font-semibold cursor-pointer disabled:opacity-50 min-h-[36px]"
                   >
                     <ArchiveRestore className="w-3.5 h-3.5" />
                     <span>Restore</span>
@@ -83,7 +83,7 @@ export const ArchivedChatsView: React.FC<ArchivedChatsViewProps> = ({
                     type="button"
                     disabled={isBusy}
                     onClick={() => onRequestDelete(conv)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 text-xs font-medium cursor-pointer disabled:opacity-50 min-h-[34px]"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 text-xs font-medium cursor-pointer disabled:opacity-50 min-h-[36px]"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Delete</span>

@@ -4,11 +4,12 @@
  */
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Eye, EyeOff, Loader2, ArrowRight, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, Loader2, ArrowRight, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { AuthLayout } from './AuthLayout';
 import { useAuth } from '../../context/AuthContext';
 import { tapScale } from '../../utils/motion';
 import { clearAuthUrlParams } from '../../utils/authValidation';
+import { INPUT_CLASS, LABEL_CLASS, ACCENT_BUTTON_CLASS } from '../ui/FormControls';
 
 interface ResetPasswordViewProps {
   onSuccess: () => void;
@@ -99,15 +100,15 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
     >
       {success ? (
         <div className="space-y-5 text-center py-2">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-100 shadow-xs">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
             <CheckCircle2 className="w-6 h-6" />
           </div>
 
           <div className="space-y-1.5">
-            <h3 className="font-bold text-base text-[#111111]">
+            <h3 className="font-semibold text-base text-[#1d1d1f]">
               Password updated successfully
             </h3>
-            <p className="text-xs text-neutral-600 leading-relaxed font-normal">
+            <p className="text-xs text-[#6e6e73] leading-relaxed font-normal">
               Your new password is now active. You can proceed directly into your personal workspace.
             </p>
           </div>
@@ -119,10 +120,10 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
               onSuccess();
             }}
             type="button"
-            className="w-full min-h-[48px] flex items-center justify-center gap-2 py-3 bg-[#111318] text-white text-xs sm:text-sm font-semibold rounded-xl hover:bg-black transition-colors shadow-sm cursor-pointer"
+            className={`${ACCENT_BUTTON_CLASS} w-full min-h-[48px] text-sm font-semibold`}
           >
             <span>Enter Workspace</span>
-            <ArrowRight className="w-4 h-4 text-[#8ECFFF]" />
+            <ArrowRight className="w-4 h-4" />
           </motion.button>
         </div>
       ) : (
@@ -130,15 +131,15 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
           {errorMessage && (
             <div
               role="alert"
-              className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start gap-2"
+              className="p-3 bg-rose-50 border border-rose-200/80 text-rose-800 text-xs rounded-xl flex items-start gap-2"
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 shrink-0" />
+              <AlertCircle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
               <span className="leading-relaxed">{errorMessage}</span>
             </div>
           )}
 
           {!user && (
-            <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl flex items-start gap-2">
+            <div className="p-3 bg-amber-50 border border-amber-200/80 text-amber-800 text-xs rounded-xl flex items-start gap-2">
               <ShieldAlert className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
               <p className="leading-relaxed">
                 No active recovery session was detected. If your recovery link expired, please request a new reset email.
@@ -146,8 +147,8 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
             </div>
           )}
 
-          <div className="space-y-1.5 text-left">
-            <label htmlFor="new-password" className="block text-xs font-semibold text-neutral-700">
+          <div className="text-left">
+            <label htmlFor="new-password" className={LABEL_CLASS}>
               New password
             </label>
             <div className="relative">
@@ -163,13 +164,13 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
                   setPassword(e.target.value);
                   if (errorMessage) setErrorMessage(null);
                 }}
-                className="w-full min-h-[44px] pl-3.5 pr-12 py-2.5 text-base md:text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] transition-all disabled:opacity-60"
+                className={`${INPUT_CLASS} min-h-[44px] pr-12`}
               />
               <button
                 type="button"
                 disabled={loading || !user}
                 onClick={() => setShowPassword(prev => !prev)}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100/80 transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7]"
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
                 aria-pressed={showPassword}
               >
@@ -178,8 +179,8 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
             </div>
           </div>
 
-          <div className="space-y-1.5 text-left">
-            <label htmlFor="confirm-new-password" className="block text-xs font-semibold text-neutral-700">
+          <div className="text-left">
+            <label htmlFor="confirm-new-password" className={LABEL_CLASS}>
               Confirm new password
             </label>
             <input
@@ -194,7 +195,7 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
                 setConfirmPassword(e.target.value);
                 if (errorMessage) setErrorMessage(null);
               }}
-              className="w-full min-h-[44px] px-3.5 py-2.5 text-base md:text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF] transition-all disabled:opacity-60"
+              className={`${INPUT_CLASS} min-h-[44px]`}
             />
           </div>
 
@@ -202,28 +203,28 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
             whileTap={tapScale.button}
             type="submit"
             disabled={loading || !user}
-            className="w-full min-h-[48px] flex items-center justify-center gap-2 py-3 bg-[#111318] text-white text-sm font-semibold rounded-xl hover:bg-black transition-colors shadow-sm disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8ECFFF]"
+            className={`${ACCENT_BUTTON_CLASS} w-full min-h-[48px] text-sm font-semibold`}
           >
             {loading ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin text-[#87CEEB]" />
+                <Loader2 className="w-4 h-4 animate-spin" />
                 <span>Updating Password...</span>
               </>
             ) : (
               <>
                 <span>Update Password</span>
-                <ArrowRight className="w-4 h-4 text-[#87CEEB]" />
+                <ArrowRight className="w-4 h-4" />
               </>
             )}
           </motion.button>
 
-          <div className="pt-2 text-center text-xs text-neutral-500 border-t border-black/[0.04] flex flex-wrap items-center justify-center gap-3">
+          <div className="pt-3 text-center text-xs text-[#6e6e73] border-t border-black/[0.06] flex flex-wrap items-center justify-center gap-3">
             {!user && onNavigateForgotPassword && (
               <button
                 type="button"
                 disabled={loading}
                 onClick={onNavigateForgotPassword}
-                className="min-h-[44px] px-4 inline-flex items-center justify-center text-[#111111] hover:underline font-semibold transition-colors cursor-pointer rounded-xl disabled:opacity-50"
+                className="min-h-[44px] px-4 inline-flex items-center justify-center text-[#0284c7] hover:underline font-semibold transition-colors cursor-pointer rounded-xl disabled:opacity-50"
               >
                 Request New Reset Link
               </button>
@@ -232,7 +233,7 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
               type="button"
               disabled={loading}
               onClick={handleReturnToLogin}
-              className="min-h-[44px] px-4 inline-flex items-center justify-center text-neutral-500 hover:text-black font-medium transition-colors cursor-pointer rounded-xl disabled:opacity-50"
+              className="min-h-[44px] px-4 inline-flex items-center justify-center text-[#6e6e73] hover:text-[#1d1d1f] font-medium transition-colors cursor-pointer rounded-xl disabled:opacity-50"
             >
               Return to Login
             </button>

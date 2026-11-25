@@ -79,7 +79,7 @@ export const ChatHistoryPanel: React.FC<ChatHistoryPanelProps> = ({
   const panelBody = (isMobileDrawer: boolean) => (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex items-center justify-between gap-2 pb-3 border-b border-black/[0.06]">
-        <h2 className="text-sm font-bold text-[#111111] tracking-tight">
+        <h2 className="text-sm font-semibold text-[#1d1d1f] tracking-tight">
           {showArchived ? 'Archived Chats' : 'Conversations'}
         </h2>
 
@@ -87,7 +87,7 @@ export const ChatHistoryPanel: React.FC<ChatHistoryPanelProps> = ({
           type="button"
           onClick={isMobileDrawer ? onCloseMobile : onCloseDesktop}
           aria-label="Close chat history"
-          className="min-h-[44px] min-w-[44px] sm:min-h-[38px] sm:min-w-[38px] flex items-center justify-center rounded-xl text-neutral-500 hover:text-[#111111] hover:bg-neutral-100 cursor-pointer"
+          className="min-h-[44px] min-w-[44px] sm:min-h-[38px] sm:min-w-[38px] flex items-center justify-center rounded-xl text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] cursor-pointer"
         >
           {isMobileDrawer ? (
             <X className="w-4 h-4" />
@@ -143,13 +143,13 @@ export const ChatHistoryPanel: React.FC<ChatHistoryPanelProps> = ({
               type="button"
               onClick={() => onSetShowArchived(true)}
               data-testid="open-archived-chats-button"
-              className="w-full px-3 py-2 rounded-xl text-xs font-medium text-neutral-600 hover:text-[#111111] hover:bg-neutral-50 flex items-center justify-between cursor-pointer min-h-[44px]"
+              className="w-full px-3 py-2 rounded-xl text-xs font-medium text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] flex items-center justify-between cursor-pointer min-h-[44px]"
             >
               <span className="inline-flex items-center gap-2">
-                <Archive className="w-3.5 h-3.5 text-neutral-400" />
+                <Archive className="w-3.5 h-3.5 text-[#86868b]" />
                 <span>Archived Chats</span>
               </span>
-              <span className="text-[11px] text-neutral-400 tabular-nums">
+              <span className="text-[11px] text-[#86868b] tabular-nums">
                 {archived.length}
               </span>
             </button>

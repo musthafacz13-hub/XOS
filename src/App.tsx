@@ -89,22 +89,22 @@ const NotFoundView = lazy(() =>
 export type AuthRoute = PublicOrAuthRoute;
 
 const AuthRouteFallback: React.FC = () => (
-  <div className="min-h-screen min-h-[100dvh] bg-white flex items-center justify-center p-4" aria-busy="true">
-    <div className="w-8 h-8 rounded-full border-2 border-neutral-200 border-t-[#111318] animate-spin" />
+  <div className="min-h-screen min-h-[100dvh] bg-[#fbfbfd] flex items-center justify-center p-4" aria-busy="true">
+    <div className="w-8 h-8 rounded-full border-2 border-black/[0.08] border-t-[#0284c7] animate-spin" />
   </div>
 );
 
 const WorkspaceViewFallback: React.FC = () => (
   <div className="min-h-[60vh] space-y-6 animate-pulse" aria-busy="true">
     <div className="pb-3 border-b border-black/[0.06] space-y-2">
-      <div className="h-7 w-48 bg-neutral-100 rounded-lg" />
-      <div className="h-4 w-72 bg-neutral-100 rounded-lg" />
+      <div className="h-7 w-48 bg-[#f5f5f7] rounded-lg" />
+      <div className="h-4 w-72 bg-[#f5f5f7] rounded-lg" />
     </div>
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-      <div className="h-36 bg-neutral-100 rounded-2xl" />
-      <div className="lg:col-span-3 h-36 bg-neutral-100 rounded-2xl" />
+      <div className="h-36 bg-[#f5f5f7] rounded-2xl" />
+      <div className="lg:col-span-3 h-36 bg-[#f5f5f7] rounded-2xl" />
     </div>
-    <div className="h-64 bg-neutral-100 rounded-2xl" />
+    <div className="h-64 bg-[#f5f5f7] rounded-2xl" />
   </div>
 );
 
@@ -336,9 +336,9 @@ function XOSApplication() {
     );
   }
 
-  // 3. Authenticated / Demo Workspace (All 10 Sections Preserved)
+  // 3. Authenticated Workspace
   return (
-    <div className="min-h-screen min-h-[100dvh] flex bg-white text-[#111111] antialiased">
+    <div className="min-h-screen min-h-[100dvh] flex bg-white text-[#1d1d1f] antialiased">
       <OfflineIndicator />
       {/* Desktop Sidebar */}
       <Sidebar

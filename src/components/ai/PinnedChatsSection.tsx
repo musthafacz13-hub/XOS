@@ -27,7 +27,7 @@ export const PinnedChatsSection: React.FC<PinnedChatsSectionProps> = ({
 
   return (
     <section aria-label="Pinned conversations" className="pb-3 mb-3 border-b border-black/[0.06]">
-      <h3 className="px-3 pb-1.5 text-[11px] font-semibold text-neutral-400 tracking-wide">
+      <h3 className="px-3 pb-1.5 text-[11px] font-semibold text-[#86868b] tracking-wide">
         Pinned
       </h3>
       <div className="space-y-0.5">

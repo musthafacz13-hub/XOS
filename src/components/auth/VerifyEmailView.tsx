@@ -6,6 +6,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Mail, CheckCircle, RotateCcw, ArrowRight } from 'lucide-react';
 import { AuthLayout } from './AuthLayout';
 import { useAuth } from '../../context/AuthContext';
+import { ACCENT_BUTTON_CLASS, SUBTLE_BUTTON_CLASS } from '../ui/FormControls';
 
 interface VerifyEmailViewProps {
   email: string;
@@ -76,26 +77,26 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
     >
       <div className="space-y-5 text-center py-2">
         {/* Email Icon */}
-        <div className="w-14 h-14 rounded-2xl bg-[#87CEEB]/15 text-[#111111] flex items-center justify-center mx-auto border border-[#87CEEB]/30 shadow-xs">
-          <Mail className="w-7 h-7 text-[#111111]" />
+        <div className="w-14 h-14 rounded-2xl bg-[#0284c7]/10 text-[#0284c7] flex items-center justify-center mx-auto">
+          <Mail className="w-7 h-7" />
         </div>
 
         {/* Messaging */}
         <div className="space-y-2">
-          <h3 className="font-bold text-base text-[#111111]">
+          <h3 className="font-semibold text-base text-[#1d1d1f]">
             Check your inbox
           </h3>
-          <p className="text-xs text-neutral-600 leading-relaxed font-normal">
+          <p className="text-xs text-[#6e6e73] leading-relaxed font-normal">
             If this email is eligible for a new account, we've sent a confirmation link to:
           </p>
-          <div className="text-xs font-mono font-semibold text-[#111111] bg-neutral-50 py-1.5 px-3 rounded-lg border border-neutral-200 inline-block break-all max-w-full">
+          <div className="text-xs font-mono font-semibold text-[#1d1d1f] bg-[#f5f5f7] py-1.5 px-3 rounded-lg inline-block break-all max-w-full">
             {email || 'your email address'}
           </div>
         </div>
 
         {/* Step Guide */}
-        <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200 text-left text-xs text-neutral-600 space-y-2">
-          <span className="font-bold text-neutral-900 block text-[11px] uppercase tracking-wider">
+        <div className="p-4 bg-[#f5f5f7] rounded-2xl text-left text-xs text-[#6e6e73] space-y-2">
+          <span className="font-semibold text-[#1d1d1f] block text-xs">
             Verification Steps
           </span>
           <div className="flex items-start gap-2">
@@ -118,8 +119,8 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
             role={resendNotice.type === 'error' ? 'alert' : 'status'}
             className={`p-3 border text-xs rounded-xl ${
               resendNotice.type === 'error'
-                ? 'bg-rose-50 border-rose-200 text-rose-800'
-                : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                ? 'bg-rose-50 border-rose-200/80 text-rose-800'
+                : 'bg-emerald-50 border-emerald-200/80 text-emerald-800'
             }`}
           >
             {resendNotice.text}
@@ -132,7 +133,7 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
             type="button"
             disabled={cooldownSeconds > 0 || resending || !email}
             onClick={handleResend}
-            className="w-full min-h-[44px] flex items-center justify-center gap-2 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-semibold rounded-xl border border-neutral-200 transition-colors cursor-pointer disabled:opacity-50"
+            className={`${SUBTLE_BUTTON_CLASS} w-full min-h-[44px] text-xs`}
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>
@@ -147,10 +148,10 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
           <button
             type="button"
             onClick={onNavigateLogin}
-            className="w-full min-h-[48px] flex items-center justify-center gap-1.5 py-2.5 bg-[#111318] hover:bg-black text-white text-xs font-semibold rounded-xl transition-colors shadow-xs cursor-pointer"
+            className={`${ACCENT_BUTTON_CLASS} w-full min-h-[48px] text-sm font-semibold`}
           >
             <span>Back to Log In</span>
-            <ArrowRight className="w-3.5 h-3.5 text-[#8ECFFF]" />
+            <ArrowRight className="w-4 h-4" />
           </button>
         </div>
       </div>

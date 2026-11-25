@@ -1,17 +1,39 @@
 @import "tailwindcss";
 
+:root {
+  --xos-bg: #ffffff;
+  --xos-surface: #f5f5f7;
+  --xos-surface-elevated: #ffffff;
+  --xos-surface-inset: #f9f9fb;
+  --xos-ink: #1d1d1f;
+  --xos-ink-secondary: #6e6e73;
+  --xos-ink-tertiary: #86868b;
+  --xos-border: rgba(0, 0, 0, 0.08);
+  --xos-border-strong: rgba(0, 0, 0, 0.14);
+  --xos-accent: #0284c7;
+  --xos-accent-hover: #0369a1;
+  --xos-accent-soft: #e0f2fe;
+  --xos-positive: #15803d;
+  --xos-warning: #b45309;
+  --xos-danger: #dc2626;
+}
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
     overflow-x: hidden;
     overflow-x: clip;
+    background-color: var(--xos-bg);
+    color: var(--xos-ink);
   }
 
   body {
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: #ffffff;
-    color: #111318;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Plus Jakarta Sans", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: var(--xos-bg);
+    color: var(--xos-ink);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
     overflow-x: clip;
   }
@@ -26,7 +48,7 @@
   }
 
   .font-mono, .tabular-nums {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Monaco, Consolas, monospace;
     font-variant-numeric: tabular-nums;
   }
 }
@@ -52,7 +74,7 @@
   contain-intrinsic-size: auto 76px;
 }
 
-/* Custom scrollbar for minimal design */
+/* Custom minimal scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -61,33 +83,32 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #e2e8f0;
+  background: rgba(0, 0, 0, 0.14);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #cbd5e1;
+  background: rgba(0, 0, 0, 0.24);
 }
 
-/* Liquid Glass Utilities */
+/* Apple Translucent Backdrop Chrome */
 .liquid-glass {
   background-color: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 
 .liquid-glass-dock {
   background-color: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(20px) saturate(190%);
-  -webkit-backdrop-filter: blur(20px) saturate(190%);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 
 .liquid-glass-sheet {
-  background-color: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(24px) saturate(190%);
-  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  background-color: rgba(255, 255, 255, 0.96);
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
 }
 
-/* Solid fallback for browsers not supporting backdrop-filter */
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .liquid-glass,
   .liquid-glass-dock,
@@ -96,14 +117,11 @@
   }
 }
 
-/* Water Ripple Animation */
+/* Subtle water ripple preserved only if explicitly referenced */
 @keyframes waterRipple {
   0% {
     transform: scale(0);
-    opacity: 0.45;
-  }
-  60% {
-    opacity: 0.22;
+    opacity: 0.3;
   }
   100% {
     transform: scale(1);
@@ -112,15 +130,15 @@
 }
 
 .animate-water-ripple {
-  animation: waterRipple 420ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: waterRipple 360ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
   pointer-events: none;
 }
 
-/* Welcome Page Only — Subtle Entrance & Bidirectional Scroll Animations */
+/* Welcome Page — Editorial Entrance & Bidirectional Scroll Reveal */
 @keyframes welcomeHeroEnter {
   from {
     opacity: 0;
-    transform: translate3d(0, 12px, 0);
+    transform: translate3d(0, 10px, 0);
   }
   to {
     opacity: 1;
@@ -131,7 +149,7 @@
 @keyframes welcomeEnterFromBelow {
   from {
     opacity: 0;
-    transform: translate3d(0, 22px, 0);
+    transform: translate3d(0, 18px, 0);
   }
   to {
     opacity: 1;
@@ -142,7 +160,7 @@
 @keyframes welcomeEnterFromAbove {
   from {
     opacity: 0;
-    transform: translate3d(0, -22px, 0);
+    transform: translate3d(0, -18px, 0);
   }
   to {
     opacity: 1;
@@ -151,33 +169,33 @@
 }
 
 .welcome-hero-enter {
-  animation: welcomeHeroEnter 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: welcomeHeroEnter 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .welcome-hero-enter-delay-1 {
-  animation: welcomeHeroEnter 560ms cubic-bezier(0.22, 1, 0.36, 1) 70ms both;
+  animation: welcomeHeroEnter 480ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both;
 }
 
 .welcome-hero-enter-delay-2 {
-  animation: welcomeHeroEnter 560ms cubic-bezier(0.22, 1, 0.36, 1) 140ms both;
+  animation: welcomeHeroEnter 480ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both;
 }
 
 [data-welcome-reveal="hidden-below"] {
   opacity: 0;
-  transform: translate3d(0, 22px, 0);
+  transform: translate3d(0, 18px, 0);
 }
 
 [data-welcome-reveal="hidden-above"] {
   opacity: 0;
-  transform: translate3d(0, -22px, 0);
+  transform: translate3d(0, -18px, 0);
 }
 
 [data-welcome-reveal="visible-from-below"] {
-  animation: welcomeEnterFromBelow 560ms cubic-bezier(0.22, 1, 0.36, 1) var(--welcome-stagger, 0ms) both;
+  animation: welcomeEnterFromBelow 480ms cubic-bezier(0.22, 1, 0.36, 1) var(--welcome-stagger, 0ms) both;
 }
 
 [data-welcome-reveal="visible-from-above"] {
-  animation: welcomeEnterFromAbove 560ms cubic-bezier(0.22, 1, 0.36, 1) var(--welcome-stagger, 0ms) both;
+  animation: welcomeEnterFromAbove 480ms cubic-bezier(0.22, 1, 0.36, 1) var(--welcome-stagger, 0ms) both;
 }
 
 [data-welcome-reveal="visible-static"] {

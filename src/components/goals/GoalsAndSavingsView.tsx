@@ -1,16 +1,11 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { 
-  Target, 
-  Plus, 
-  CheckCircle2, 
-  Clock, 
-  Trash2, 
-  Edit3, 
-  Search, 
-  X, 
-  PiggyBank, 
-  ArrowUpRight, 
-  ArrowDownLeft, 
+import React, { useState, useMemo, useCallback, useRef } from 'react';
+import {
+  Target,
+  Plus,
+  Trash2,
+  Edit3,
+  ArrowUpRight,
+  ArrowDownLeft,
   History,
   AlertCircle
 } from 'lucide-react';
@@ -21,29 +16,41 @@ import { calculateUnifiedGoalTotals, resolveGoalsWithSavings } from '../../utils
 import { EmptyState } from '../common/EmptyState';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
+import {
+  ACCENT_BUTTON_CLASS,
+  ActionIconButton,
+  FilterBar,
+  INPUT_CLASS,
+  LABEL_CLASS,
+  MONO_INPUT_CLASS,
+  MetricCard,
+  Modal,
+  PRIMARY_BUTTON_CLASS,
+  PageHeader,
+  SECONDARY_BUTTON_CLASS,
+  SELECT_CLASS,
+  SegmentedControl,
+  TEXTAREA_CLASS
+} from '../ui';
 
 export const GoalsAndSavingsView: React.FC = () => {
   const data = useXOSData();
 
-  // Filters & Search
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'completed'>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Modals state
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [isSubmittingGoal, setIsSubmittingGoal] = useState(false);
   const isSubmittingGoalRef = useRef(false);
   const [goalFormError, setGoalFormError] = useState<string | null>(null);
 
-  // Selected Goal for Savings Activity / Detail Modal (derived from live state)
   const [selectedDetailGoalId, setSelectedDetailGoalId] = useState<string | null>(null);
   const selectedDetailGoal = selectedDetailGoalId
     ? data.goals.find(g => g.id === selectedDetailGoalId) || null
     : null;
 
-  // Deposit / Withdrawal Modal State
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [txType, setTxType] = useState<'deposit' | 'withdrawal'>('deposit');
   const [txAmount, setTxAmount] = useState('');
@@ -52,13 +59,11 @@ export const GoalsAndSavingsView: React.FC = () => {
   const [isSubmittingTx, setIsSubmittingTx] = useState(false);
   const isSubmittingTxRef = useRef(false);
 
-  // Deletion State
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const isDeletingRef = useRef(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // Form Fields - Goal
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<GoalCategory>('Personal');
@@ -66,21 +71,6 @@ export const GoalsAndSavingsView: React.FC = () => {
   const [targetDate, setTargetDate] = useState('');
   const [priority, setPriority] = useState<GoalPriority>('Medium');
   const [initialDeposit, setInitialDeposit] = useState('');
-
-  // Escape key listener
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (isGoalModalOpen && !isSubmittingGoal) setIsGoalModalOpen(false);
-        if (isTxModalOpen && !isSubmittingTx) setIsTxModalOpen(false);
-        if (selectedDetailGoalId && deleteTargetId === null && !isDeleting) {
-          setSelectedDetailGoalId(null);
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isGoalModalOpen, isTxModalOpen, isSubmittingGoal, isSubmittingTx, selectedDetailGoalId, deleteTargetId, isDeleting]);
 
   const resolvedGoals = useMemo(
     () => resolveGoalsWithSavings(data.goals, data.savingsGoals),
@@ -96,13 +86,11 @@ export const GoalsAndSavingsView: React.FC = () => {
     ? resolvedByGoalId.get(selectedDetailGoalId) || null
     : null;
 
-  // Helper to find the strictly 1:1 connected Savings Goal
   const getConnectedSavingsGoal = useCallback(
     (goal: Goal): SavingsGoal | undefined => resolvedByGoalId.get(goal.id)?.savingsGoal,
     [resolvedByGoalId]
   );
 
-  // Open Create Modal
   const openCreateModal = () => {
     setEditingGoal(null);
     setGoalFormError(null);
@@ -116,7 +104,6 @@ export const GoalsAndSavingsView: React.FC = () => {
     setIsGoalModalOpen(true);
   };
 
-  // Open Edit Modal
   const openEditModal = (g: Goal) => {
     setEditingGoal(g);
     setGoalFormError(null);
@@ -130,7 +117,6 @@ export const GoalsAndSavingsView: React.FC = () => {
     setIsGoalModalOpen(true);
   };
 
-  // Handle Save Goal (Create or Update)
   const handleSaveGoal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmittingGoalRef.current || isSubmittingGoal) return;
@@ -158,7 +144,6 @@ export const GoalsAndSavingsView: React.FC = () => {
 
     try {
       if (editingGoal) {
-        // Update Goal metadata (backend trigger synchronizes linked savings account & recalculates progress/completion)
         await data.updateGoal(editingGoal.id, {
           title: title.trim(),
           description: description.trim(),
@@ -168,7 +153,6 @@ export const GoalsAndSavingsView: React.FC = () => {
           priority
         });
       } else {
-        // Create Goal (handled atomically via xos_create_goal_with_savings RPC on backend)
         await data.addGoal({
           title: title.trim(),
           description: description.trim(),
@@ -189,7 +173,6 @@ export const GoalsAndSavingsView: React.FC = () => {
     }
   };
 
-  // Open Deposit / Withdrawal Modal
   const openTxModal = (type: 'deposit' | 'withdrawal') => {
     setTxType(type);
     setTxAmount('');
@@ -198,7 +181,6 @@ export const GoalsAndSavingsView: React.FC = () => {
     setIsTxModalOpen(true);
   };
 
-  // Handle Save Transaction (Deposit / Withdrawal)
   const handleSaveTx = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDetailGoal || isSubmittingTxRef.current || isSubmittingTx) return;
@@ -243,7 +225,6 @@ export const GoalsAndSavingsView: React.FC = () => {
     }
   };
 
-  // Handle Goal Archival (delegates atomically to xos_archive_goal RPC)
   const handleDeleteGoal = async () => {
     if (!deleteTargetId || isDeletingRef.current || isDeleting) return;
     isDeletingRef.current = true;
@@ -264,7 +245,6 @@ export const GoalsAndSavingsView: React.FC = () => {
     }
   };
 
-  // Totals across non-archived goals & 1:1 connected savings accounts
   const goalTotals = useMemo(
     () => calculateUnifiedGoalTotals(resolvedGoals),
     [resolvedGoals]
@@ -280,7 +260,6 @@ export const GoalsAndSavingsView: React.FC = () => {
     completedGoalsCount
   } = goalTotals;
 
-  // Filtered goals (using canonical resolved goal state; paused/cancelled excluded from Active tab)
   const filteredResolvedGoals = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     return resolvedGoals.filter(item => {
@@ -308,155 +287,87 @@ export const GoalsAndSavingsView: React.FC = () => {
 
   const categories = ['Financial', 'Career', 'Health', 'Travel', 'Learning', 'Life', 'Personal'];
 
+  const filterTabs = useMemo(
+    () => [
+      { id: 'all' as const, label: `All Goals (${totalCount})` },
+      { id: 'active' as const, label: 'Active' },
+      { id: 'completed' as const, label: 'Completed' }
+    ],
+    [totalCount]
+  );
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-black/[0.06]">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-[#111111] tracking-tight">
-            Goals & Savings System
-          </h2>
-          <p className="text-xs sm:text-sm text-neutral-500 font-normal mt-0.5">
-            One connected savings account per goal. Deposit, withdraw, and track real progress automatically.
-          </p>
-        </div>
+      <PageHeader
+        title="Goals & Savings"
+        description="One connected savings account per goal. Deposit, withdraw, and track progress automatically."
+        actions={
+          <button
+            onClick={openCreateModal}
+            type="button"
+            className={PRIMARY_BUTTON_CLASS}
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Goal &amp; Account</span>
+          </button>
+        }
+      />
 
-        <button
-          onClick={openCreateModal}
-          type="button"
-          className="self-start sm:self-auto flex items-center gap-1.5 px-3.5 py-2 bg-[#111111] text-white text-xs font-semibold rounded-xl hover:bg-black transition-colors shadow-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-        >
-          <Plus className="w-4 h-4 text-[#87CEEB]" />
-          <span>New Goal & Savings Account</span>
-        </button>
-      </div>
-
-      {/* Overview Dashboard Cards */}
+      {/* KPI Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
-        {/* Total Saved Card */}
-        <div className="p-5 rounded-2xl bg-[#111111] text-white flex flex-col justify-between space-y-4 shadow-xs">
-          <div>
-            <div className="flex items-center justify-between text-neutral-400">
-              <span className="text-[11px] font-semibold uppercase tracking-wider">Total Saved Across Goals</span>
-              <PiggyBank className="w-4 h-4 text-[#87CEEB]" />
-            </div>
-            <div className="mt-3">
-              <div className="text-3xl font-extrabold font-mono tracking-tight text-white tabular-nums">
-                {formatCurrency(totalSavedAmount, data.settings.currency)}
-              </div>
-              <p className="text-xs text-neutral-400 mt-1">
-                Target sum: {formatCurrency(totalTargetAmount, data.settings.currency)} ({overallProgress}%)
-              </p>
-            </div>
-          </div>
-          <div className="w-full bg-neutral-800 h-1.5 rounded-full overflow-hidden">
-            <div className="bg-[#87CEEB] h-full transition-all duration-300" style={{ width: `${overallProgress}%` }} />
-          </div>
-        </div>
+        <MetricCard
+          variant="focal"
+          label="Total Saved Across Goals"
+          value={formatCurrency(totalSavedAmount, data.settings.currency)}
+          progress={overallProgress}
+          sublabel={`Target sum: ${formatCurrency(totalTargetAmount, data.settings.currency)} · ${overallProgress}% funded`}
+        />
 
-        {/* Total Remaining Card */}
-        <div className="p-5 rounded-2xl bg-white border border-black/[0.08] text-[#111111] flex flex-col justify-between space-y-4 shadow-xs">
-          <div>
-            <div className="flex items-center justify-between text-neutral-500">
-              <span className="text-[11px] font-semibold uppercase tracking-wider">Remaining to Save</span>
-              <Target className="w-4 h-4 text-neutral-600" />
-            </div>
-            <div className="mt-3">
-              <div className="text-3xl font-extrabold font-mono tracking-tight text-[#111111] tabular-nums">
-                {formatCurrency(totalRemainingAmount, data.settings.currency)}
-              </div>
-              <p className="text-xs text-neutral-500 mt-1">
-                Across {totalCount} goal accounts
-              </p>
-            </div>
-          </div>
-          <div className="text-[11px] font-mono text-neutral-400 pt-2 border-t border-neutral-100 flex justify-between">
-            <span>Active Goals:</span>
-            <span className="text-black font-bold">{activeGoalsCount}</span>
-          </div>
-        </div>
+        <MetricCard
+          label="Remaining to Save"
+          value={formatCurrency(totalRemainingAmount, data.settings.currency)}
+          sublabel={`${activeGoalsCount} active · ${totalCount} total accounts`}
+        />
 
-        {/* Completed Goals Card */}
-        <div className="p-5 rounded-2xl bg-neutral-100 border border-neutral-200 text-[#111111] flex flex-col justify-between space-y-4 shadow-xs">
-          <div>
-            <div className="flex items-center justify-between text-neutral-500">
-              <span className="text-[11px] font-semibold uppercase tracking-wider">Accomplished Goals</span>
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            </div>
-            <div className="mt-3">
-              <div className="text-3xl font-extrabold font-mono tracking-tight text-emerald-700 tabular-nums">
-                {completedGoalsCount}
-              </div>
-              <p className="text-xs text-neutral-600 mt-1">
-                Fully funded savings targets
-              </p>
-            </div>
-          </div>
-          <div className="text-[11px] font-mono text-neutral-500 pt-2 border-t border-neutral-200 flex justify-between">
-            <span>Total Goals:</span>
-            <span className="text-black font-bold">{totalCount}</span>
-          </div>
-        </div>
+        <MetricCard
+          variant="subtle"
+          tone="positive"
+          label="Accomplished Goals"
+          value={completedGoalsCount}
+          sublabel={`Out of ${totalCount} goal accounts`}
+        />
       </div>
 
-      {/* Tabs & Search */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-neutral-50 p-2.5 rounded-2xl border border-neutral-200">
-        <div className="flex items-center gap-1.5 p-1 bg-white rounded-xl border border-neutral-200 self-start overflow-x-auto max-w-full">
-          <button
-            type="button"
-            onClick={() => setActiveTab('all')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0 ${
-              activeTab === 'all' ? 'bg-[#111111] text-white' : 'text-neutral-600 hover:text-black'
-            }`}
-          >
-            All Goals ({totalCount})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('active')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0 ${
-              activeTab === 'active' ? 'bg-[#111111] text-white' : 'text-neutral-600 hover:text-black'
-            }`}
-          >
-            Active
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('completed')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0 ${
-              activeTab === 'completed' ? 'bg-[#111111] text-white' : 'text-neutral-600 hover:text-black'
-            }`}
-          >
-            Completed
-          </button>
-        </div>
-
-        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
+      {/* Filters */}
+      <FilterBar
+        leading={
+          <SegmentedControl
+            options={filterTabs}
+            value={activeTab}
+            onChange={setActiveTab}
+            ariaLabel="Filter goals by status"
+          />
+        }
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search goals…"
+        searchAriaLabel="Search goals"
+        filters={
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="w-full sm:w-auto min-h-[40px] px-3 py-2 text-xs bg-white border border-neutral-200 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+            aria-label="Filter goals by category"
+            className={`${SELECT_CLASS} sm:w-44`}
           >
             <option value="all">All Categories</option>
             {categories.map(c => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
+        }
+      />
 
-          <div className="relative flex-1 min-w-[180px] sm:w-64">
-            <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Search goals..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full min-h-[40px] pl-9 pr-3 py-2 text-xs border border-neutral-200 rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Goals List */}
+      {/* Goals Grid */}
       {filteredResolvedGoals.length === 0 ? (
         <EmptyState
           icon={Target}
@@ -474,79 +385,72 @@ export const GoalsAndSavingsView: React.FC = () => {
           {filteredResolvedGoals.map(item => {
             const { goal, savedAmount, targetAmount, remainingAmount, progressPercentage, isCompleted, isPaused, hasValidSavingsLink } = item;
             const statusLabel = isCompleted ? 'Completed' : isPaused ? 'Paused' : 'In Progress';
-            const statusBadgeClass = isCompleted
-              ? 'bg-emerald-100 text-emerald-800'
+            const statusToneClass = isCompleted
+              ? 'text-emerald-700'
               : isPaused
-                ? 'bg-neutral-200 text-neutral-700'
-                : 'bg-sky-100 text-sky-800';
+                ? 'text-[#6e6e73]'
+                : 'text-[#0284c7]';
 
             return (
               <div
                 key={goal.id}
                 onClick={() => setSelectedDetailGoalId(goal.id)}
-                className="cv-auto p-5 rounded-2xl bg-white border border-black/[0.08] hover:border-black/[0.18] transition-all shadow-xs flex flex-col justify-between space-y-4 cursor-pointer group"
+                className="cv-auto p-5 rounded-2xl bg-white border border-black/[0.08] hover:border-black/[0.18] transition-colors flex flex-col justify-between space-y-4 cursor-pointer group"
               >
                 <div>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[10px] font-bold px-2 py-0.5 bg-neutral-100 text-neutral-700 rounded-md uppercase tracking-wider">
-                          {goal.category}
-                        </span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${statusBadgeClass}`}>
-                          {statusLabel}
-                        </span>
+                      <div className="text-xs text-[#6e6e73]">
+                        <span>{goal.category}</span>
+                        <span aria-hidden="true"> · </span>
+                        <span className={`font-medium ${statusToneClass}`}>{statusLabel}</span>
                       </div>
-                      <h3 className="text-base font-bold text-[#111111] mt-2 group-hover:text-black tracking-tight truncate">
+                      <h3 className="text-base font-semibold text-[#1d1d1f] mt-1 tracking-[-0.01em] truncate">
                         {goal.title}
                       </h3>
                       {goal.description && (
-                        <p className="text-xs text-neutral-500 mt-1 line-clamp-2">
+                        <p className="text-xs text-[#6e6e73] mt-1 line-clamp-2 leading-relaxed">
                           {goal.description}
                         </p>
                       )}
                       {!hasValidSavingsLink && (
-                        <p className="text-[11px] text-amber-700 mt-1">
+                        <p className="text-xs text-amber-700 mt-1">
                           Savings account link unavailable
                         </p>
                       )}
                     </div>
 
                     <div className="text-right shrink-0">
-                      <div className="text-xs text-neutral-400 font-medium">Target</div>
-                      <div className="text-base font-bold font-mono text-[#111111]">
+                      <div className="text-[11px] text-[#86868b]">Target</div>
+                      <div className="text-base font-semibold font-mono text-[#1d1d1f] tabular-nums">
                         {formatCurrency(targetAmount, data.settings.currency)}
                       </div>
                     </div>
                   </div>
 
-                  {/* Progress & Balances */}
                   <div className="mt-4 space-y-2">
-                    <div className="flex justify-between text-xs font-mono">
-                      <span className="text-neutral-600 font-semibold">Saved: {formatCurrency(savedAmount, data.settings.currency)}</span>
-                      <span className="text-neutral-400">Remaining: {formatCurrency(remainingAmount, data.settings.currency)}</span>
+                    <div className="flex justify-between text-xs font-mono tabular-nums">
+                      <span className="text-[#1d1d1f] font-medium">Saved: {formatCurrency(savedAmount, data.settings.currency)}</span>
+                      <span className="text-[#6e6e73]">Remaining: {formatCurrency(remainingAmount, data.settings.currency)}</span>
                     </div>
-                    <div className="w-full h-2 bg-neutral-100 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full transition-all duration-300 ${isCompleted ? 'bg-emerald-500' : 'bg-[#111111]'}`}
+                    <div className="w-full h-1.5 bg-black/[0.06] rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${isCompleted ? 'bg-emerald-600' : 'bg-[#0284c7]'}`}
                         style={{ width: `${progressPercentage}%` }}
                       />
                     </div>
-                    <div className="flex justify-between items-center text-[11px] text-neutral-400 font-mono pt-1">
+                    <div className="flex justify-between items-center text-xs text-[#6e6e73] font-mono tabular-nums pt-0.5">
                       <span>{progressPercentage}% funded</span>
                       {goal.targetDate && (
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          <span>Target {formatHumanDate(goal.targetDate)}</span>
-                        </span>
+                        <span>Target {formatHumanDate(goal.targetDate)}</span>
                       )}
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-neutral-100 flex items-center justify-between text-xs">
-                  <span className="text-neutral-500 font-medium">Click to view savings activity & transactions</span>
-                  <span className="font-bold text-[#111111] group-hover:translate-x-0.5 transition-transform">Manage →</span>
+                <div className="pt-3 border-t border-black/[0.06] flex items-center justify-between text-xs">
+                  <span className="text-[#6e6e73]">View savings activity &amp; transactions</span>
+                  <span className="font-medium text-[#0284c7] group-hover:translate-x-0.5 transition-transform">Manage →</span>
                 </div>
               </div>
             );
@@ -555,468 +459,365 @@ export const GoalsAndSavingsView: React.FC = () => {
       )}
 
       {/* CREATE / EDIT GOAL MODAL */}
-      {isGoalModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs"
-          onClick={() => { if (!isSubmittingGoal) setIsGoalModalOpen(false); }}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div
-            className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-black/[0.08] p-5 sm:p-6 overflow-hidden max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-black/[0.06]">
-              <div>
-                <h3 className="font-bold text-base text-[#111111] tracking-tight">
-                  {editingGoal ? 'Edit Goal & Savings Account' : 'New Goal & Connected Savings'}
-                </h3>
-                <p className="text-xs text-neutral-500">
-                  One goal automatically establishes one connected savings account.
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={isSubmittingGoal}
-                onClick={() => setIsGoalModalOpen(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-900 transition-colors cursor-pointer disabled:opacity-50"
-              >
-                <X className="w-4 h-4" />
-              </button>
+      <Modal
+        isOpen={isGoalModalOpen}
+        onClose={() => { if (!isSubmittingGoal) setIsGoalModalOpen(false); }}
+        disableClose={isSubmittingGoal}
+        maxWidth="lg"
+        title={editingGoal ? 'Edit Goal & Savings Account' : 'New Goal & Connected Savings'}
+        subtitle="One goal automatically establishes one connected savings account."
+        footer={
+          <>
+            <button
+              type="button"
+              disabled={isSubmittingGoal}
+              onClick={() => setIsGoalModalOpen(false)}
+              className={SECONDARY_BUTTON_CLASS}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="goal-form"
+              disabled={isSubmittingGoal}
+              className={PRIMARY_BUTTON_CLASS}
+            >
+              {isSubmittingGoal ? 'Saving…' : (editingGoal ? 'Update Goal' : 'Create Goal & Account')}
+            </button>
+          </>
+        }
+      >
+        {goalFormError && (
+          <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+            <span>{goalFormError}</span>
+          </div>
+        )}
+
+        <form id="goal-form" onSubmit={handleSaveGoal} className="space-y-4">
+          <div>
+            <label className={LABEL_CLASS}>Goal Name *</label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. MacBook Pro"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className={INPUT_CLASS}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <div>
+              <label className={LABEL_CLASS}>Target Amount ({data.settings.currency}) *</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                required
+                placeholder="0.00"
+                value={targetAmount}
+                onChange={(e) => setTargetAmount(e.target.value)}
+                className={MONO_INPUT_CLASS}
+              />
             </div>
 
-            {goalFormError && (
-              <div className="mt-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                <span>{goalFormError}</span>
+            {!editingGoal && (
+              <div>
+                <label className={LABEL_CLASS}>Initial Deposit (Optional)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={initialDeposit}
+                  onChange={(e) => setInitialDeposit(e.target.value)}
+                  className={MONO_INPUT_CLASS}
+                />
               </div>
             )}
-
-            <form onSubmit={handleSaveGoal} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1">
-                  Goal Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. MacBook Pro M3"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1">
-                    Target Amount ({data.settings.currency}) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    required
-                    placeholder="0.00"
-                    value={targetAmount}
-                    onChange={(e) => setTargetAmount(e.target.value)}
-                    className="w-full px-3 py-2 text-sm font-mono bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                  />
-                </div>
-
-                {!editingGoal && (
-                  <div>
-                    <label className="block text-xs font-semibold text-neutral-700 mb-1">
-                      Initial Deposit (Optional)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="0.00"
-                      value={initialDeposit}
-                      onChange={(e) => setInitialDeposit(e.target.value)}
-                      className="w-full px-3 py-2 text-sm font-mono bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1">
-                    Category
-                  </label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value as GoalCategory)}
-                    className="w-full px-3 py-2 text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                  >
-                    {categories.map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1">
-                    Target Date (Optional)
-                  </label>
-                  <input
-                    type="date"
-                    value={targetDate}
-                    onChange={(e) => setTargetDate(e.target.value)}
-                    className="w-full px-3 py-2 text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1">
-                  Description (Optional)
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Why are you saving for this goal..."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                />
-              </div>
-
-              <div className="pt-3 flex items-center justify-end gap-2 border-t border-neutral-100">
-                <button
-                  type="button"
-                  disabled={isSubmittingGoal}
-                  onClick={() => setIsGoalModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingGoal}
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  {isSubmittingGoal ? 'Saving...' : (editingGoal ? 'Update Goal' : 'Create Goal & Account')}
-                </button>
-              </div>
-            </form>
           </div>
-        </div>
-      )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <div>
+              <label className={LABEL_CLASS}>Category</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value as GoalCategory)}
+                className={SELECT_CLASS}
+              >
+                {categories.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className={LABEL_CLASS}>Target Date (Optional)</label>
+              <input
+                type="date"
+                value={targetDate}
+                onChange={(e) => setTargetDate(e.target.value)}
+                className={INPUT_CLASS}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className={LABEL_CLASS}>Description (Optional)</label>
+            <textarea
+              rows={2}
+              placeholder="Why are you saving for this goal…"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className={TEXTAREA_CLASS}
+            />
+          </div>
+        </form>
+      </Modal>
 
       {/* GOAL DETAIL & SAVINGS ACTIVITY MODAL */}
-      {selectedDetailGoal && selectedResolvedGoal && (() => {
-        const {
-          savedAmount: saved,
-          targetAmount: target,
-          remainingAmount: remaining,
-          progressPercentage: progress,
-          isCompleted,
-          isPaused,
-          hasValidSavingsLink
-        } = selectedResolvedGoal;
-        const txs = selectedGoalTransactions;
-        const detailBadgeLabel = isCompleted ? 'Completed' : isPaused ? 'Paused' : 'In Progress';
-        const detailBadgeClass = isCompleted
-          ? 'bg-emerald-100 text-emerald-800'
-          : isPaused
-            ? 'bg-neutral-200 text-neutral-700'
-            : 'bg-sky-100 text-sky-800';
-
+      {(() => {
+        const detail = selectedDetailGoal && selectedResolvedGoal ? selectedResolvedGoal : null;
+        const badgeLabel = detail
+          ? detail.isCompleted ? 'Completed' : detail.isPaused ? 'Paused' : 'In Progress'
+          : '';
         return (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs"
-            onClick={() => setSelectedDetailGoalId(null)}
-            role="dialog"
-            aria-modal="true"
+          <Modal
+            isOpen={Boolean(selectedDetailGoal && detail)}
+            onClose={() => {
+              if (deleteTargetId === null && !isDeleting) {
+                setSelectedDetailGoalId(null);
+              }
+            }}
+            disableClose={deleteTargetId !== null || isDeleting}
+            maxWidth="2xl"
+            title={selectedDetailGoal?.title || 'Goal Details'}
+            subtitle={selectedDetailGoal ? `${selectedDetailGoal.category} · ${badgeLabel}` : undefined}
+            footer={
+              <button
+                type="button"
+                onClick={() => setSelectedDetailGoalId(null)}
+                className={PRIMARY_BUTTON_CLASS}
+              >
+                Close
+              </button>
+            }
           >
-            <div
-              className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-black/[0.08] p-5 sm:p-6 overflow-hidden max-h-[90vh] overflow-y-auto space-y-6"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between pb-4 border-b border-black/[0.06]">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold px-2 py-0.5 bg-neutral-100 text-neutral-700 rounded-md uppercase tracking-wider">
-                      {selectedDetailGoal.category}
-                    </span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider ${detailBadgeClass}`}>
-                      {detailBadgeLabel}
-                    </span>
+            {selectedDetailGoal && detail && (
+              <div className="space-y-6">
+                {/* Progress Summary */}
+                <div className="p-5 rounded-2xl bg-[#f5f5f7] space-y-4">
+                  <div className="grid grid-cols-3 gap-2 text-center sm:text-left">
+                    <div>
+                      <span className="text-[11px] text-[#6e6e73] font-medium block">Target</span>
+                      <div className="text-base sm:text-xl font-semibold font-mono text-[#1d1d1f] tabular-nums">
+                        {formatCurrency(detail.targetAmount, data.settings.currency)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-[11px] text-[#6e6e73] font-medium block">Saved</span>
+                      <div className="text-base sm:text-xl font-semibold font-mono text-emerald-700 tabular-nums">
+                        {formatCurrency(detail.savedAmount, data.settings.currency)}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-[11px] text-[#6e6e73] font-medium block">Remaining</span>
+                      <div className="text-base sm:text-xl font-semibold font-mono text-[#1d1d1f] tabular-nums">
+                        {formatCurrency(detail.remainingAmount, data.settings.currency)}
+                      </div>
+                    </div>
                   </div>
-                  <h3 className="text-xl font-bold text-[#111111] mt-1 tracking-tight">
-                    {selectedDetailGoal.title}
-                  </h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedDetailGoalId(null)}
-                  className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-900 transition-colors cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
 
-              {/* Progress Summary Box */}
-              <div className="p-5 rounded-2xl bg-neutral-50 border border-neutral-200 space-y-4">
-                <div className="grid grid-cols-3 gap-2 text-center sm:text-left">
-                  <div>
-                    <span className="text-[11px] text-neutral-500 uppercase font-semibold">Target</span>
-                    <div className="text-lg sm:text-xl font-extrabold font-mono text-[#111111]">
-                      {formatCurrency(target, data.settings.currency)}
+                  <div className="space-y-1.5">
+                    <div className="w-full h-2 bg-black/[0.08] rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${detail.isCompleted ? 'bg-emerald-600' : 'bg-[#0284c7]'}`}
+                        style={{ width: `${detail.progressPercentage}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs font-mono text-[#6e6e73] tabular-nums">
+                      <span>{detail.progressPercentage}% funded</span>
+                      {selectedDetailGoal.targetDate && <span>Target: {formatHumanDate(selectedDetailGoal.targetDate)}</span>}
                     </div>
                   </div>
-                  <div>
-                    <span className="text-[11px] text-neutral-500 uppercase font-semibold">Saved</span>
-                    <div className="text-lg sm:text-xl font-extrabold font-mono text-emerald-700">
-                      {formatCurrency(saved, data.settings.currency)}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-[11px] text-neutral-500 uppercase font-semibold">Remaining</span>
-                    <div className="text-lg sm:text-xl font-extrabold font-mono text-neutral-800">
-                      {formatCurrency(remaining, data.settings.currency)}
-                    </div>
-                  </div>
+
+                  {selectedDetailGoal.description && (
+                    <p className="text-xs text-[#6e6e73] pt-2 border-t border-black/[0.06] leading-relaxed">
+                      {selectedDetailGoal.description}
+                    </p>
+                  )}
                 </div>
 
-                <div className="space-y-1">
-                  <div className="w-full h-2.5 bg-neutral-200 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full transition-all duration-300 ${isCompleted ? 'bg-emerald-500' : 'bg-[#111111]'}`}
-                      style={{ width: `${progress}%` }}
+                {!detail.hasValidSavingsLink && (
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                    <span>This goal has no connected savings account record. Deposits and withdrawals are disabled.</span>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    disabled={!detail.hasValidSavingsLink}
+                    onClick={() => openTxModal('deposit')}
+                    className={ACCENT_BUTTON_CLASS}
+                  >
+                    <ArrowUpRight className="w-4 h-4" />
+                    <span>Add Money (Deposit)</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!detail.hasValidSavingsLink}
+                    onClick={() => openTxModal('withdrawal')}
+                    className={SECONDARY_BUTTON_CLASS}
+                  >
+                    <ArrowDownLeft className="w-4 h-4" />
+                    <span>Withdraw Money</span>
+                  </button>
+                  <div className="ml-auto flex items-center gap-1">
+                    <ActionIconButton
+                      icon={Edit3}
+                      label="Edit Goal"
+                      variant="edit"
+                      onClick={() => {
+                        setSelectedDetailGoalId(null);
+                        openEditModal(selectedDetailGoal);
+                      }}
+                    />
+                    <ActionIconButton
+                      icon={Trash2}
+                      label="Archive Goal"
+                      variant="delete"
+                      disabled={detail.isPaused || selectedDetailGoal.status === 'Archived' || isDeleting}
+                      onClick={() => {
+                        setDeleteError(null);
+                        setDeleteTargetId(selectedDetailGoal.id);
+                      }}
                     />
                   </div>
-                  <div className="flex justify-between text-xs font-mono text-neutral-500">
-                    <span>{progress}% funded</span>
-                    {selectedDetailGoal.targetDate && <span>Target Date: {formatHumanDate(selectedDetailGoal.targetDate)}</span>}
-                  </div>
                 </div>
 
-                {selectedDetailGoal.description && (
-                  <p className="text-xs text-neutral-600 pt-2 border-t border-neutral-200">
-                    {selectedDetailGoal.description}
-                  </p>
-                )}
-              </div>
-
-              {!hasValidSavingsLink && (
-                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
-                  <span>This goal has no connected savings account record. Deposits and withdrawals are disabled.</span>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-2.5">
-                <button
-                  type="button"
-                  disabled={!hasValidSavingsLink}
-                  onClick={() => openTxModal('deposit')}
-                  className="flex items-center gap-1.5 px-4 py-2.5 bg-[#111111] text-white text-xs font-semibold rounded-xl hover:bg-black transition-colors cursor-pointer shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <ArrowUpRight className="w-4 h-4 text-[#87CEEB]" />
-                  <span>Add Money (Deposit)</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={!hasValidSavingsLink}
-                  onClick={() => openTxModal('withdrawal')}
-                  className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-[#111111] border border-neutral-300 text-xs font-semibold rounded-xl hover:bg-neutral-50 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <ArrowDownLeft className="w-4 h-4 text-neutral-700" />
-                  <span>Withdraw Money</span>
-                </button>
-                <div className="ml-auto flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedDetailGoalId(null);
-                      openEditModal(selectedDetailGoal);
-                    }}
-                    className="p-2 text-neutral-600 hover:text-black hover:bg-neutral-100 rounded-xl transition-colors cursor-pointer"
-                    title="Edit Goal"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isPaused || selectedDetailGoal.status === 'Archived' || isDeleting}
-                    onClick={() => {
-                      setDeleteError(null);
-                      setDeleteTargetId(selectedDetailGoal.id);
-                    }}
-                    className="p-2 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                    title="Archive Goal"
-                    aria-label="Archive Goal"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Transaction History */}
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-sm text-[#111111] flex items-center gap-2">
-                    <History className="w-4 h-4 text-neutral-500" />
-                    <span>Connected Savings Transactions ({txs.length})</span>
+                {/* Transaction History */}
+                <div className="space-y-3">
+                  <h4 className="font-semibold text-sm text-[#1d1d1f] flex items-center gap-2">
+                    <History className="w-4 h-4 text-[#6e6e73]" />
+                    <span>Connected Savings Transactions ({selectedGoalTransactions.length})</span>
                   </h4>
-                </div>
 
-                {txs.length === 0 ? (
-                  <p className="text-xs text-neutral-400 text-center py-6 bg-neutral-50 rounded-xl border border-neutral-200">
-                    No savings transactions recorded yet for this goal account.
-                  </p>
-                ) : (
-                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                    {txs.map(tx => {
+                  {selectedGoalTransactions.length === 0 ? (
+                    <p className="text-xs text-[#86868b] text-center py-6 bg-[#f5f5f7] rounded-2xl">
+                      No savings transactions recorded yet for this goal account.
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-black/[0.06] border border-black/[0.08] rounded-2xl overflow-hidden max-h-60 overflow-y-auto bg-white">
+                      {selectedGoalTransactions.map(tx => {
                         const isDeposit = tx.type === 'deposit';
                         return (
-                          <div key={tx.id} className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold ${
-                                isDeposit ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                              }`}>
-                                {isDeposit ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownLeft className="w-4 h-4" />}
-                              </div>
-                              <div>
-                                <span className="font-mono font-bold text-[#111111] block">
+                          <div key={tx.id} className="p-3.5 flex items-center justify-between text-xs gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              {isDeposit ? (
+                                <ArrowUpRight className="w-4 h-4 text-emerald-600 shrink-0" />
+                              ) : (
+                                <ArrowDownLeft className="w-4 h-4 text-amber-600 shrink-0" />
+                              )}
+                              <div className="min-w-0">
+                                <span className="font-mono font-semibold text-[#1d1d1f] block tabular-nums">
                                   {isDeposit ? '+' : '-'}{formatCurrency(tx.amount, data.settings.currency)}
                                 </span>
-                                <span className="text-[11px] text-neutral-400 font-mono">
-                                  {formatHumanDate(tx.date)} {tx.note ? `· ${tx.note}` : ''}
+                                <span className="text-xs text-[#6e6e73] font-mono tabular-nums block truncate">
+                                  {formatHumanDate(tx.date)}{tx.note ? ` · ${tx.note}` : ''}
                                 </span>
                               </div>
                             </div>
-                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                              isDeposit ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                            }`}>
+                            <span className={`text-xs font-medium capitalize shrink-0 ${isDeposit ? 'text-emerald-700' : 'text-amber-700'}`}>
                               {tx.type}
                             </span>
                           </div>
                         );
                       })}
-                  </div>
-                )}
+                    </div>
+                  )}
+                </div>
               </div>
-
-              <div className="pt-3 flex justify-end border-t border-neutral-100">
-                <button
-                  type="button"
-                  onClick={() => setSelectedDetailGoalId(null)}
-                  className="px-4 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
+            )}
+          </Modal>
         );
       })()}
 
       {/* DEPOSIT / WITHDRAWAL MODAL */}
-      {isTxModalOpen && selectedDetailGoal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs"
-          onClick={() => { if (!isSubmittingTx) setIsTxModalOpen(false); }}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div
-            className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-black/[0.08] p-5 sm:p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-black/[0.06]">
-              <div>
-                <h3 className="font-bold text-base text-[#111111] tracking-tight">
-                  {txType === 'deposit' ? 'Add Money to Goal' : 'Withdraw Money from Goal'}
-                </h3>
-                <p className="text-xs text-neutral-500">
-                  {selectedDetailGoal.title}
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={isSubmittingTx}
-                onClick={() => setIsTxModalOpen(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-neutral-900 cursor-pointer disabled:opacity-50"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {txError && (
-              <div className="mt-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                <span>{txError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSaveTx} className="mt-4 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1">
-                  Amount ({data.settings.currency}) *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  required
-                  placeholder="0.00"
-                  value={txAmount}
-                  onChange={(e) => setTxAmount(e.target.value)}
-                  className="w-full px-3 py-2 text-sm font-mono bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                />
-                {txType === 'withdrawal' && (() => {
-                  const sg = getConnectedSavingsGoal(selectedDetailGoal);
-                  return sg ? (
-                    <p className="text-[11px] text-neutral-400 mt-1 font-mono">
-                      Available balance: {formatCurrency(sg.currentAmount || 0, data.settings.currency)}
-                    </p>
-                  ) : null;
-                })()}
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1">
-                  Note / Reference (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder={txType === 'deposit' ? 'e.g. Monthly paycheck contribution' : 'e.g. Partial purchase withdrawal'}
-                  value={txNote}
-                  onChange={(e) => setTxNote(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-white border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                />
-              </div>
-
-              <div className="pt-3 flex items-center justify-end gap-2 border-t border-neutral-100">
-                <button
-                  type="button"
-                  disabled={isSubmittingTx}
-                  onClick={() => setIsTxModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingTx}
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  {isSubmittingTx ? 'Processing...' : (txType === 'deposit' ? 'Confirm Deposit' : 'Confirm Withdrawal')}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={isTxModalOpen && Boolean(selectedDetailGoal)}
+        onClose={() => { if (!isSubmittingTx) setIsTxModalOpen(false); }}
+        disableClose={isSubmittingTx}
+        maxWidth="md"
+        title={txType === 'deposit' ? 'Add Money to Goal' : 'Withdraw Money from Goal'}
+        subtitle={selectedDetailGoal?.title}
+        footer={
+          <>
+            <button
+              type="button"
+              disabled={isSubmittingTx}
+              onClick={() => setIsTxModalOpen(false)}
+              className={SECONDARY_BUTTON_CLASS}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="goal-tx-form"
+              disabled={isSubmittingTx}
+              className={PRIMARY_BUTTON_CLASS}
+            >
+              {isSubmittingTx ? 'Processing…' : (txType === 'deposit' ? 'Confirm Deposit' : 'Confirm Withdrawal')}
+            </button>
+          </>
+        }
+      >
+        {txError && (
+          <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+            <span>{txError}</span>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Archive Confirmation */}
+        <form id="goal-tx-form" onSubmit={handleSaveTx} className="space-y-4">
+          <div>
+            <label className={LABEL_CLASS}>Amount ({data.settings.currency}) *</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0.01"
+              required
+              placeholder="0.00"
+              value={txAmount}
+              onChange={(e) => setTxAmount(e.target.value)}
+              className={MONO_INPUT_CLASS}
+            />
+            {txType === 'withdrawal' && selectedDetailGoal && (() => {
+              const sg = getConnectedSavingsGoal(selectedDetailGoal);
+              return sg ? (
+                <p className="text-xs text-[#6e6e73] mt-1 font-mono tabular-nums">
+                  Available balance: {formatCurrency(sg.currentAmount || 0, data.settings.currency)}
+                </p>
+              ) : null;
+            })()}
+          </div>
+
+          <div>
+            <label className={LABEL_CLASS}>Note / Reference (Optional)</label>
+            <input
+              type="text"
+              placeholder={txType === 'deposit' ? 'e.g. Monthly paycheck contribution' : 'e.g. Partial purchase withdrawal'}
+              value={txNote}
+              onChange={(e) => setTxNote(e.target.value)}
+              className={INPUT_CLASS}
+            />
+          </div>
+        </form>
+      </Modal>
+
       <ConfirmDialog
         isOpen={deleteTargetId !== null}
         title="Archive Goal"

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { CalendarCheck, Plus, ChevronLeft, ChevronRight, CheckCircle2, Trash2, Edit3, X, AlertCircle } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { CalendarCheck, Plus, ChevronLeft, ChevronRight, Trash2, Edit3, AlertCircle } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
 import { AttendanceRecord, AttendanceStatus } from '../../types';
 import { calculateAttendanceStats } from '../../utils/calculations';
@@ -13,6 +13,26 @@ import {
 import { EmptyState } from '../common/EmptyState';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
+import {
+  ActionIconButton,
+  INPUT_CLASS,
+  LABEL_CLASS,
+  MONO_INPUT_CLASS,
+  MetricCard,
+  Modal,
+  PRIMARY_BUTTON_CLASS,
+  PageHeader,
+  SECONDARY_BUTTON_CLASS,
+  SELECT_CLASS,
+  SectionCard
+} from '../ui';
+
+const STATUS_TEXT_TONE: Record<AttendanceStatus, string> = {
+  Present: 'text-emerald-700',
+  Absent: 'text-rose-600',
+  Leave: 'text-amber-700',
+  Holiday: 'text-[#0284c7]'
+};
 
 export const WorkView: React.FC = () => {
   const data = useXOSData();
@@ -21,37 +41,23 @@ export const WorkView: React.FC = () => {
   const [currentYear, setCurrentYear] = useState(() => Number(todayStr.slice(0, 4)));
   const [currentMonth, setCurrentMonth] = useState(() => Number(todayStr.slice(5, 7)) - 1);
 
-  // Confirmation dialog state
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
 
-  // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isSubmittingRef = useRef(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Form Fields
   const [date, setDate] = useState(todayStr);
   const [status, setStatus] = useState<AttendanceStatus>('Present');
   const [checkInTime, setCheckInTime] = useState('');
   const [checkOutTime, setCheckOutTime] = useState('');
   const [breakDurationMinutes, setBreakDurationMinutes] = useState('');
   const [notes, setNotes] = useState('');
-
-  // Escape key handler for modal
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isModalOpen && !isSubmitting) {
-        setIsModalOpen(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isModalOpen, isSubmitting]);
 
   const currentMonthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
   const monthName = new Date(currentYear, currentMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -191,12 +197,11 @@ export const WorkView: React.FC = () => {
     setDeleteTargetId(id);
   };
 
-  // Calendar Days Grid respecting configured weekStartDay ('Sunday' vs 'Monday')
   const isMondayStart = data.settings.weekStartDay === 'Monday';
 
   const calendarCells = useMemo(() => {
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const rawFirstDayOfWeek = new Date(currentYear, currentMonth, 1).getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
+    const rawFirstDayOfWeek = new Date(currentYear, currentMonth, 1).getDay();
     const leadingBlankCount = isMondayStart ? (rawFirstDayOfWeek + 6) % 7 : rawFirstDayOfWeek;
 
     const cells: (string | null)[] = [];
@@ -218,29 +223,23 @@ export const WorkView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-black/[0.06]">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-[#111111] tracking-tight">
-            Work & Attendance
-          </h2>
-          <p className="text-xs sm:text-sm text-neutral-500 font-normal mt-0.5">
-            Log daily attendance, track hours worked, and monitor monthly working schedules.
-          </p>
-        </div>
-
-        <button
-          onClick={() => openLogModalForDate(todayStr)}
-          type="button"
-          className="self-start sm:self-auto flex items-center gap-1.5 px-3.5 py-2 bg-[#111111] text-white text-xs font-semibold rounded-xl hover:bg-black transition-colors shadow-xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-        >
-          <Plus className="w-4 h-4 text-[#87CEEB]" />
-          <span>Mark Attendance</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Work & Attendance"
+        description="Log daily shifts, track working hours, and review monthly schedules."
+        actions={
+          <button
+            onClick={() => openLogModalForDate(todayStr)}
+            type="button"
+            className={PRIMARY_BUTTON_CLASS}
+          >
+            <Plus className="w-4 h-4" />
+            <span>{todayRecord ? 'Update Today' : 'Mark Attendance'}</span>
+          </button>
+        }
+      />
 
       {pageError && (
-        <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center justify-between gap-2">
+        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-2xl flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
             <span>{pageError}</span>
@@ -248,134 +247,112 @@ export const WorkView: React.FC = () => {
           <button
             type="button"
             onClick={() => setPageError(null)}
-            className="text-rose-700 hover:text-rose-900 font-semibold cursor-pointer"
+            className="text-rose-700 hover:text-rose-900 font-medium cursor-pointer"
           >
             Dismiss
           </button>
         </div>
       )}
 
-      {/* Today Quick Status Box & Monthly Stats */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Today Status Widget */}
-        <div className="p-5 rounded-2xl bg-[#111111] text-white flex flex-col justify-between space-y-4 shadow-xs">
-          <div>
-            <div className="flex items-center justify-between text-neutral-400">
-              <span className="text-[11px] font-semibold uppercase tracking-wider">Today's Check-In</span>
-              <span className="text-[11px] font-mono text-[#87CEEB] tabular-nums">{todayStr}</span>
-            </div>
-            <div className="mt-3">
-              {todayRecord ? (
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#87CEEB]" />
-                    <span className="text-xl font-bold text-white">{todayRecord.status}</span>
-                  </div>
-                  {todayRecord.status === 'Present' && (
-                    <p className="text-xs text-neutral-300 font-mono tabular-nums">
-                      {todayRecord.checkInTime} - {todayRecord.checkOutTime} ({todayRecord.calculatedHours}h)
-                    </p>
-                  )}
+      {/* Today Check-In & Monthly Counters */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4 items-stretch">
+        <div className="lg:col-span-1 rounded-2xl p-4 sm:p-5 bg-[#f5f5f7] border border-black/[0.06] flex flex-col justify-between gap-3">
+          <div className="space-y-1.5">
+            <span className="block text-[11px] font-medium text-[#6e6e73]">
+              Today · <span className="font-mono tabular-nums">{todayStr}</span>
+            </span>
+            {todayRecord ? (
+              <>
+                <div className={`text-xl font-semibold tracking-tight ${STATUS_TEXT_TONE[todayRecord.status]}`}>
+                  {todayRecord.status}
                 </div>
-              ) : (
-                <div>
-                  <span className="text-sm font-semibold text-neutral-200 block">Not marked yet</span>
-                  <p className="text-xs text-neutral-400 mt-1">Tap below to record today's shift.</p>
-                </div>
-              )}
-            </div>
+                {todayRecord.status === 'Present' && (
+                  <p className="text-xs text-[#6e6e73] font-mono tabular-nums">
+                    {todayRecord.checkInTime} – {todayRecord.checkOutTime} · {todayRecord.calculatedHours}h
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="text-lg font-semibold text-[#1d1d1f]">Not marked</div>
+                <p className="text-xs text-[#6e6e73]">Record today&apos;s shift details.</p>
+              </>
+            )}
           </div>
 
           <button
             onClick={() => openLogModalForDate(todayStr)}
             type="button"
-            className="w-full py-2.5 bg-[#87CEEB] text-[#111111] text-xs font-bold rounded-xl hover:bg-sky-300 transition-colors text-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            className="w-full min-h-[40px] py-2 px-3 bg-[#1d1d1f] hover:bg-black text-white text-xs font-medium rounded-xl transition-colors cursor-pointer"
           >
-            {todayRecord ? 'Update Today' : 'Log Today'}
+            {todayRecord ? 'Edit Today' : 'Log Today'}
           </button>
         </div>
 
-        {/* Monthly Attendance Counters */}
-        <div className="lg:col-span-3 grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-          <div className="p-4 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1.5 shadow-xs">
-            <span className="text-[11px] font-semibold text-neutral-500 uppercase">Working Days</span>
-            <div className="text-2xl sm:text-3xl font-extrabold font-mono text-[#111111] tabular-nums">
-              {monthlyStats.presentDays}
-            </div>
-            <span className="text-[11px] text-neutral-400">Present in {monthName}</span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1.5 shadow-xs">
-            <span className="text-[11px] font-semibold text-neutral-500 uppercase">Total Hours</span>
-            <div className="text-2xl sm:text-3xl font-extrabold font-mono text-[#111111] tabular-nums">
-              {monthlyStats.totalHours}h
-            </div>
-            <span className="text-[11px] text-neutral-400">Recorded time</span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1.5 shadow-xs">
-            <span className="text-[11px] font-semibold text-neutral-500 uppercase">Leaves</span>
-            <div className="text-2xl sm:text-3xl font-extrabold font-mono text-[#111111] tabular-nums">
-              {monthlyStats.leaveDays}
-            </div>
-            <span className="text-[11px] text-neutral-400">Time-off days</span>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-white border border-black/[0.08] flex flex-col justify-between space-y-1.5 shadow-xs">
-            <span className="text-[11px] font-semibold text-neutral-500 uppercase">Off / Absent</span>
-            <div className="text-2xl sm:text-3xl font-extrabold font-mono text-neutral-600 tabular-nums">
-              {monthlyStats.absentDays} / {monthlyStats.holidayDays}
-            </div>
-            <span className="text-[11px] text-neutral-400">Absent / Holidays</span>
-          </div>
+        <div className="lg:col-span-4 grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+          <MetricCard
+            label="Working Days"
+            value={monthlyStats.presentDays}
+            sublabel={`Present in ${monthName}`}
+          />
+          <MetricCard
+            label="Total Hours"
+            value={`${monthlyStats.totalHours}h`}
+            sublabel="Recorded work time"
+          />
+          <MetricCard
+            label="Leaves"
+            value={monthlyStats.leaveDays}
+            sublabel="Time-off days"
+          />
+          <MetricCard
+            label="Off / Absent"
+            value={`${monthlyStats.absentDays} / ${monthlyStats.holidayDays}`}
+            sublabel="Absent / Holidays"
+          />
         </div>
       </div>
 
-      {/* Monthly Attendance Calendar Grid */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-white border border-black/[0.08] space-y-3.5 shadow-xs">
-        {/* Month Navigation */}
-        <div className="flex items-center justify-between pb-3 border-b border-black/[0.06]">
-          <div className="flex items-center gap-2">
-            <CalendarCheck className="w-4 h-4 text-[#87CEEB]" />
-            <h3 className="font-bold text-sm text-[#111111]">{monthName} Calendar</h3>
-          </div>
-
+      {/* Monthly Attendance Calendar */}
+      <SectionCard
+        title={`${monthName} Calendar`}
+        action={
           <div className="flex items-center gap-1.5">
             <button
               onClick={handlePrevMonth}
               type="button"
-              className="p-1 rounded-lg border border-neutral-200 hover:bg-neutral-100 transition-colors text-neutral-600 cursor-pointer"
+              className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-xl border border-black/[0.08] bg-white hover:bg-[#f5f5f7] transition-colors text-[#1d1d1f] cursor-pointer"
               aria-label="Previous month"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="text-xs font-semibold text-neutral-800 font-mono px-1">{monthName}</span>
+            <span className="text-xs font-medium text-[#1d1d1f] font-mono px-2 tabular-nums hidden sm:inline">
+              {monthName}
+            </span>
             <button
               onClick={handleNextMonth}
               type="button"
-              className="p-1 rounded-lg border border-neutral-200 hover:bg-neutral-100 transition-colors text-neutral-600 cursor-pointer"
+              className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-xl border border-black/[0.08] bg-white hover:bg-[#f5f5f7] transition-colors text-[#1d1d1f] cursor-pointer"
               aria-label="Next month"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-        </div>
-
-        {/* Calendar Day Labels */}
-        <div className="grid grid-cols-7 gap-1 text-center text-[10px] sm:text-xs font-semibold text-neutral-400 uppercase">
+        }
+      >
+        <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] font-medium text-[#86868b] mb-2">
           {dayLabels.map(label => (
             <div key={label}>{label}</div>
           ))}
         </div>
 
-        {/* Calendar Grid Cells (Responsive: fits 320px - 1440px) */}
         <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
           {calendarCells.map((dStr, idx) => {
             if (!dStr) {
-              return <div key={`blank_${idx}`} className="h-12 sm:h-16 bg-neutral-50/50 rounded-xl" />;
+              return <div key={`blank_${idx}`} className="h-12 sm:h-16 bg-[#fbfbfd] rounded-xl" />;
             }
 
-            const dayNum = parseInt(dStr.split('-')[2]);
+            const dayNum = parseInt(dStr.split('-')[2], 10);
             const rec = attendanceByDate.get(dStr);
             const isToday = dStr === todayStr;
             const isFuture = dStr > todayStr;
@@ -386,31 +363,26 @@ export const WorkView: React.FC = () => {
                 onClick={() => openLogModalForDate(dStr)}
                 disabled={isFuture}
                 type="button"
-                className={`h-12 sm:h-16 p-1 sm:p-2 rounded-xl border text-left flex flex-col justify-between transition-colors ${
+                className={`h-12 sm:h-16 p-1.5 sm:p-2 rounded-xl border text-left flex flex-col justify-between transition-colors ${
                   isFuture
-                    ? 'border-neutral-100 bg-neutral-100/50 text-neutral-300 cursor-not-allowed'
-                    : isToday 
-                    ? 'ring-2 ring-[#87CEEB] border-[#87CEEB] bg-neutral-50 cursor-pointer' 
-                    : 'border-black/[0.06] hover:border-black/20 bg-white cursor-pointer'
+                    ? 'border-black/[0.04] bg-[#fbfbfd] text-[#d2d2d7] cursor-not-allowed'
+                    : isToday
+                      ? 'ring-2 ring-[#0284c7] border-[#0284c7] bg-[#0284c7]/[0.04] cursor-pointer'
+                      : 'border-black/[0.07] hover:border-black/20 hover:bg-[#f5f5f7]/60 bg-white cursor-pointer'
                 }`}
               >
                 <div className="flex items-center justify-between w-full">
-                  <span className={`text-[11px] sm:text-xs font-bold font-mono ${isToday ? 'text-black' : 'text-neutral-800'}`}>
+                  <span className={`text-[11px] sm:text-xs font-semibold font-mono tabular-nums ${isToday ? 'text-[#0284c7]' : isFuture ? 'text-[#86868b]' : 'text-[#1d1d1f]'}`}>
                     {dayNum}
                   </span>
-                  {rec && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#87CEEB]" />
-                  )}
                 </div>
 
                 {rec ? (
-                  <div className="w-full truncate">
-                    <span className="text-[9px] sm:text-[10px] font-semibold block text-neutral-700 truncate">
-                      {rec.status}
-                    </span>
-                  </div>
+                  <span className={`text-[9px] sm:text-[10px] font-medium block truncate ${STATUS_TEXT_TONE[rec.status]}`}>
+                    {rec.status}
+                  </span>
                 ) : (
-                  <span className="hidden sm:block text-[9px] text-neutral-300 opacity-0 hover:opacity-100">
+                  <span className="hidden sm:block text-[10px] text-[#86868b] opacity-0 hover:opacity-100">
                     + Log
                   </span>
                 )}
@@ -418,9 +390,9 @@ export const WorkView: React.FC = () => {
             );
           })}
         </div>
-      </div>
+      </SectionCard>
 
-      {/* Attendance History Records */}
+      {/* Attendance Log */}
       {data.attendance.length === 0 ? (
         <EmptyState
           icon={CalendarCheck}
@@ -431,281 +403,251 @@ export const WorkView: React.FC = () => {
         />
       ) : (
         <>
-          {/* Mobile Card List for Attendance (widths < 768px: 320px, 360px, etc.) */}
-          <div className="md:hidden space-y-2.5">
-            <div className="text-xs font-bold text-neutral-500 uppercase tracking-wider px-1">
-              Attendance Records
-            </div>
+          {/* Mobile List */}
+          <div className="md:hidden divide-y divide-black/[0.06] bg-white rounded-2xl border border-black/[0.08] overflow-hidden">
             {sortedAttendance.map((rec) => (
-              <div key={rec.id} className="cv-auto p-4 rounded-2xl border border-black/[0.08] bg-white space-y-2 shadow-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-mono font-bold text-sm text-[#111111]">
+              <div key={rec.id} className="cv-auto p-4 space-y-2">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-mono font-medium text-sm text-[#1d1d1f] tabular-nums">
                     {formatHumanDate(rec.date)}
                   </span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-100 text-neutral-800">
+                  <span className={`text-xs font-medium ${STATUS_TEXT_TONE[rec.status]}`}>
                     {rec.status}
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between text-xs text-neutral-500 font-mono">
-                  <span>{rec.checkInTime && rec.checkOutTime ? `${rec.checkInTime} - ${rec.checkOutTime}` : 'Shift open'}</span>
-                  <span className="font-bold text-[#111111]">
-                    {rec.status === 'Present' && typeof rec.calculatedHours === 'number' ? `${rec.calculatedHours} hrs` : '—'}
+                <div className="flex items-center justify-between text-xs text-[#6e6e73] font-mono tabular-nums">
+                  <span>{rec.checkInTime && rec.checkOutTime ? `${rec.checkInTime} – ${rec.checkOutTime}` : 'Shift open'}</span>
+                  <span className="font-semibold text-[#1d1d1f]">
+                    {rec.status === 'Present' && typeof rec.calculatedHours === 'number' ? `${rec.calculatedHours}h` : '—'}
                   </span>
                 </div>
 
                 {rec.notes && (
-                  <p className="text-xs text-neutral-500 bg-neutral-50 p-2 rounded-lg font-normal">
-                    {rec.notes}
-                  </p>
+                  <p className="text-xs text-[#6e6e73] leading-relaxed">{rec.notes}</p>
                 )}
 
-                <div className="pt-2 border-t border-neutral-100 flex items-center justify-end gap-2">
-                  <button
+                <div className="flex items-center justify-end gap-1 -mr-1 pt-1">
+                  <ActionIconButton
+                    icon={Edit3}
+                    label="Edit attendance"
+                    variant="edit"
                     onClick={() => openLogModalForDate(rec.date)}
-                    className="p-1 text-neutral-400 hover:text-black cursor-pointer"
-                    title="Edit"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
+                  />
+                  <ActionIconButton
+                    icon={Trash2}
+                    label="Delete attendance"
+                    variant="delete"
                     onClick={() => handleDelete(rec.id)}
-                    className="p-1 text-neutral-400 hover:text-rose-600 cursor-pointer"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  />
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Desktop Table (widths >= 768px) */}
-          <div className="hidden md:block bg-white rounded-2xl border border-black/[0.08] overflow-hidden shadow-xs">
-            <div className="p-4 border-b border-black/[0.06] font-bold text-sm text-[#111111]">
-              Attendance Log
-            </div>
+          {/* Desktop Table */}
+          <SectionCard title="Attendance Log" padding="none" className="hidden md:block overflow-hidden">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-neutral-50/80 border-b border-black/[0.06] text-[11px] font-bold text-neutral-500 uppercase tracking-wider">
+                <tr className="bg-[#fbfbfd] border-b border-black/[0.06] text-[11px] font-medium text-[#6e6e73]">
                   <th className="py-3 px-4">Date</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4">Check-In / Out</th>
                   <th className="py-3 px-4 text-center">Hours</th>
                   <th className="py-3 px-4">Notes</th>
-                  <th className="py-3 px-4 text-center">Actions</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-black/[0.06] text-xs text-neutral-700">
+              <tbody className="divide-y divide-black/[0.06] text-[13px] text-[#1d1d1f]">
                 {sortedAttendance.map((rec) => (
-                  <tr key={rec.id} className="hover:bg-neutral-50/70 transition-colors">
-                    <td className="py-3 px-4 font-mono font-semibold text-[#111111] tabular-nums">
+                  <tr key={rec.id} className="hover:bg-[#f5f5f7]/60 transition-colors">
+                    <td className="py-3 px-4 font-mono font-medium text-[#1d1d1f] tabular-nums">
                       {formatHumanDate(rec.date)}
                     </td>
-                    <td className="py-3 px-4">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-neutral-100 text-neutral-800">
-                        {rec.status}
-                      </span>
+                    <td className={`py-3 px-4 font-medium ${STATUS_TEXT_TONE[rec.status]}`}>
+                      {rec.status}
                     </td>
-                    <td className="py-3 px-4 font-mono text-neutral-600 tabular-nums">
-                      {rec.checkInTime && rec.checkOutTime ? `${rec.checkInTime} - ${rec.checkOutTime}` : '—'}
+                    <td className="py-3 px-4 font-mono text-xs text-[#6e6e73] tabular-nums">
+                      {rec.checkInTime && rec.checkOutTime ? `${rec.checkInTime} – ${rec.checkOutTime}` : '—'}
                     </td>
-                    <td className="py-3 px-4 text-center font-mono font-bold text-[#111111] tabular-nums">
+                    <td className="py-3 px-4 text-center font-mono font-semibold text-[#1d1d1f] tabular-nums">
                       {rec.status === 'Present' && typeof rec.calculatedHours === 'number' ? `${rec.calculatedHours}h` : '—'}
                     </td>
-                    <td className="py-3 px-4 text-neutral-500">
+                    <td className="py-3 px-4 text-[#6e6e73]">
                       {rec.notes || '—'}
                     </td>
-                    <td className="py-3 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
+                    <td className="py-3 px-4 text-right">
+                      <div className="inline-flex items-center justify-end gap-0.5">
+                        <ActionIconButton
+                          icon={Edit3}
+                          label="Edit attendance"
+                          variant="edit"
                           onClick={() => openLogModalForDate(rec.date)}
-                          className="p-1 text-neutral-400 hover:text-black cursor-pointer"
-                          title="Edit"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
+                        />
+                        <ActionIconButton
+                          icon={Trash2}
+                          label="Delete attendance"
+                          variant="delete"
                           onClick={() => handleDelete(rec.id)}
-                          className="p-1 text-neutral-400 hover:text-rose-600 cursor-pointer"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        />
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </SectionCard>
         </>
       )}
 
       {/* Modal Attendance Logger */}
-      {isModalOpen && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
-          onClick={() => { if (!isSubmitting) setIsModalOpen(false); }}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div 
-            className="bg-white rounded-2xl max-w-md w-full border border-black/[0.08] shadow-2xl p-5 sm:p-6 space-y-4 max-h-[90vh] overflow-y-auto overflow-x-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
-              <h3 className="font-bold text-base sm:text-lg text-[#111111]">
-                {editingRecord ? 'Edit Attendance Record' : 'Log Attendance'}
-              </h3>
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={() => setIsModalOpen(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-black cursor-pointer disabled:opacity-50"
-              >
-                <X className="w-5 h-5" />
-              </button>
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => { if (!isSubmitting) setIsModalOpen(false); }}
+        disableClose={isSubmitting}
+        maxWidth="md"
+        title={editingRecord ? 'Edit Attendance Record' : 'Log Attendance'}
+        subtitle="Record daily shift status and working hours."
+        footer={
+          <>
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => setIsModalOpen(false)}
+              className={SECONDARY_BUTTON_CLASS}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="attendance-form"
+              disabled={isSubmitting}
+              className={PRIMARY_BUTTON_CLASS}
+            >
+              {isSubmitting ? 'Saving…' : 'Save Record'}
+            </button>
+          </>
+        }
+      >
+        <form id="attendance-form" onSubmit={handleSubmit} className="space-y-4">
+          {formError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{formError}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <div>
+              <label className={LABEL_CLASS}>Date</label>
+              <input
+                type="date"
+                required
+                max={todayStr}
+                value={date}
+                onChange={(e) => {
+                  const nextDate = e.target.value;
+                  setDate(nextDate);
+                  const existingForDate = attendanceByDate.get(nextDate) || null;
+                  setEditingRecord(existingForDate);
+                  if (existingForDate) {
+                    setStatus(existingForDate.status);
+                    setCheckInTime(existingForDate.checkInTime || '');
+                    setCheckOutTime(existingForDate.checkOutTime || '');
+                    setBreakDurationMinutes(
+                      typeof existingForDate.breakDurationMinutes === 'number'
+                        ? String(existingForDate.breakDurationMinutes)
+                        : ''
+                    );
+                    setNotes(existingForDate.notes || '');
+                  } else {
+                    setStatus('Present');
+                    setCheckInTime('');
+                    setCheckOutTime('');
+                    setBreakDurationMinutes('');
+                    setNotes('');
+                  }
+                }}
+                className={INPUT_CLASS}
+              />
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {formError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                  <span>{formError}</span>
-                </div>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Date</label>
+            <div>
+              <label className={LABEL_CLASS}>Status</label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as AttendanceStatus)}
+                className={SELECT_CLASS}
+              >
+                <option value="Present">Present</option>
+                <option value="Absent">Absent</option>
+                <option value="Leave">Leave</option>
+                <option value="Holiday">Holiday</option>
+              </select>
+            </div>
+          </div>
+
+          {status === 'Present' && (
+            <div className="space-y-3 p-3.5 bg-[#f5f5f7] rounded-2xl">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="min-w-0">
+                  <label className={LABEL_CLASS}>Check-In</label>
                   <input
-                    type="date"
-                    required
-                    max={todayStr}
-                    value={date}
-                    onChange={(e) => {
-                      const nextDate = e.target.value;
-                      setDate(nextDate);
-                      const existingForDate = attendanceByDate.get(nextDate) || null;
-                      setEditingRecord(existingForDate);
-                      if (existingForDate) {
-                        setStatus(existingForDate.status);
-                        setCheckInTime(existingForDate.checkInTime || '');
-                        setCheckOutTime(existingForDate.checkOutTime || '');
-                        setBreakDurationMinutes(
-                          typeof existingForDate.breakDurationMinutes === 'number'
-                            ? String(existingForDate.breakDurationMinutes)
-                            : ''
-                        );
-                        setNotes(existingForDate.notes || '');
-                      } else {
-                        setStatus('Present');
-                        setCheckInTime('');
-                        setCheckOutTime('');
-                        setBreakDurationMinutes('');
-                        setNotes('');
-                      }
-                    }}
-                    className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
+                    type="time"
+                    value={checkInTime}
+                    onChange={(e) => setCheckInTime(e.target.value)}
+                    className={MONO_INPUT_CLASS}
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Status</label>
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value as AttendanceStatus)}
-                    className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                  >
-                    <option value="Present">Present</option>
-                    <option value="Absent">Absent</option>
-                    <option value="Leave">Leave</option>
-                    <option value="Holiday">Holiday</option>
-                  </select>
+                <div className="min-w-0">
+                  <label className={LABEL_CLASS}>Check-Out</label>
+                  <input
+                    type="time"
+                    value={checkOutTime}
+                    onChange={(e) => setCheckOutTime(e.target.value)}
+                    className={MONO_INPUT_CLASS}
+                  />
+                </div>
+                <div className="min-w-0">
+                  <label className={LABEL_CLASS}>Break (min)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={breakDurationMinutes}
+                    onChange={(e) => setBreakDurationMinutes(e.target.value)}
+                    className={MONO_INPUT_CLASS}
+                  />
                 </div>
               </div>
-
-              {status === 'Present' && (
-                <div className="space-y-2 p-3 bg-neutral-50 rounded-xl border border-neutral-200">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <div className="min-w-0">
-                      <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Check-In</label>
-                      <input
-                        type="time"
-                        value={checkInTime}
-                        onChange={(e) => setCheckInTime(e.target.value)}
-                        className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
-                      />
-                    </div>
-                    <div className="min-w-0">
-                      <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Check-Out</label>
-                      <input
-                        type="time"
-                        value={checkOutTime}
-                        onChange={(e) => setCheckOutTime(e.target.value)}
-                        className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
-                      />
-                    </div>
-                    <div className="min-w-0">
-                      <label className="block text-[11px] font-semibold text-neutral-700 mb-1">Break (m)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="0"
-                        value={breakDurationMinutes}
-                        onChange={(e) => setBreakDurationMinutes(e.target.value)}
-                        className="w-full min-h-[42px] px-2.5 py-2 text-xs font-mono border border-neutral-300 rounded-lg bg-white"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-neutral-500 pt-1">
-                    <span>
-                      {!checkInTime || !checkOutTime
-                        ? 'Enter check-in and check-out times to calculate hours'
-                        : isOvernightShift(checkInTime, checkOutTime)
-                          ? `Overnight shift (+1 day) · Net: ${calculateWorkingHours(checkInTime, checkOutTime, Math.max(0, parseInt(breakDurationMinutes, 10) || 0))}h`
-                          : `Net working hours: ${calculateWorkingHours(checkInTime, checkOutTime, Math.max(0, parseInt(breakDurationMinutes, 10) || 0))}h`}
-                    </span>
-                    {editingRecord?.extraHours !== undefined && (
-                      <span>Saved extra hours stay preserved unless hours change</span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1">Notes</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Worked on client release"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-neutral-300 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#87CEEB]"
-                />
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#6e6e73]">
+                <span>
+                  {!checkInTime || !checkOutTime
+                    ? 'Enter check-in and check-out times to calculate hours'
+                    : isOvernightShift(checkInTime, checkOutTime)
+                      ? `Overnight shift (+1 day) · Net: ${calculateWorkingHours(checkInTime, checkOutTime, Math.max(0, parseInt(breakDurationMinutes, 10) || 0))}h`
+                      : `Net working hours: ${calculateWorkingHours(checkInTime, checkOutTime, Math.max(0, parseInt(breakDurationMinutes, 10) || 0))}h`}
+                </span>
+                {editingRecord?.extraHours !== undefined && (
+                  <span>Saved extra hours stay preserved unless hours change</span>
+                )}
               </div>
+            </div>
+          )}
 
-              <div className="pt-3 flex justify-end gap-2 border-t border-neutral-100">
-                <button
-                  type="button"
-                  disabled={isSubmitting}
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-xl cursor-pointer disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 text-xs font-semibold bg-[#111111] text-white rounded-xl hover:bg-black transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Saving...' : 'Save Record'}
-                </button>
-              </div>
-            </form>
+          <div>
+            <label className={LABEL_CLASS}>Notes</label>
+            <input
+              type="text"
+              placeholder="e.g. Worked on client release"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className={INPUT_CLASS}
+            />
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
 
-      {/* Accessible Confirmation Dialog */}
       <ConfirmDialog
         isOpen={deleteTargetId !== null}
         title="Delete Attendance Record"

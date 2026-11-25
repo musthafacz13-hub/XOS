@@ -43,13 +43,13 @@ export const JarvisLogo: React.FC<JarvisLogoProps> = ({
         {/* Outer precision optical arcs */}
         <path
           d="M16 3.25A12.75 12.75 0 0 1 28.75 16"
-          stroke="#111111"
+          stroke="#1d1d1f"
           strokeWidth="2.1"
           strokeLinecap="round"
         />
         <path
           d="M26.95 22.45A12.75 12.75 0 0 1 5.05 22.45"
-          stroke="#111111"
+          stroke="#1d1d1f"
           strokeWidth="2.1"
           strokeLinecap="round"
         />
@@ -74,7 +74,7 @@ export const JarvisLogo: React.FC<JarvisLogoProps> = ({
         {/* Cardinal telemetry ticks */}
         <path
           d="M16 6.2V8.1M16 23.9V25.8M6.2 16H8.1M23.9 16H25.8"
-          stroke="#111111"
+          stroke="#1d1d1f"
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeOpacity="0.65"
@@ -85,7 +85,7 @@ export const JarvisLogo: React.FC<JarvisLogoProps> = ({
           cx="16"
           cy="16"
           r="4.2"
-          fill="#111111"
+          fill="#1d1d1f"
         />
         <circle
           cx="16"

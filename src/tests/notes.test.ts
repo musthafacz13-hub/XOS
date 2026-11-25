@@ -594,7 +594,9 @@ async function runNotesTests() {
 
   const mobileNavSrc = fs.readFileSync(path.join(rootDir, 'src/components/layout/MobileBottomNav.tsx'), 'utf8');
   assert(
-    mobileNavSrc.includes("'notes'") && mobileNavSrc.includes("handleSelectTab('notes')"),
+    mobileNavSrc.includes("'notes'") &&
+      (mobileNavSrc.includes("handleSelectTab('notes')") ||
+        (mobileNavSrc.includes("tab: 'notes'") && mobileNavSrc.includes('handleSelectTab(tab)'))),
     'MobileBottomNav includes Notes navigation'
   );
 

@@ -71,9 +71,9 @@ export const ChatActionMenu: React.FC<ChatActionMenuProps> = ({
             onClose();
             onRename();
           }}
-          className="w-full px-3.5 py-2.5 text-xs font-medium text-[#111111] hover:bg-neutral-50 flex items-center gap-2.5 cursor-pointer min-h-[40px]"
+          className="w-full px-3.5 py-2.5 text-xs font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] flex items-center gap-2.5 cursor-pointer min-h-[40px]"
         >
-          <Pencil className="w-3.5 h-3.5 text-neutral-500" />
+          <Pencil className="w-3.5 h-3.5 text-[#6e6e73]" />
           <span>Rename</span>
         </button>
       )}
@@ -86,16 +86,16 @@ export const ChatActionMenu: React.FC<ChatActionMenuProps> = ({
             onClose();
             onTogglePin();
           }}
-          className="w-full px-3.5 py-2.5 text-xs font-medium text-[#111111] hover:bg-neutral-50 flex items-center gap-2.5 cursor-pointer min-h-[40px]"
+          className="w-full px-3.5 py-2.5 text-xs font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] flex items-center gap-2.5 cursor-pointer min-h-[40px]"
         >
           {conversation.pinned ? (
             <>
-              <PinOff className="w-3.5 h-3.5 text-neutral-500" />
+              <PinOff className="w-3.5 h-3.5 text-[#6e6e73]" />
               <span>Unpin</span>
             </>
           ) : (
             <>
-              <Pin className="w-3.5 h-3.5 text-[#0284C7]" />
+              <Pin className="w-3.5 h-3.5 text-[#0284c7]" />
               <span>Pin</span>
             </>
           )}
@@ -109,16 +109,16 @@ export const ChatActionMenu: React.FC<ChatActionMenuProps> = ({
           onClose();
           onToggleArchive();
         }}
-        className="w-full px-3.5 py-2.5 text-xs font-medium text-[#111111] hover:bg-neutral-50 flex items-center gap-2.5 cursor-pointer min-h-[40px]"
+        className="w-full px-3.5 py-2.5 text-xs font-medium text-[#1d1d1f] hover:bg-[#f5f5f7] flex items-center gap-2.5 cursor-pointer min-h-[40px]"
       >
         {conversation.archived ? (
           <>
-            <ArchiveRestore className="w-3.5 h-3.5 text-[#0284C7]" />
+            <ArchiveRestore className="w-3.5 h-3.5 text-[#0284c7]" />
             <span>Restore chat</span>
           </>
         ) : (
           <>
-            <Archive className="w-3.5 h-3.5 text-neutral-500" />
+            <Archive className="w-3.5 h-3.5 text-[#6e6e73]" />
             <span>Archive</span>
           </>
         )}

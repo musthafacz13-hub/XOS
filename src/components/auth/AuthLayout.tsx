@@ -25,7 +25,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
   backLabel = 'Back to Welcome'
 }) => {
   return (
-    <div className="min-h-screen min-h-[100dvh] bg-white text-[#111318] flex flex-col justify-center items-center pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] sm:px-6 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] relative overflow-x-clip">
+    <div className="min-h-screen min-h-[100dvh] bg-[#fbfbfd] text-[#1d1d1f] flex flex-col justify-center items-center pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] sm:px-6 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] relative overflow-x-clip">
       {/* Main Container */}
       <motion.main
         variants={pageVariants}
@@ -39,29 +39,29 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
           <button
             onClick={onBack}
             type="button"
-            className="inline-flex items-center gap-1.5 min-h-[44px] text-xs font-semibold text-[#687482] hover:text-[#111318] transition-colors mb-2 px-2 -ml-2 rounded-xl hover:bg-neutral-100 cursor-pointer"
+            className="inline-flex items-center gap-1.5 min-h-[44px] text-xs font-medium text-[#6e6e73] hover:text-[#1d1d1f] transition-colors mb-2 px-2.5 -ml-2.5 rounded-xl hover:bg-black/[0.04] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7]"
           >
-            <ChevronLeft className="w-4 h-4 text-[#687482]" />
+            <ChevronLeft className="w-4 h-4 text-[#6e6e73]" />
             <span>{backLabel}</span>
           </button>
         )}
 
         {/* Card Frame */}
-        <div className="bg-white border border-neutral-200/90 shadow-sm rounded-3xl p-6 sm:p-8 space-y-6">
+        <div className="bg-white border border-black/[0.08] shadow-xs rounded-3xl p-6 sm:p-8 space-y-6">
           {/* Header */}
           <div className="space-y-1.5 text-left">
             <div className="flex items-center gap-2 mb-3">
               <XOSLogo size="sm" />
-              <span className="text-xs font-bold text-[#687482] tracking-wider uppercase">
+              <span className="text-xs font-medium text-[#6e6e73]">
                 XOS Account
               </span>
             </div>
 
-            <h1 className="text-2xl font-bold tracking-tight text-[#111318]">
+            <h1 className="text-2xl font-semibold tracking-[-0.02em] text-[#1d1d1f]">
               {title}
             </h1>
             {subtitle && (
-              <p className="text-xs text-[#687482] leading-relaxed font-normal">
+              <p className="text-xs text-[#6e6e73] leading-relaxed font-normal">
                 {subtitle}
               </p>
             )}
@@ -74,7 +74,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
         </div>
 
         {/* Quiet Footnote */}
-        <footer className="mt-6 text-center text-xs text-[#687482]">
+        <footer className="mt-6 text-center text-xs text-[#86868b]">
           <span>Protected by end-to-end user isolation &amp; Supabase Row Level Security.</span>
         </footer>
       </motion.main>

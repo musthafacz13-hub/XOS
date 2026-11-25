@@ -224,15 +224,15 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
       <div className="py-8 text-center space-y-4">
         {errorMessage ? (
           <div className="space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-100">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
               <AlertCircle className="w-6 h-6" />
             </div>
 
             <div className="space-y-1">
-              <h3 className="font-bold text-sm text-[#111111]">
+              <h3 className="font-semibold text-sm text-[#1d1d1f]">
                 Authentication link could not be verified
               </h3>
-              <p className="text-xs text-neutral-500 leading-relaxed font-normal">
+              <p className="text-xs text-[#6e6e73] leading-relaxed font-normal">
                 {errorMessage}
               </p>
             </div>
@@ -243,16 +243,16 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
                 onNavigateLogin();
               }}
               type="button"
-              className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-5 py-2.5 bg-[#111318] text-white text-xs font-semibold rounded-xl hover:bg-black transition-colors cursor-pointer"
+              className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-5 py-2.5 bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
             >
               <span>Return to Login</span>
-              <ArrowRight className="w-3.5 h-3.5 text-[#8ECFFF]" />
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center space-y-3">
-            <Loader2 className="w-8 h-8 animate-spin text-[#87CEEB]" />
-            <p className="text-xs text-neutral-500 font-medium">
+            <Loader2 className="w-8 h-8 animate-spin text-[#0284c7]" />
+            <p className="text-xs text-[#6e6e73] font-medium">
               Authenticating session with Supabase...
             </p>
           </div>
