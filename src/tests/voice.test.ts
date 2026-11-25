@@ -295,14 +295,48 @@ async function runVoiceTests() {
     'Rejects high no_speech_prob Whisper hallucination cleanly'
   );
 
-  // Unrelated foreign language (Spanish) rejection in Auto mode
+  // Unrelated foreign language (Spanish) rejection in Auto mode + fail-closed auth verification
   const prevGroq = process.env.GROQ_API_KEY;
+  const prevSupaUrl = process.env.SUPABASE_URL;
+  const prevSupaAnon = process.env.SUPABASE_ANON_KEY;
+  const prevViteSupaUrl = process.env.VITE_SUPABASE_URL;
+  const prevViteSupaAnon = process.env.VITE_SUPABASE_ANON_KEY;
   process.env.GROQ_API_KEY = 'test-groq';
   try {
+    // Without Supabase server config, fail-closed guard MUST return 503
+    delete process.env.SUPABASE_URL;
+    delete process.env.SUPABASE_ANON_KEY;
+    delete process.env.VITE_SUPABASE_URL;
+    delete process.env.VITE_SUPABASE_ANON_KEY;
+    const unconfiguredResp = await handleTranscribeRequest(
+      { audioBase64: validWavB64, mimeType: 'audio/mp4', preferredLanguage: 'auto' },
+      undefined
+    );
+    assert(
+      unconfiguredResp.status === 503,
+      'Fail-closed guard returns 503 when GROQ_API_KEY is set without Supabase config'
+    );
+
+    // With Supabase server config, missing Bearer token MUST return 401
+    process.env.SUPABASE_URL = 'https://test-project.supabase.co';
+    process.env.SUPABASE_ANON_KEY = 'test-anon-key';
+    const unauthResp = await handleTranscribeRequest(
+      { audioBase64: validWavB64, mimeType: 'audio/mp4', preferredLanguage: 'auto' },
+      undefined
+    );
+    assert(unauthResp.status === 401, 'Rejects unauthenticated transcribe request with 401');
+
+    const mockAuthFetch: typeof fetch = async () =>
+      new Response(JSON.stringify({ id: 'voice-test-user-1' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+
     const spanishBlockedResp = await handleTranscribeRequest(
       { audioBase64: validWavB64, mimeType: 'audio/mp4', preferredLanguage: 'auto' },
-      undefined,
+      'Bearer valid-test-jwt',
       {
+        fetchImpl: mockAuthFetch,
         groqFetchImpl: async () =>
           new Response(
             JSON.stringify({
@@ -324,12 +358,21 @@ async function runVoiceTests() {
     // Invalid short/corrupt base64 rejected cleanly on server
     const invalidAudioResp = await handleTranscribeRequest(
       { audioBase64: 'YWJj', mimeType: 'audio/webm' },
-      undefined
+      'Bearer valid-test-jwt',
+      { fetchImpl: mockAuthFetch }
     );
     assert(invalidAudioResp.status === 400, 'Rejects invalid tiny audio payload with 400');
   } finally {
     if (prevGroq !== undefined) process.env.GROQ_API_KEY = prevGroq;
     else delete process.env.GROQ_API_KEY;
+    if (prevSupaUrl !== undefined) process.env.SUPABASE_URL = prevSupaUrl;
+    else delete process.env.SUPABASE_URL;
+    if (prevSupaAnon !== undefined) process.env.SUPABASE_ANON_KEY = prevSupaAnon;
+    else delete process.env.SUPABASE_ANON_KEY;
+    if (prevViteSupaUrl !== undefined) process.env.VITE_SUPABASE_URL = prevViteSupaUrl;
+    else delete process.env.VITE_SUPABASE_URL;
+    if (prevViteSupaAnon !== undefined) process.env.VITE_SUPABASE_ANON_KEY = prevViteSupaAnon;
+    else delete process.env.VITE_SUPABASE_ANON_KEY;
   }
 
   // ==========================================
