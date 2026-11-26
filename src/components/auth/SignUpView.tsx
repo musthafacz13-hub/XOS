@@ -101,9 +101,9 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
         {errorMessage && (
           <div
             role="alert"
-            className="p-3 bg-rose-50 border border-rose-200/80 text-rose-800 text-xs rounded-xl flex items-start gap-2"
+            className="p-3 bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] text-xs rounded-xl flex items-start gap-2"
           >
-            <AlertCircle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
+            <AlertCircle className="w-4 h-4 text-[#c92a2a] mt-0.5 shrink-0" />
             <span className="leading-relaxed">{errorMessage}</span>
           </div>
         )}
@@ -112,9 +112,9 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
         {successMessage && (
           <div
             role="status"
-            className="p-3 bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs rounded-xl flex items-center gap-2"
+            className="p-3 bg-[#f0fdf4] border border-[#1f7a4c]/20 text-[#166534] text-xs rounded-xl flex items-center gap-2"
           >
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 text-[#1f7a4c] shrink-0" />
             <span className="leading-relaxed">{successMessage}</span>
           </div>
         )}
@@ -199,7 +199,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
               type="button"
               disabled={loading}
               onClick={() => setShowPassword(prev => !prev)}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7]"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]"
               aria-label={showPassword ? 'Hide password' : 'Show password'}
               aria-pressed={showPassword}
             >
@@ -210,13 +210,13 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
           {/* Clean minimal password checklist */}
           {password.length > 0 && (
             <div className="flex flex-wrap items-center gap-3 pt-1.5 text-[11px] text-[#6e6e73]">
-              <span className={`flex items-center gap-1 ${hasMinLength ? 'text-emerald-600 font-semibold' : ''}`}>
+              <span className={`flex items-center gap-1 ${hasMinLength ? 'text-[#1f7a4c] font-semibold' : ''}`}>
                 <Check className="w-3 h-3" /> 8+ chars
               </span>
-              <span className={`flex items-center gap-1 ${hasLetter ? 'text-emerald-600 font-semibold' : ''}`}>
+              <span className={`flex items-center gap-1 ${hasLetter ? 'text-[#1f7a4c] font-semibold' : ''}`}>
                 <Check className="w-3 h-3" /> Letters
               </span>
-              <span className={`flex items-center gap-1 ${hasNumber ? 'text-emerald-600 font-semibold' : ''}`}>
+              <span className={`flex items-center gap-1 ${hasNumber ? 'text-[#1f7a4c] font-semibold' : ''}`}>
                 <Check className="w-3 h-3" /> Numbers
               </span>
             </div>
@@ -290,7 +290,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
             type="button"
             disabled={loading}
             onClick={() => onNavigate('login')}
-            className="font-semibold text-[#0284c7] hover:underline cursor-pointer disabled:opacity-50"
+            className="font-semibold text-[#0071e3] hover:text-[#0077ed] hover:underline cursor-pointer disabled:opacity-50"
           >
             Sign in
           </button>

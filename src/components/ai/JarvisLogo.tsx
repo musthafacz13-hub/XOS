@@ -55,17 +55,17 @@ export const JarvisLogo: React.FC<JarvisLogoProps> = ({
         />
         <path
           d="M3.25 16A12.75 12.75 0 0 1 11.45 4.08"
-          stroke="#0284C7"
+          stroke="#0071E3"
           strokeWidth="2.1"
           strokeLinecap="round"
         />
 
-        {/* Inner sky-blue neural ring */}
+        {/* Inner luminous Apple Blue neural ring */}
         <circle
           cx="16"
           cy="16"
           r="8.25"
-          stroke="#38BDF8"
+          stroke="#2997FF"
           strokeWidth="1.5"
           strokeDasharray="11 4.5"
           strokeLinecap="round"
@@ -91,7 +91,7 @@ export const JarvisLogo: React.FC<JarvisLogoProps> = ({
           cx="16"
           cy="16"
           r="1.9"
-          fill="#38BDF8"
+          fill="#2997FF"
         />
       </svg>
     </div>

@@ -45,7 +45,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
         <button
           type="button"
           onClick={handleAction}
-          className={`inline-flex items-center justify-center gap-2 min-h-[44px] sm:min-h-[40px] px-4 text-[13px] font-medium text-[#1d1d1f] bg-white hover:bg-[#f5f5f7] border border-black/[0.12] rounded-xl transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7] ${className}`}
+          className={`inline-flex items-center justify-center gap-2 min-h-[44px] sm:min-h-[40px] px-4 text-[13px] font-medium text-[#1d1d1f] bg-white hover:bg-[#f5f5f7] border border-black/[0.12] rounded-xl transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] ${className}`}
         >
           <Smartphone className="w-4 h-4 text-[#1d1d1f]" />
           <span>{isInstallable ? 'Install XOS App' : 'Add to iPhone Home Screen'}</span>
@@ -54,9 +54,9 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
         <button
           type="button"
           onClick={handleAction}
-          className={`inline-flex items-center justify-center gap-2 min-h-[44px] px-4 py-2.5 rounded-xl bg-[#f5f5f7] hover:bg-[#e8e8ed] text-[#1d1d1f] text-[13px] font-medium transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7] ${className}`}
+          className={`inline-flex items-center justify-center gap-2 min-h-[44px] px-4 py-2.5 rounded-xl bg-[#f5f5f7] hover:bg-[#e8e8ed] text-[#1d1d1f] text-[13px] font-medium transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] ${className}`}
         >
-          <Download className="w-3.5 h-3.5 text-[#0284c7] shrink-0" />
+          <Download className="w-3.5 h-3.5 text-[#0071e3] shrink-0" />
           <span>{isInstallable ? 'Install App' : 'Add to Home Screen'}</span>
         </button>
       )}
@@ -95,7 +95,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
             <ol className="space-y-2.5 text-left text-xs text-[#1d1d1f]">
               <li className="flex items-start gap-3 p-3 rounded-xl bg-[#f5f5f7]">
                 <div className="w-7 h-7 rounded-lg bg-white border border-black/[0.06] flex items-center justify-center shrink-0">
-                  <Share className="w-3.5 h-3.5 text-[#0284c7]" />
+                  <Share className="w-3.5 h-3.5 text-[#0071e3]" />
                 </div>
                 <div className="space-y-0.5 pt-0.5">
                   <span className="font-semibold block">1. Tap Share in Safari</span>
@@ -105,7 +105,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
 
               <li className="flex items-start gap-3 p-3 rounded-xl bg-[#f5f5f7]">
                 <div className="w-7 h-7 rounded-lg bg-white border border-black/[0.06] flex items-center justify-center shrink-0">
-                  <PlusSquare className="w-3.5 h-3.5 text-[#0284c7]" />
+                  <PlusSquare className="w-3.5 h-3.5 text-[#0071e3]" />
                 </div>
                 <div className="space-y-0.5 pt-0.5">
                   <span className="font-semibold block">2. Tap Add to Home Screen</span>
@@ -114,7 +114,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
               </li>
 
               <li className="flex items-start gap-3 p-3 rounded-xl bg-[#f5f5f7]">
-                <div className="w-7 h-7 rounded-lg bg-white border border-black/[0.06] flex items-center justify-center shrink-0 font-semibold text-[11px] text-[#0284c7]">
+                <div className="w-7 h-7 rounded-lg bg-white border border-black/[0.06] flex items-center justify-center shrink-0 font-semibold text-[11px] text-[#0071e3]">
                   3
                 </div>
                 <div className="space-y-0.5 pt-0.5">

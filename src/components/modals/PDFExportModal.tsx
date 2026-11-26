@@ -187,7 +187,7 @@ export const PDFExportModal: React.FC<PDFExportModalProps> = ({
             disabled={isGenerating}
             className={
               isSuccess
-                ? 'inline-flex items-center justify-center gap-2 min-h-[44px] sm:min-h-[40px] px-4 py-2 text-[13px] font-medium text-white bg-emerald-600 rounded-xl'
+                ? 'inline-flex items-center justify-center gap-2 min-h-[44px] sm:min-h-[40px] px-4 py-2 text-[13px] font-medium text-white bg-[#1f7a4c] rounded-xl'
                 : PRIMARY_BUTTON_CLASS
             }
           >
@@ -327,7 +327,7 @@ export const PDFExportModal: React.FC<PDFExportModalProps> = ({
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
-                    <Icon className={`w-4 h-4 ${mod.checked ? 'text-[#0284c7]' : 'text-[#86868b]'}`} />
+                    <Icon className={`w-4 h-4 ${mod.checked ? 'text-[#0071e3]' : 'text-[#86868b]'}`} />
                     <div>
                       <span className="font-medium text-[#1d1d1f] block text-xs">{mod.label}</span>
                       <span className="text-[11px] text-[#6e6e73] block">{mod.count}</span>
@@ -335,7 +335,7 @@ export const PDFExportModal: React.FC<PDFExportModalProps> = ({
                   </div>
                   <div
                     className={`w-4 h-4 rounded-md flex items-center justify-center transition-colors ${
-                      mod.checked ? 'bg-[#0284c7] text-white' : 'border border-black/20 bg-white'
+                      mod.checked ? 'bg-[#0071e3] text-white' : 'border border-black/20 bg-white'
                     }`}
                   >
                     {mod.checked && <Check className="w-3 h-3" />}
@@ -357,12 +357,12 @@ export const PDFExportModal: React.FC<PDFExportModalProps> = ({
           </div>
           <div className="flex items-center justify-between">
             <span className="text-[#6e6e73]">Processing</span>
-            <span className="font-medium text-emerald-700">On-Device (Private)</span>
+            <span className="font-medium text-[#1f7a4c]">On-Device (Private)</span>
           </div>
         </div>
 
         {errorMessage && (
-          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+          <div className="p-3 rounded-xl bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] text-xs">
             {errorMessage}
           </div>
         )}

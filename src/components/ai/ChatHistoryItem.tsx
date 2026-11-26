@@ -126,7 +126,7 @@ export const ChatHistoryItem: React.FC<ChatHistoryItemProps> = ({
       }}
       className={`group relative rounded-xl transition-colors select-none touch-pan-y [-webkit-touch-callout:none] ${
         isActive
-          ? 'bg-[#0284c7]/[0.08]'
+          ? 'bg-[#e8f2ff]/70'
           : 'hover:bg-[#f5f5f7]'
       }`}
     >
@@ -150,13 +150,13 @@ export const ChatHistoryItem: React.FC<ChatHistoryItemProps> = ({
               }
             }}
             aria-label="Conversation title"
-            className="flex-1 min-w-0 rounded-lg border border-[#0284c7] bg-white px-2.5 py-1.5 text-base sm:text-xs text-[#1d1d1f] focus:outline-none"
+            className="flex-1 min-w-0 rounded-lg border border-[#0071e3] bg-white px-2.5 py-1.5 text-base sm:text-xs text-[#1d1d1f] focus:outline-none"
           />
           <button
             type="submit"
             disabled={renameSubmitting || !renameDraft.trim()}
             aria-label="Save conversation title"
-            className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg bg-[#0284c7] text-white hover:bg-[#0369a1] cursor-pointer disabled:opacity-50"
+            className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg bg-[#0071e3] text-white hover:bg-[#0077ed] cursor-pointer disabled:opacity-50"
           >
             <Check className="w-3.5 h-3.5" />
           </button>
@@ -179,19 +179,19 @@ export const ChatHistoryItem: React.FC<ChatHistoryItemProps> = ({
             type="button"
             onClick={handleRowClick}
             disabled={isBusy}
-            className="flex-1 min-w-0 text-left px-3 py-2.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7] rounded-xl min-h-[54px] disabled:opacity-60"
+            className="flex-1 min-w-0 text-left px-3 py-2.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] rounded-xl min-h-[54px] disabled:opacity-60"
           >
             <div className="flex items-center justify-between gap-2">
               <span
                 className={`text-[13px] font-semibold truncate ${
-                  isActive ? 'text-[#0284c7]' : 'text-[#1d1d1f]'
+                  isActive ? 'text-[#0071e3]' : 'text-[#1d1d1f]'
                 }`}
               >
                 {conversation.title}
               </span>
               <span className="inline-flex items-center gap-1 text-[11px] text-[#86868b] tabular-nums shrink-0">
                 {conversation.pinned && (
-                  <Pin className="w-3 h-3 text-[#0284c7]" aria-label="Pinned" />
+                  <Pin className="w-3 h-3 text-[#0071e3]" aria-label="Pinned" />
                 )}
                 <span>{formattedTime}</span>
               </span>
@@ -218,7 +218,7 @@ export const ChatHistoryItem: React.FC<ChatHistoryItemProps> = ({
             aria-label={`More actions for ${conversation.title}`}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            className={`min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg text-[#86868b] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] transition-opacity cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7] ${
+            className={`min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg text-[#86868b] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] transition-opacity cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] ${
               menuOpen ? 'opacity-100 bg-[#f5f5f7] text-[#1d1d1f]' : 'opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100'
             }`}
           >

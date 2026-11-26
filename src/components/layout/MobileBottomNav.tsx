@@ -1,34 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import {
-  LayoutDashboard,
-  Target,
-  Wallet,
-  Briefcase,
-  MoreHorizontal,
-  CreditCard,
-  TrendingUp,
-  PiggyBank,
-  Banknote,
-  BarChart3,
-  Settings,
   X,
   ChevronRight,
-  HandCoins,
-  LogOut,
-  AudioLines,
-  StickyNote
+  LogOut
 } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ActiveTab } from './Sidebar';
 import { UserSettings } from '../../types';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import {
+  MOTION_SPRINGS,
   sheetBackdropVariants,
   sheetContentVariants,
   submenuContainerVariants,
   submenuItemVariants
 } from '../../utils/motion';
 import { useAuth } from '../../context/AuthContext';
+import { XOSIconName, XOSModuleIcon } from '../icons/XOSIcons';
 
 interface MobileBottomNavProps {
   activeTab: ActiveTab;
@@ -44,6 +32,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = React.memo(({
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const [isMoneySheetOpen, setIsMoneySheetOpen] = useState(false);
   const [isSignOutOpen, setIsSignOutOpen] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
 
   const isMoneyActive = ['expenses', 'income', 'debt'].includes(activeTab);
   const isWorkActive = ['attendance'].includes(activeTab);
@@ -76,18 +65,40 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = React.memo(({
     setIsMoneySheetOpen(false);
   };
 
+  const activeDockKey: 'dashboard' | 'goals' | 'money' | 'attendance' | 'more' =
+    activeTab === 'dashboard'
+      ? 'dashboard'
+      : activeTab === 'goals'
+        ? 'goals'
+        : isMoneyActive
+          ? 'money'
+          : isWorkActive
+            ? 'attendance'
+            : 'more';
+
   const moreItems: Array<{
     tab: ActiveTab;
     label: string;
     subtitle: string;
-    icon: React.ComponentType<{ className?: string }>;
+    iconName: XOSIconName;
   }> = [
-    { tab: 'notes', label: 'Notes', subtitle: 'Purchase plans, shopping lists & reminders', icon: StickyNote },
-    { tab: 'ai-agent', label: 'Jarvis AI', subtitle: 'Personal voice assistant in English & Malayalam', icon: AudioLines },
-    { tab: 'salary', label: 'Salary Management', subtitle: 'Rules, overtime multiplier, allowances & payouts', icon: Banknote },
-    { tab: 'savings', label: 'Goals & Reserves', subtitle: 'Connected goal funds, deposits & withdrawals', icon: PiggyBank },
-    { tab: 'reports', label: 'Reports & Analytics', subtitle: 'Cash flow trends, categories & work breakdown', icon: BarChart3 },
-    { tab: 'settings', label: 'System & Settings', subtitle: 'Profile, currency, PDF export & backups', icon: Settings }
+    { tab: 'notes', label: 'Notes', subtitle: 'Purchase plans, shopping lists & reminders', iconName: 'notes' },
+    { tab: 'ai-agent', label: 'Jarvis AI', subtitle: 'Personal voice assistant in English & Malayalam', iconName: 'ai-agent' },
+    { tab: 'salary', label: 'Salary Management', subtitle: 'Rules, overtime multiplier, allowances & payouts', iconName: 'salary' },
+    { tab: 'savings', label: 'Goals & Reserves', subtitle: 'Connected goal funds, deposits & withdrawals', iconName: 'savings' },
+    { tab: 'reports', label: 'Reports & Analytics', subtitle: 'Cash flow trends, categories & work breakdown', iconName: 'reports' },
+    { tab: 'settings', label: 'System & Settings', subtitle: 'Profile, currency, PDF export & backups', iconName: 'settings' }
+  ];
+
+  const moneyItems: Array<{
+    tab: ActiveTab;
+    label: string;
+    subtitle: string;
+    iconName: XOSIconName;
+  }> = [
+    { tab: 'expenses', label: 'Expenses', subtitle: 'Daily spending & categories', iconName: 'expenses' },
+    { tab: 'income', label: 'Income', subtitle: 'Earnings & revenue inflows', iconName: 'income' },
+    { tab: 'debt', label: 'Debt Ledger', subtitle: 'Money to receive & pay', iconName: 'debt' }
   ];
 
   return (
@@ -140,27 +151,37 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = React.memo(({
                 initial="initial"
                 animate="animate"
                 exit="exit"
-                className="grid grid-cols-3 gap-2.5 py-1"
+                className="rounded-2xl border border-black/[0.08] bg-white divide-y divide-black/[0.06] overflow-hidden"
               >
-                {[
-                  { tab: 'expenses' as ActiveTab, label: 'Expenses', icon: CreditCard },
-                  { tab: 'income' as ActiveTab, label: 'Income', icon: TrendingUp },
-                  { tab: 'debt' as ActiveTab, label: 'Debt', icon: HandCoins }
-                ].map(({ tab, label, icon: Icon }) => {
+                {moneyItems.map(({ tab, label, subtitle, iconName }) => {
                   const selected = activeTab === tab;
                   return (
                     <motion.div key={tab} variants={submenuItemVariants}>
                       <button
                         type="button"
                         onClick={() => handleSelectTab(tab)}
-                        className={`w-full flex flex-col items-center justify-center gap-2 p-3.5 rounded-2xl border text-center cursor-pointer min-h-[88px] transition-colors ${
-                          selected
-                            ? 'border-[#0284c7]/30 bg-[#e0f2fe]/60 text-[#0284c7]'
-                            : 'border-black/[0.06] bg-[#f5f5f7] text-[#1d1d1f] hover:bg-[#e8e8ed]'
+                        className={`w-full flex items-center justify-between px-4 py-3.5 text-left cursor-pointer min-h-[60px] transition-colors ${
+                          selected ? 'bg-[#e8f2ff]/65' : 'hover:bg-[#f5f5f7]'
                         }`}
                       >
-                        <Icon className="w-5 h-5" />
-                        <span className="text-xs font-medium">{label}</span>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                              selected ? 'bg-[#0071e3] text-white' : 'bg-[#f5f5f7] text-[#1d1d1f]'
+                            }`}
+                          >
+                            <XOSModuleIcon name={iconName} isActive={selected} size={18} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className={`text-[14px] font-semibold leading-snug truncate ${selected ? 'text-[#0071e3]' : 'text-[#1d1d1f]'}`}>
+                              {label}
+                            </div>
+                            <div className="text-xs text-[#6e6e73] truncate">
+                              {subtitle}
+                            </div>
+                          </div>
+                        </div>
+                        <ChevronRight className={`w-4 h-4 shrink-0 ${selected ? 'text-[#0071e3]' : 'text-[#86868b]'}`} />
                       </button>
                     </motion.div>
                   );
@@ -219,29 +240,29 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = React.memo(({
                 initial="initial"
                 animate="animate"
                 exit="exit"
-                className="rounded-2xl border border-black/[0.06] bg-white divide-y divide-black/[0.05] overflow-hidden"
+                className="rounded-2xl border border-black/[0.08] bg-white divide-y divide-black/[0.06] overflow-hidden"
               >
-                {moreItems.map(({ tab, label, subtitle, icon: Icon }) => {
+                {moreItems.map(({ tab, label, subtitle, iconName }) => {
                   const selected = activeTab === tab;
                   return (
                     <motion.div key={tab} variants={submenuItemVariants}>
                       <button
                         type="button"
                         onClick={() => handleSelectTab(tab)}
-                        className={`w-full flex items-center justify-between px-4 py-3.5 text-left cursor-pointer min-h-[58px] transition-colors ${
-                          selected ? 'bg-[#e0f2fe]/45' : 'hover:bg-[#f5f5f7]'
+                        className={`w-full flex items-center justify-between px-4 py-3.5 text-left cursor-pointer min-h-[60px] transition-colors ${
+                          selected ? 'bg-[#e8f2ff]/65' : 'hover:bg-[#f5f5f7]'
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <div
-                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                              selected ? 'bg-[#0284c7] text-white' : 'bg-[#f5f5f7] text-[#1d1d1f]'
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                              selected ? 'bg-[#0071e3] text-white' : 'bg-[#f5f5f7] text-[#1d1d1f]'
                             }`}
                           >
-                            <Icon className="w-4.5 h-4.5" />
+                            <XOSModuleIcon name={iconName} isActive={selected} size={18} />
                           </div>
                           <div className="min-w-0">
-                            <div className={`text-[13px] font-semibold leading-snug truncate ${selected ? 'text-[#0284c7]' : 'text-[#1d1d1f]'}`}>
+                            <div className={`text-[13px] font-semibold leading-snug truncate ${selected ? 'text-[#0071e3]' : 'text-[#1d1d1f]'}`}>
                               {label}
                             </div>
                             <div className="text-[11px] text-[#6e6e73] truncate">
@@ -249,7 +270,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = React.memo(({
                             </div>
                           </div>
                         </div>
-                        <ChevronRight className={`w-4 h-4 shrink-0 ${selected ? 'text-[#0284c7]' : 'text-[#86868b]'}`} />
+                        <ChevronRight className={`w-4 h-4 shrink-0 ${selected ? 'text-[#0071e3]' : 'text-[#86868b]'}`} />
                       </button>
                     </motion.div>
                   );
@@ -277,70 +298,96 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = React.memo(({
 
       {/* Fixed Mobile Bottom Navigation Bar */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-40 md:hidden liquid-glass-dock border-t border-black/[0.08] px-2 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]"
+        className="fixed bottom-0 left-0 right-0 z-40 md:hidden liquid-glass-dock border-t border-black/[0.08] px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]"
         aria-label="Mobile Navigation"
       >
-        <div className="flex items-center justify-around h-13 max-w-md mx-auto">
-          <button
-            onClick={() => handleSelectTab('dashboard')}
-            type="button"
-            className={`flex-1 flex flex-col items-center justify-center h-full py-1 cursor-pointer select-none min-h-[44px] transition-colors ${
-              activeTab === 'dashboard' ? 'text-[#0284c7] font-semibold' : 'text-[#86868b] hover:text-[#1d1d1f]'
-            }`}
-            aria-label="Home Dashboard"
-          >
-            <LayoutDashboard className="w-5 h-5" />
-            <span className="text-[10px] mt-1 leading-none">Home</span>
-          </button>
-
-          <button
-            onClick={() => handleSelectTab('goals')}
-            type="button"
-            className={`flex-1 flex flex-col items-center justify-center h-full py-1 cursor-pointer select-none min-h-[44px] transition-colors ${
-              activeTab === 'goals' ? 'text-[#0284c7] font-semibold' : 'text-[#86868b] hover:text-[#1d1d1f]'
-            }`}
-            aria-label="Goals & Dreams"
-          >
-            <Target className="w-5 h-5" />
-            <span className="text-[10px] mt-1 leading-none">Goals</span>
-          </button>
-
-          <button
-            onClick={() => setIsMoneySheetOpen(true)}
-            type="button"
-            className={`flex-1 flex flex-col items-center justify-center h-full py-1 cursor-pointer select-none min-h-[44px] transition-colors ${
-              isMoneyActive ? 'text-[#0284c7] font-semibold' : 'text-[#86868b] hover:text-[#1d1d1f]'
-            }`}
-            aria-label="Money - Expenses, Income and Debt"
-          >
-            <Wallet className="w-5 h-5" />
-            <span className="text-[10px] mt-1 leading-none">
-              {activeTab === 'expenses' ? 'Expenses' : activeTab === 'income' ? 'Income' : activeTab === 'debt' ? 'Debt' : 'Money'}
-            </span>
-          </button>
-
-          <button
-            onClick={() => handleSelectTab('attendance')}
-            type="button"
-            className={`flex-1 flex flex-col items-center justify-center h-full py-1 cursor-pointer select-none min-h-[44px] transition-colors ${
-              isWorkActive ? 'text-[#0284c7] font-semibold' : 'text-[#86868b] hover:text-[#1d1d1f]'
-            }`}
-            aria-label="Work Attendance"
-          >
-            <Briefcase className="w-5 h-5" />
-            <span className="text-[10px] mt-1 leading-none">Work</span>
-          </button>
+        <div className="flex items-center justify-around h-[52px] max-w-md mx-auto gap-1">
+          {[
+            {
+              key: 'dashboard' as const,
+              label: 'Home',
+              ariaLabel: 'Home Dashboard',
+              icon: <XOSModuleIcon name="dashboard" isActive={activeDockKey === 'dashboard'} size={20} />,
+              onClick: () => handleSelectTab('dashboard')
+            },
+            {
+              key: 'goals' as const,
+              label: 'Goals',
+              ariaLabel: 'Goals & Dreams',
+              icon: <XOSModuleIcon name="goals" isActive={activeDockKey === 'goals'} size={20} />,
+              onClick: () => handleSelectTab('goals')
+            },
+            {
+              key: 'money' as const,
+              label: activeTab === 'expenses' ? 'Expenses' : activeTab === 'income' ? 'Income' : activeTab === 'debt' ? 'Debt' : 'Money',
+              ariaLabel: 'Money - Expenses, Income and Debt',
+              icon: <XOSModuleIcon name={activeTab === 'expenses' ? 'expenses' : activeTab === 'income' ? 'income' : activeTab === 'debt' ? 'debt' : 'money'} isActive={activeDockKey === 'money'} size={20} />,
+              onClick: () => setIsMoneySheetOpen(true)
+            },
+            {
+              key: 'attendance' as const,
+              label: 'Work',
+              ariaLabel: 'Work Attendance',
+              icon: <XOSModuleIcon name="attendance" isActive={activeDockKey === 'attendance'} size={20} />,
+              onClick: () => handleSelectTab('attendance')
+            }
+          ].map((tabItem) => {
+            const active = activeDockKey === tabItem.key;
+            return (
+              <button
+                key={tabItem.key}
+                onClick={tabItem.onClick}
+                type="button"
+                className={`relative flex-1 flex flex-col items-center justify-center h-full py-1 rounded-xl cursor-pointer select-none min-h-[44px] transition-colors ${
+                  active ? 'text-[#0071e3] font-semibold' : 'text-[#86868b] hover:text-[#1d1d1f]'
+                }`}
+                aria-label={tabItem.ariaLabel}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="xos-mobile-nav-pill"
+                    transition={prefersReducedMotion ? { duration: 0 } : MOTION_SPRINGS.navIndicator}
+                    className="absolute inset-x-1 inset-y-0.5 rounded-xl bg-[#e8f2ff]"
+                    aria-hidden="true"
+                  />
+                )}
+                <span className="relative z-10">{tabItem.icon}</span>
+                <span className="relative z-10 text-[10px] mt-1 leading-none">
+                  {tabItem.label}
+                </span>
+              </button>
+            );
+          })}
 
           <button
             onClick={() => setIsMoreOpen(true)}
             type="button"
-            className={`flex-1 flex flex-col items-center justify-center h-full py-1 cursor-pointer select-none min-h-[44px] transition-colors ${
-              isMoreActive || isMoreOpen ? 'text-[#0284c7] font-semibold' : 'text-[#86868b] hover:text-[#1d1d1f]'
+            className={`relative flex-1 flex flex-col items-center justify-center h-full py-1 rounded-xl cursor-pointer select-none min-h-[44px] transition-colors ${
+              isMoreActive || isMoreOpen ? 'text-[#0071e3] font-semibold' : 'text-[#86868b] hover:text-[#1d1d1f]'
             }`}
             aria-label="More Features"
           >
-            <MoreHorizontal className="w-5 h-5" />
-            <span className="text-[10px] mt-1 leading-none">More</span>
+            {(isMoreActive || isMoreOpen) && (
+              <motion.span
+                layoutId="xos-mobile-nav-pill"
+                transition={prefersReducedMotion ? { duration: 0 } : MOTION_SPRINGS.navIndicator}
+                className="absolute inset-x-1 inset-y-0.5 rounded-xl bg-[#e8f2ff]"
+                aria-hidden="true"
+              />
+            )}
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 20 20"
+              fill="none"
+              aria-hidden="true"
+              className="relative z-10"
+            >
+              <circle cx="4.5" cy="10" r="1.4" fill="currentColor" />
+              <circle cx="10" cy="10" r="1.4" fill="currentColor" />
+              <circle cx="15.5" cy="10" r="1.4" fill="currentColor" />
+            </svg>
+            <span className="relative z-10 text-[10px] mt-1 leading-none">More</span>
           </button>
         </div>
       </nav>

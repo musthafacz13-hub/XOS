@@ -386,7 +386,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
         />
 
         {actionError && (
-          <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-medium">
+          <div className="p-3 text-xs bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] rounded-xl font-medium">
             {actionError}
           </div>
         )}

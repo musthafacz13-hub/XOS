@@ -100,7 +100,7 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
     >
       {success ? (
         <div className="space-y-5 text-center py-2">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
+          <div className="w-12 h-12 rounded-2xl bg-[#f0fdf4] text-[#1f7a4c] flex items-center justify-center mx-auto">
             <CheckCircle2 className="w-6 h-6" />
           </div>
 
@@ -131,16 +131,16 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
           {errorMessage && (
             <div
               role="alert"
-              className="p-3 bg-rose-50 border border-rose-200/80 text-rose-800 text-xs rounded-xl flex items-start gap-2"
+              className="p-3 bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] text-xs rounded-xl flex items-start gap-2"
             >
-              <AlertCircle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
+              <AlertCircle className="w-4 h-4 text-[#c92a2a] mt-0.5 shrink-0" />
               <span className="leading-relaxed">{errorMessage}</span>
             </div>
           )}
 
           {!user && (
-            <div className="p-3 bg-amber-50 border border-amber-200/80 text-amber-800 text-xs rounded-xl flex items-start gap-2">
-              <ShieldAlert className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+            <div className="p-3 bg-[#fefce8] border border-[#a16207]/20 text-[#854d0e] text-xs rounded-xl flex items-start gap-2">
+              <ShieldAlert className="w-4 h-4 text-[#a16207] mt-0.5 shrink-0" />
               <p className="leading-relaxed">
                 No active recovery session was detected. If your recovery link expired, please request a new reset email.
               </p>
@@ -170,7 +170,7 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
                 type="button"
                 disabled={loading || !user}
                 onClick={() => setShowPassword(prev => !prev)}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7]"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]"
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
                 aria-pressed={showPassword}
               >
@@ -224,7 +224,7 @@ export const ResetPasswordView: React.FC<ResetPasswordViewProps> = ({
                 type="button"
                 disabled={loading}
                 onClick={onNavigateForgotPassword}
-                className="min-h-[44px] px-4 inline-flex items-center justify-center text-[#0284c7] hover:underline font-semibold transition-colors cursor-pointer rounded-xl disabled:opacity-50"
+                className="min-h-[44px] px-4 inline-flex items-center justify-center text-[#0071e3] hover:text-[#0077ed] hover:underline font-semibold transition-colors cursor-pointer rounded-xl disabled:opacity-50"
               >
                 Request New Reset Link
               </button>

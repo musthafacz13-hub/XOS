@@ -58,7 +58,7 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = React.memo(({
           initial={{ scale: 0.92, opacity: 0.5 }}
           animate={{ scale: 1.18, opacity: 0 }}
           transition={{ duration: 1.5, repeat: Infinity, ease: 'easeOut' }}
-          className="absolute inset-0 rounded-full border border-[#0284c7]/50 pointer-events-none"
+          className="absolute inset-0 rounded-full border border-[#0071e3]/50 pointer-events-none"
         />
       )}
 
@@ -68,7 +68,7 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = React.memo(({
           aria-hidden="true"
           animate={prefersReducedMotion ? undefined : { rotate: 360 }}
           transition={{ duration: 1.1, repeat: Infinity, ease: 'linear' }}
-          className="absolute inset-0.5 rounded-full border-2 border-black/[0.06] border-t-[#0284c7] pointer-events-none"
+          className="absolute inset-0.5 rounded-full border-2 border-black/[0.06] border-t-[#0071e3] pointer-events-none"
         />
       )}
 
@@ -82,11 +82,11 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = React.memo(({
           onClick={onPress}
           disabled={disabled || state === 'thinking'}
           aria-label={ariaLabel}
-          className={`relative rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer disabled:cursor-wait focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7] focus-visible:ring-offset-2 active:scale-95 ${buttonSizeClass} ${
+          className={`relative rounded-full flex items-center justify-center transition-colors duration-150 cursor-pointer disabled:cursor-wait focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] focus-visible:ring-offset-2 active:scale-95 ${buttonSizeClass} ${
             state === 'listening'
-              ? 'bg-[#0284c7] text-white'
+              ? 'bg-[#0071e3] text-white'
               : state === 'error'
-                ? 'bg-[#1d1d1f] text-white ring-2 ring-rose-500/60'
+                ? 'bg-[#1d1d1f] text-white ring-2 ring-[#c92a2a]/60'
                 : 'bg-[#1d1d1f] text-white hover:bg-black'
           }`}
         >
@@ -108,7 +108,7 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = React.memo(({
                     repeat: Infinity,
                     ease: 'easeInOut'
                   }}
-                  className={`w-0.5 rounded-full bg-[#38BDF8] origin-center ${isCompact ? 'h-3.5' : 'h-5'}`}
+                  className={`w-0.5 rounded-full bg-[#2997ff] origin-center ${isCompact ? 'h-3.5' : 'h-5'}`}
                 />
               ))}
             </div>
@@ -123,14 +123,14 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = React.memo(({
                       : { opacity: [0.3, 1, 0.3] }
                   }
                   transition={{ duration: 0.85, delay, repeat: Infinity, ease: 'easeInOut' }}
-                  className="w-1 h-1 rounded-full bg-[#38BDF8]"
+                  className="w-1 h-1 rounded-full bg-[#2997ff]"
                 />
               ))}
             </div>
           ) : state === 'listening' ? (
             <Square className={`${isCompact ? 'w-3.5 h-3.5' : 'w-5 h-5'} text-white fill-white`} />
           ) : (
-            <Mic className={`${iconSizeClass} ${state === 'error' ? 'text-rose-300' : 'text-[#38BDF8]'}`} />
+            <Mic className={`${iconSizeClass} ${state === 'error' ? 'text-[#fca5a5]' : 'text-[#2997ff]'}`} />
           )}
         </button>
       </motion.div>

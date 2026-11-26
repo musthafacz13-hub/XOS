@@ -5,6 +5,7 @@ export { SegmentedControl, type SegmentedOption } from './SegmentedControl';
 export { FilterBar } from './FilterBar';
 export { Modal } from './Modal';
 export { ActionIconButton } from './ActionIconButton';
+export { BlurText } from './BlurText';
 export {
   LABEL_CLASS,
   INPUT_CLASS,

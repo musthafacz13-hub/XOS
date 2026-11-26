@@ -95,7 +95,7 @@ export const ChatActionMenu: React.FC<ChatActionMenuProps> = ({
             </>
           ) : (
             <>
-              <Pin className="w-3.5 h-3.5 text-[#0284c7]" />
+              <Pin className="w-3.5 h-3.5 text-[#0071e3]" />
               <span>Pin</span>
             </>
           )}
@@ -113,7 +113,7 @@ export const ChatActionMenu: React.FC<ChatActionMenuProps> = ({
       >
         {conversation.archived ? (
           <>
-            <ArchiveRestore className="w-3.5 h-3.5 text-[#0284c7]" />
+            <ArchiveRestore className="w-3.5 h-3.5 text-[#0071e3]" />
             <span>Restore chat</span>
           </>
         ) : (
@@ -133,7 +133,7 @@ export const ChatActionMenu: React.FC<ChatActionMenuProps> = ({
           onClose();
           onDelete();
         }}
-        className="w-full px-3.5 py-2.5 text-xs font-medium text-rose-600 hover:bg-rose-50/70 flex items-center gap-2.5 cursor-pointer min-h-[40px]"
+        className="w-full px-3.5 py-2.5 text-xs font-medium text-[#c92a2a] hover:bg-[#fef2f2] flex items-center gap-2.5 cursor-pointer min-h-[40px]"
       >
         <Trash2 className="w-3.5 h-3.5" />
         <span>Delete</span>

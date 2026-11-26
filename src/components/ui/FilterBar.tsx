@@ -38,7 +38,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder={searchPlaceholder}
               aria-label={searchAriaLabel}
-              className="w-full min-h-[44px] sm:min-h-[40px] pl-10 pr-9 py-2 text-base sm:text-sm text-[#1d1d1f] bg-[#f5f5f7] border border-transparent focus:bg-white focus:border-[#0284c7] focus:ring-2 focus:ring-[#0284c7]/15 rounded-xl placeholder:text-[#86868b] transition-colors focus:outline-none"
+              className="w-full min-h-[44px] sm:min-h-[40px] pl-10 pr-9 py-2 text-base sm:text-sm text-[#1d1d1f] bg-[#f5f5f7] border border-transparent focus:bg-white focus:border-[#0071e3] focus:ring-2 focus:ring-[#0071e3]/15 rounded-xl placeholder:text-[#86868b] transition-colors focus:outline-none"
             />
             {searchValue && (
               <button

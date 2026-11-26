@@ -281,9 +281,9 @@ export const DebtView: React.FC = () => {
     const statusLabel = outstanding <= 0.005 ? 'Paid' : repaid > 0 ? 'Partially Paid' : 'Outstanding';
     const statusToneClass =
       statusLabel === 'Paid'
-        ? 'text-emerald-700'
+        ? 'text-[#1f7a4c]'
         : statusLabel === 'Partially Paid'
-          ? 'text-[#0284c7]'
+          ? 'text-[#0071e3]'
           : 'text-[#6e6e73]';
     const isOverdue = Boolean(debt.due_date && debt.due_date < getTodayString() && outstanding > 0);
 
@@ -307,7 +307,7 @@ export const DebtView: React.FC = () => {
             {debt.due_date && (
               <>
                 <span aria-hidden="true">·</span>
-                <span className={isOverdue ? 'text-rose-600 font-medium' : ''}>
+                <span className={isOverdue ? 'text-[#c92a2a] font-medium' : ''}>
                   Due {formatHumanDate(debt.due_date)}
                 </span>
               </>
@@ -342,7 +342,7 @@ export const DebtView: React.FC = () => {
               className="min-h-[40px] sm:min-h-[34px] px-3 py-1.5 rounded-xl text-xs font-medium bg-[#f5f5f7] hover:bg-[#e8e8ed] text-[#1d1d1f] transition-colors cursor-pointer inline-flex items-center gap-1.5"
               title="Repay / History"
             >
-              <Banknote className="w-3.5 h-3.5 text-[#0284c7]" />
+              <Banknote className="w-3.5 h-3.5 text-[#0071e3]" />
               <span>{outstanding > 0 ? 'Repay' : 'History'}</span>
             </button>
             <ActionIconButton
@@ -373,22 +373,43 @@ export const DebtView: React.FC = () => {
         description="Manage money to receive and money to pay with full repayment history."
       />
 
-      {/* Top KPI Summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <MetricCard
-          variant="focal"
-          tone="accent"
-          label="Total Money to Receive"
-          value={formatCurrency(totalToReceive, data.settings.currency)}
-          sublabel="Outstanding amount others owe you"
-        />
-        <MetricCard
-          variant="focal"
-          label="Total Money to Pay"
-          value={formatCurrency(totalToPay, data.settings.currency)}
-          sublabel="Outstanding amount you owe others"
-        />
-      </div>
+      {/* Directional Ledger Summary Band */}
+      <section aria-label="Debt Position Summary" className="rounded-3xl bg-[#f5f5f7] p-4 sm:p-5">
+        <div className="rounded-2xl bg-white border border-black/[0.06] grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-black/[0.06] overflow-hidden">
+          <div className="p-5 sm:p-6 space-y-1.5">
+            <span className="text-xs font-medium text-[#6e6e73]">Total Money to Receive</span>
+            <div className="text-[26px] font-semibold font-mono tabular-nums tracking-[-0.025em] text-[#0071e3]">
+              {formatCurrency(totalToReceive, data.settings.currency)}
+            </div>
+            <p className="text-xs text-[#86868b]">Outstanding amount others owe you</p>
+          </div>
+
+          <div className="p-5 sm:p-6 space-y-1.5">
+            <span className="text-xs font-medium text-[#6e6e73]">Total Money to Pay</span>
+            <div className="text-[26px] font-semibold font-mono tabular-nums tracking-[-0.025em] text-[#1d1d1f]">
+              {formatCurrency(totalToPay, data.settings.currency)}
+            </div>
+            <p className="text-xs text-[#86868b]">Outstanding amount you owe others</p>
+          </div>
+
+          <div className="p-5 sm:p-6 space-y-1.5">
+            <span className="text-xs font-medium text-[#6e6e73]">Net Position</span>
+            <div
+              className={`text-[26px] font-semibold font-mono tabular-nums tracking-[-0.025em] ${
+                totalToReceive - totalToPay > 0
+                  ? 'text-[#1f7a4c]'
+                  : totalToReceive - totalToPay < 0
+                    ? 'text-[#c92a2a]'
+                    : 'text-[#1d1d1f]'
+              }`}
+            >
+              {totalToReceive - totalToPay > 0 ? '+' : ''}
+              {formatCurrency(totalToReceive - totalToPay, data.settings.currency)}
+            </div>
+            <p className="text-xs text-[#86868b]">Receivable minus payable balances</p>
+          </div>
+        </div>
+      </section>
 
       {/* Two Sections */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
@@ -473,8 +494,8 @@ export const DebtView: React.FC = () => {
         }
       >
         {debtFormError && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+          <div className="mb-4 p-3 rounded-xl bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-[#c92a2a]" />
             <span>{debtFormError}</span>
           </div>
         )}
@@ -576,7 +597,7 @@ export const DebtView: React.FC = () => {
               </div>
               <div>
                 <span className="text-[11px] font-medium text-[#6e6e73] block">Repaid</span>
-                <span className="text-xs sm:text-sm font-semibold font-mono text-emerald-700 tabular-nums">
+                <span className="text-xs sm:text-sm font-semibold font-mono text-[#1f7a4c] tabular-nums">
                   {formatCurrency(
                     Math.max(0, activeRepaymentDebt.original_amount - activeRepaymentOutstanding),
                     data.settings.currency
@@ -598,15 +619,15 @@ export const DebtView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setRepayAmount(String(activeRepaymentOutstanding))}
-                    className="text-xs font-medium text-[#0284c7] hover:underline cursor-pointer"
+                    className="text-xs font-medium text-[#0071e3] hover:text-[#0077ed] hover:underline cursor-pointer"
                   >
                     Fill Full Balance ({formatCurrency(activeRepaymentOutstanding, data.settings.currency)})
                   </button>
                 </div>
 
                 {repayError && (
-                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <div className="p-2.5 rounded-xl bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-[#c92a2a]" />
                     <span>{repayError}</span>
                   </div>
                 )}
@@ -685,7 +706,7 @@ export const DebtView: React.FC = () => {
 
             <div className="space-y-2.5">
               <h4 className="text-xs font-semibold text-[#1d1d1f] flex items-center gap-1.5">
-                <History className="w-3.5 h-3.5 text-[#0284c7]" />
+                <History className="w-3.5 h-3.5 text-[#0071e3]" />
                 <span>Repayment History ({activeDebtRepayments.length})</span>
               </h4>
 

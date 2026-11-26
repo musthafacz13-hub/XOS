@@ -1,15 +1,18 @@
 /**
  * XOS Centralized Motion System & Animation Tokens
- * Calm, restrained Apple-style deceleration curves without playful overshoot.
+ * Precision Apple-inspired deceleration curves, blur-to-sharp text reveals,
+ * navigation indicator springs, and restrained interactive feedback.
  */
 import type { Transition, Variants } from 'motion/react';
 
 export const MOTION_TIMINGS = {
   instant: 0.12,
   quick: 0.16,
-  base: 0.2,
-  smooth: 0.26,
-  gentle: 0.32
+  base: 0.22,
+  smooth: 0.28,
+  gentle: 0.36,
+  reveal: 0.56,
+  revealSlow: 0.68
 } as const;
 
 export const MOTION_EASINGS = {
@@ -24,14 +27,15 @@ export const MOTION_EASINGS = {
 export const MOTION_SPRINGS: Record<string, Transition> = {
   tactile: { duration: 0.18, ease: [0.16, 1, 0.3, 1] },
   snappy: { duration: 0.16, ease: [0.16, 1, 0.3, 1] },
-  gentle: { duration: 0.24, ease: [0.22, 1, 0.36, 1] },
-  bouncy: { duration: 0.2, ease: [0.16, 1, 0.3, 1] }
+  gentle: { duration: 0.26, ease: [0.22, 1, 0.36, 1] },
+  navIndicator: { type: 'spring', stiffness: 440, damping: 36, mass: 0.9 },
+  bouncy: { duration: 0.22, ease: [0.16, 1, 0.3, 1] }
 };
 
 export const pageVariants: Variants = {
   initial: {
     opacity: 0,
-    y: 4
+    y: 6
   },
   animate: {
     opacity: 1,
@@ -50,6 +54,24 @@ export const pageVariants: Variants = {
   }
 };
 
+export const blurRevealVariants: Variants = {
+  hidden: {
+    opacity: 0,
+    y: 10,
+    filter: 'blur(8px)'
+  },
+  visible: (delay = 0) => ({
+    opacity: 1,
+    y: 0,
+    filter: 'blur(0px)',
+    transition: {
+      duration: MOTION_TIMINGS.reveal,
+      delay,
+      ease: MOTION_EASINGS.soft
+    }
+  })
+};
+
 export const modalBackdropVariants: Variants = {
   initial: { opacity: 0 },
   animate: {
@@ -66,7 +88,7 @@ export const modalContentVariants: Variants = {
   initial: {
     opacity: 0,
     scale: 0.98,
-    y: 6
+    y: 8
   },
   animate: {
     opacity: 1,
@@ -79,8 +101,34 @@ export const modalContentVariants: Variants = {
   },
   exit: {
     opacity: 0,
-    scale: 0.98,
+    scale: 0.985,
     y: 4,
+    transition: {
+      duration: MOTION_TIMINGS.instant,
+      ease: MOTION_EASINGS.easeIn
+    }
+  }
+};
+
+export const dropdownVariants: Variants = {
+  initial: {
+    opacity: 0,
+    scale: 0.97,
+    y: -4
+  },
+  animate: {
+    opacity: 1,
+    scale: 1,
+    y: 0,
+    transition: {
+      duration: MOTION_TIMINGS.quick,
+      ease: MOTION_EASINGS.fluid
+    }
+  },
+  exit: {
+    opacity: 0,
+    scale: 0.97,
+    y: -2,
     transition: {
       duration: MOTION_TIMINGS.instant,
       ease: MOTION_EASINGS.easeIn
@@ -103,7 +151,7 @@ export const sheetBackdropVariants: Variants = {
 export const sheetContentVariants: Variants = {
   initial: {
     y: '100%',
-    opacity: 0.85
+    opacity: 0.9
   },
   animate: {
     y: 0,

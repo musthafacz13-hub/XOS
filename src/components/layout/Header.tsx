@@ -5,6 +5,7 @@ import { ActiveTab, NAV_ITEMS } from './Sidebar';
 import { XOSLogo } from '../common/XOSLogo';
 import { JarvisLogo } from '../ai/JarvisLogo';
 import { SegmentedControl } from '../ui/SegmentedControl';
+import { XOSModuleIcon } from '../icons/XOSIcons';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -57,13 +58,22 @@ export const Header: React.FC<HeaderProps> = React.memo(({
         {isJarvisAi ? (
           <JarvisLogo size="sm" />
         ) : (
-          <XOSLogo size="xs" className="md:hidden" />
+          <>
+            <XOSLogo size="xs" className="md:hidden" />
+            <span className="hidden md:inline-flex items-center justify-center w-7 h-7 rounded-lg bg-[#e8f2ff] text-[#0071e3] shrink-0">
+              <XOSModuleIcon
+                name={activeTab === 'savings' ? 'goals' : activeTab}
+                isActive
+                size={16}
+              />
+            </span>
+          </>
         )}
         <h1 className="text-[17px] sm:text-lg font-semibold text-[#1d1d1f] tracking-[-0.015em] truncate leading-none">
           {title}
         </h1>
         {!isJarvisAi && (
-          <span className="hidden lg:inline-block text-xs text-[#86868b] font-normal pl-2 border-l border-black/[0.08]">
+          <span className="hidden lg:inline-block text-xs text-[#86868b] font-normal pl-2.5 border-l border-black/[0.08]">
             {todayStr}
           </span>
         )}
@@ -78,7 +88,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
                 <select
                   value={dateFilter.preset}
                   onChange={(e) => handlePresetChange(e.target.value as DateFilterPreset)}
-                  className="min-h-[40px] max-w-[140px] px-2.5 py-1.5 text-base sm:text-xs font-medium text-[#1d1d1f] bg-[#f5f5f7] border border-transparent rounded-xl focus:outline-none focus:bg-white focus:border-[#0284c7]"
+                  className="min-h-[40px] max-w-[140px] px-2.5 py-1.5 text-base sm:text-xs font-medium text-[#1d1d1f] bg-[#f5f5f7] border border-transparent rounded-xl focus:outline-none focus:bg-white focus:border-[#0071e3]"
                   aria-label="Filter timeline"
                 >
                   {PRESET_OPTIONS.map(opt => (
@@ -102,7 +112,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
           <button
             onClick={() => onOpenQuickAction()}
             type="button"
-            className="min-h-[40px] inline-flex items-center gap-1.5 px-3.5 sm:px-4 rounded-xl bg-[#1d1d1f] text-white text-[13px] font-medium hover:bg-black transition-colors shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7]"
+            className="min-h-[40px] inline-flex items-center gap-1.5 px-3.5 sm:px-4 rounded-xl bg-[#0071e3] hover:bg-[#0077ed] active:scale-[0.985] text-white text-[13px] font-medium transition-all shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]"
             aria-label="Log New Activity"
           >
             <Plus className="w-4 h-4" />

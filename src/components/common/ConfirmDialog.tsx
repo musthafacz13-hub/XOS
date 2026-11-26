@@ -72,10 +72,10 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
               <div
                 className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                   isDangerTone
-                    ? 'bg-rose-50 text-rose-600'
+                    ? 'bg-[#c92a2a]/10 text-[#c92a2a]'
                     : isDestructive
                       ? 'bg-[#f5f5f7] text-[#1d1d1f]'
-                      : 'bg-[#e0f2fe] text-[#0284c7]'
+                      : 'bg-[#e8f2ff] text-[#0071e3]'
                 }`}
               >
                 <AlertCircle className="w-4.5 h-4.5" />
@@ -105,8 +105,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             </div>
 
             {error && (
-              <div className="mt-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <div className="mt-4 p-3 rounded-xl bg-[#c92a2a]/8 border border-[#c92a2a]/20 text-[#c92a2a] text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{error}</span>
               </div>
             )}
@@ -116,7 +116,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
                 type="button"
                 disabled={isLoading}
                 onClick={onCancel}
-                className="w-full sm:w-auto min-h-[44px] sm:min-h-[40px] px-4 py-2 text-[13px] font-medium text-[#1d1d1f] bg-[#f5f5f7] hover:bg-[#e8e8ed] rounded-xl transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7] disabled:opacity-50"
+                className="w-full sm:w-auto min-h-[44px] sm:min-h-[40px] px-4 py-2 text-[13px] font-medium text-[#1d1d1f] bg-[#f5f5f7] hover:bg-[#e8e8ed] rounded-xl transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] disabled:opacity-50"
               >
                 {cancelLabel}
               </button>
@@ -126,8 +126,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
                 onClick={() => onConfirm()}
                 className={`w-full sm:w-auto min-h-[44px] sm:min-h-[40px] px-4 py-2 text-[13px] font-medium text-white rounded-xl transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 disabled:opacity-50 ${
                   isDangerTone
-                    ? 'bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-500'
-                    : 'bg-[#1d1d1f] hover:bg-black focus-visible:ring-[#0284c7]'
+                    ? 'bg-[#c92a2a] hover:bg-[#b02020] focus-visible:ring-[#c92a2a]'
+                    : 'bg-[#1d1d1f] hover:bg-black focus-visible:ring-[#0071e3]'
                 }`}
               >
                 {isLoading ? 'Processing…' : confirmLabel}

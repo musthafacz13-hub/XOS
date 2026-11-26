@@ -10,6 +10,7 @@ export const NotesEmptyState: React.FC<NotesEmptyStateProps> = ({ onCreateNote }
   return (
     <EmptyState
       icon={StickyNote}
+      iconName="notes"
       title="No notes yet"
       description="Create personal notes, purchase plans, shopping lists, or reminders. Optional budgets stay independent from your financial ledgers."
       actionLabel="Create First Note"

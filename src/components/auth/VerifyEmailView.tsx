@@ -77,7 +77,7 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
     >
       <div className="space-y-5 text-center py-2">
         {/* Email Icon */}
-        <div className="w-14 h-14 rounded-2xl bg-[#0284c7]/10 text-[#0284c7] flex items-center justify-center mx-auto">
+        <div className="w-14 h-14 rounded-2xl bg-[#e8f2ff] text-[#0071e3] flex items-center justify-center mx-auto">
           <Mail className="w-7 h-7" />
         </div>
 
@@ -100,15 +100,15 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
             Verification Steps
           </span>
           <div className="flex items-start gap-2">
-            <CheckCircle className="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0" />
+            <CheckCircle className="w-3.5 h-3.5 text-[#1f7a4c] mt-0.5 shrink-0" />
             <span>Open the message from Supabase / XOS in your inbox.</span>
           </div>
           <div className="flex items-start gap-2">
-            <CheckCircle className="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0" />
+            <CheckCircle className="w-3.5 h-3.5 text-[#1f7a4c] mt-0.5 shrink-0" />
             <span>Click the confirmation link to securely authenticate your session.</span>
           </div>
           <div className="flex items-start gap-2">
-            <CheckCircle className="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0" />
+            <CheckCircle className="w-3.5 h-3.5 text-[#1f7a4c] mt-0.5 shrink-0" />
             <span>Already have an account? Return to Log In or reset your password if needed.</span>
           </div>
         </div>
@@ -119,8 +119,8 @@ export const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({
             role={resendNotice.type === 'error' ? 'alert' : 'status'}
             className={`p-3 border text-xs rounded-xl ${
               resendNotice.type === 'error'
-                ? 'bg-rose-50 border-rose-200/80 text-rose-800'
-                : 'bg-emerald-50 border-emerald-200/80 text-emerald-800'
+                ? 'bg-[#fef2f2] border-[#c92a2a]/20 text-[#991b1b]'
+                : 'bg-[#f0fdf4] border-[#1f7a4c]/20 text-[#166534]'
             }`}
           >
             {resendNotice.text}

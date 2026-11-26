@@ -630,7 +630,7 @@ export const SalaryView: React.FC = () => {
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
-              <Calculator className="w-4 h-4 text-[#0284c7]" />
+              <Calculator className="w-4 h-4 text-[#0071e3]" />
               <span className="text-sm font-medium text-[#1d1d1f]">Daily Earnings Period</span>
             </div>
 
@@ -640,14 +640,14 @@ export const SalaryView: React.FC = () => {
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
                 aria-label="Select salary month"
-                className="min-h-[40px] px-3 py-1.5 text-sm sm:text-xs font-mono font-medium border border-black/[0.12] rounded-xl bg-white focus:outline-none focus:border-[#0284c7] focus:ring-2 focus:ring-[#0284c7]/15"
+                className="min-h-[40px] px-3 py-1.5 text-sm sm:text-xs font-mono font-medium border border-black/[0.12] rounded-xl bg-white focus:outline-none focus:border-[#0071e3] focus:ring-2 focus:ring-[#0071e3]/15"
               />
               <button
                 type="button"
                 onClick={() => openDailyCustomizeModal()}
                 className={SECONDARY_BUTTON_CLASS}
               >
-                <Edit3 className="w-3.5 h-3.5 text-[#0284c7]" />
+                <Edit3 className="w-3.5 h-3.5 text-[#0071e3]" />
                 <span>Customize Daily Pay</span>
               </button>
               <button
@@ -661,51 +661,62 @@ export const SalaryView: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            <MetricCard
-              variant="focal"
-              label={`Earned Salary (${selectedMonth})`}
-              value={formatCurrency(monthlySummary.earnedSalary, data.settings.currency)}
-              sublabel={
-                !salaryConfigured && monthlySummary.presentDays === 0
-                  ? 'Configure rates in Rate Settings'
-                  : monthlySummary.customizedDaysCount > 0
-                    ? `${monthlySummary.presentDays} days · ${monthlySummary.customizedDaysCount} customized`
-                    : `${monthlySummary.presentDays} present days`
-              }
-            />
+          {/* Paystub-Style Financial Summary Stage */}
+          <section aria-label="Monthly Salary Paystub" className="rounded-3xl bg-[#f5f5f7] p-4 sm:p-5">
+            <div className="rounded-2xl bg-white border border-black/[0.06] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-black/[0.06] overflow-hidden">
+              <div className="p-5 sm:p-6 space-y-1.5">
+                <span className="text-xs font-medium text-[#6e6e73]">Earned Salary ({selectedMonth})</span>
+                <div className="text-[26px] font-semibold font-mono tabular-nums tracking-[-0.025em] text-[#1d1d1f]">
+                  {formatCurrency(monthlySummary.earnedSalary, data.settings.currency)}
+                </div>
+                <p className="text-xs text-[#86868b]">
+                  {!salaryConfigured && monthlySummary.presentDays === 0
+                    ? 'Configure rates in Rate Settings'
+                    : monthlySummary.customizedDaysCount > 0
+                      ? `${monthlySummary.presentDays} days · ${monthlySummary.customizedDaysCount} customized`
+                      : `${monthlySummary.presentDays} present days`}
+                </p>
+              </div>
 
-            <MetricCard
-              label="Salary Received"
-              tone="positive"
-              value={formatCurrency(monthlySummary.salaryReceived, data.settings.currency)}
-              sublabel={`${monthPayouts.length} payout ${monthPayouts.length === 1 ? 'record' : 'records'}`}
-            />
+              <div className="p-5 sm:p-6 space-y-1.5">
+                <span className="text-xs font-medium text-[#6e6e73]">Salary Received</span>
+                <div className="text-[26px] font-semibold font-mono tabular-nums tracking-[-0.025em] text-[#1f7a4c]">
+                  {formatCurrency(monthlySummary.salaryReceived, data.settings.currency)}
+                </div>
+                <p className="text-xs text-[#86868b]">
+                  {monthPayouts.length} payout {monthPayouts.length === 1 ? 'record' : 'records'}
+                </p>
+              </div>
 
-            <MetricCard
-              label="Remaining Salary Due"
-              value={
-                !salaryConfigured && monthlySummary.presentDays === 0 && monthlySummary.earnedSalary === 0 && monthlySummary.salaryReceived === 0 ? (
-                  <span className="text-lg font-medium text-[#6e6e73] font-sans">Not configured</span>
-                ) : (
-                  formatCurrency(monthlySummary.remainingSalary, data.settings.currency)
-                )
-              }
-              sublabel={
-                !salaryConfigured && monthlySummary.presentDays === 0 && monthlySummary.earnedSalary === 0 && monthlySummary.salaryReceived === 0
-                  ? 'Set rates in Rate Settings'
-                  : monthlySummary.overpaidAmount > 0
-                    ? `Overpaid by ${formatCurrency(monthlySummary.overpaidAmount, data.settings.currency)}`
-                    : 'Balance to be paid'
-              }
-            />
+              <div className="p-5 sm:p-6 space-y-1.5">
+                <span className="text-xs font-medium text-[#6e6e73]">Remaining Salary Due</span>
+                <div className="text-[26px] font-semibold font-mono tabular-nums tracking-[-0.025em] text-[#0071e3]">
+                  {!salaryConfigured && monthlySummary.presentDays === 0 && monthlySummary.earnedSalary === 0 && monthlySummary.salaryReceived === 0 ? (
+                    <span className="text-base font-medium text-[#6e6e73] font-sans">Not configured</span>
+                  ) : (
+                    formatCurrency(monthlySummary.remainingSalary, data.settings.currency)
+                  )}
+                </div>
+                <p className="text-xs text-[#86868b]">
+                  {!salaryConfigured && monthlySummary.presentDays === 0 && monthlySummary.earnedSalary === 0 && monthlySummary.salaryReceived === 0
+                    ? 'Set rates in Rate Settings'
+                    : monthlySummary.overpaidAmount > 0
+                      ? `Overpaid by ${formatCurrency(monthlySummary.overpaidAmount, data.settings.currency)}`
+                      : 'Balance to be paid'}
+                </p>
+              </div>
 
-            <MetricCard
-              label="Total Hours"
-              value={`${monthlySummary.totalWorkingHours}h`}
-              sublabel={`Includes ${monthlySummary.totalExtraHours}h extra hours`}
-            />
-          </div>
+              <div className="p-5 sm:p-6 space-y-1.5">
+                <span className="text-xs font-medium text-[#6e6e73]">Total Hours</span>
+                <div className="text-[26px] font-semibold font-mono tabular-nums tracking-[-0.025em] text-[#1d1d1f]">
+                  {monthlySummary.totalWorkingHours}h
+                </div>
+                <p className="text-xs text-[#86868b]">
+                  Includes {monthlySummary.totalExtraHours}h extra hours
+                </p>
+              </div>
+            </div>
+          </section>
 
           <SectionCard
             title="Attendance & Extra Hours Breakdown"
@@ -713,7 +724,7 @@ export const SalaryView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setActiveTab('daily')}
-                className="text-xs font-medium text-[#0284c7] hover:underline cursor-pointer"
+                className="text-xs font-medium text-[#0071e3] hover:text-[#0077ed] hover:underline cursor-pointer"
               >
                 View Daily Ledger →
               </button>
@@ -758,7 +769,7 @@ export const SalaryView: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setActiveTab('settings')}
-                      className="text-xs font-medium text-[#0284c7] hover:underline cursor-pointer"
+                      className="text-xs font-medium text-[#0071e3] hover:text-[#0077ed] hover:underline cursor-pointer"
                     >
                       Configure Salary Rates →
                     </button>
@@ -806,7 +817,7 @@ export const SalaryView: React.FC = () => {
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
                 aria-label="Filter daily ledger by month"
-                className="min-h-[40px] px-3 py-1.5 text-sm sm:text-xs font-mono font-medium border border-black/[0.12] rounded-xl bg-white focus:outline-none focus:border-[#0284c7] focus:ring-2 focus:ring-[#0284c7]/15"
+                className="min-h-[40px] px-3 py-1.5 text-sm sm:text-xs font-mono font-medium border border-black/[0.12] rounded-xl bg-white focus:outline-none focus:border-[#0071e3] focus:ring-2 focus:ring-[#0071e3]/15"
               />
               <span className="text-xs text-[#6e6e73]">
                 {monthlySummary.customizedDaysCount > 0
@@ -828,7 +839,7 @@ export const SalaryView: React.FC = () => {
           {dailyBannerMessage && (
             <div className="p-3.5 rounded-2xl bg-[#f5f5f7] text-xs text-[#1d1d1f] flex items-center justify-between gap-2">
               <span className="flex items-center gap-2">
-                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                <Check className="w-4 h-4 text-[#1f7a4c] shrink-0" />
                 <span>{dailyBannerMessage}</span>
               </span>
               <button
@@ -844,6 +855,7 @@ export const SalaryView: React.FC = () => {
           {monthDailyRecords.length === 0 ? (
             <EmptyState
               icon={Calculator}
+              iconName="salary"
               title="No daily salary entries for this month"
               description="Add or customize a specific day's working hours, daily base salary, overtime rate, or direct earned pay."
               actionLabel="Customize a Day"
@@ -948,7 +960,7 @@ export const SalaryView: React.FC = () => {
                           <td className="py-3 px-4">
                             <span className="text-[#1d1d1f]">{rec.status}</span>
                             {customized && (
-                              <span className="ml-1.5 text-xs font-medium text-[#0284c7]">· Custom</span>
+                              <span className="ml-1.5 text-xs font-medium text-[#0071e3]">· Custom</span>
                             )}
                           </td>
                           <td className="py-3 px-4 text-center font-mono tabular-nums">
@@ -1016,6 +1028,7 @@ export const SalaryView: React.FC = () => {
           {monthPayouts.length === 0 ? (
             <EmptyState
               icon={Banknote}
+              iconName="salary"
               title="No salary payments recorded for this month"
               description={`You have earned ${formatCurrency(monthlySummary.earnedSalary, data.settings.currency)} for ${selectedMonth}. Record a payout to update your received salary.`}
               actionLabel="Record Payout"
@@ -1038,7 +1051,7 @@ export const SalaryView: React.FC = () => {
                             {pay.periodStart} → {pay.periodEnd}
                           </span>
                         </div>
-                        <span className="font-mono font-semibold text-base text-emerald-700 tabular-nums">
+                        <span className="font-mono font-semibold text-base text-[#1f7a4c] tabular-nums">
                           {formatCurrency(pay.amountPaid, data.settings.currency)}
                         </span>
                       </div>
@@ -1048,7 +1061,7 @@ export const SalaryView: React.FC = () => {
                       )}
 
                       <div className="flex items-center justify-between pt-1">
-                        <span className={`text-xs font-medium ${isSynced ? 'text-emerald-700' : 'text-[#86868b]'}`}>
+                        <span className={`text-xs font-medium ${isSynced ? 'text-[#1f7a4c]' : 'text-[#86868b]'}`}>
                           {isSynced ? 'Synced to Income' : 'Unsynced'}
                         </span>
                         <ActionIconButton
@@ -1087,14 +1100,14 @@ export const SalaryView: React.FC = () => {
                           <td className="py-3 px-4 font-mono text-xs text-[#6e6e73] tabular-nums">
                             {pay.periodStart} → {pay.periodEnd}
                           </td>
-                          <td className="py-3 px-4 text-right font-mono font-semibold text-emerald-700 tabular-nums">
+                          <td className="py-3 px-4 text-right font-mono font-semibold text-[#1f7a4c] tabular-nums">
                             {formatCurrency(pay.amountPaid, data.settings.currency)}
                           </td>
                           <td className="py-3 px-4 text-[#6e6e73]">
                             {pay.notes || 'Salary Payment'}
                           </td>
                           <td className="py-3 px-4 text-center">
-                            <span className={`text-xs font-medium ${isSynced ? 'text-emerald-700' : 'text-[#86868b]'}`}>
+                            <span className={`text-xs font-medium ${isSynced ? 'text-[#1f7a4c]' : 'text-[#86868b]'}`}>
                               {isSynced ? 'Synced' : 'Unsynced'}
                             </span>
                           </td>
@@ -1117,15 +1130,16 @@ export const SalaryView: React.FC = () => {
         </div>
       )}
 
-      {/* RATE SETTINGS TAB */}
+      {/* RATE SETTINGS TAB — Apple Grouped Inset List */}
       {activeTab === 'settings' && (
         <SectionCard
           title="Daily Salary Rate Settings"
           subtitle="Configure your default daily wage, duty hours, and overtime calculation rate."
+          surface="grouped"
           action={
             <div className="flex items-center gap-2">
               {savedSettingsNotif && (
-                <span className="text-xs text-emerald-700 font-medium flex items-center gap-1">
+                <span className="text-xs text-[#1f7a4c] font-medium flex items-center gap-1">
                   <Check className="w-3.5 h-3.5" /> {savedSettingsNotif}
                 </span>
               )}
@@ -1136,19 +1150,24 @@ export const SalaryView: React.FC = () => {
           }
           className="max-w-2xl"
         >
-          <form onSubmit={handleSaveSettings} className="space-y-5">
+          <form onSubmit={handleSaveSettings} className="space-y-4">
             {settingsError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <div className="p-3 bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] text-xs rounded-xl flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-[#c92a2a]" />
                 <span>{settingsError}</span>
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="salary-rate-base" className={LABEL_CLASS}>
-                  Daily Base Salary ({data.settings.currency})
-                </label>
+            <div className="rounded-2xl bg-white border border-black/[0.06] divide-y divide-black/[0.06] overflow-hidden">
+              <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <label htmlFor="salary-rate-base" className="text-sm font-medium text-[#1d1d1f] block">
+                    Daily Base Salary ({data.settings.currency})
+                  </label>
+                  <p className="text-xs text-[#86868b] mt-0.5">
+                    Earned for working standard daily hours.
+                  </p>
+                </div>
                 <input
                   id="salary-rate-base"
                   type="number"
@@ -1159,17 +1178,19 @@ export const SalaryView: React.FC = () => {
                   placeholder="Not configured"
                   value={dailyBaseSalaryInput}
                   onChange={(e) => setDailyBaseSalaryInput(e.target.value)}
-                  className={MONO_INPUT_CLASS}
+                  className={`${MONO_INPUT_CLASS} sm:w-44 sm:text-right`}
                 />
-                <p className="text-xs text-[#86868b] mt-1">
-                  Earned for working standard daily hours.
-                </p>
               </div>
 
-              <div>
-                <label htmlFor="salary-rate-hours" className={LABEL_CLASS}>
-                  Standard Duty Hours / Day
-                </label>
+              <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <label htmlFor="salary-rate-hours" className="text-sm font-medium text-[#1d1d1f] block">
+                    Standard Duty Hours / Day
+                  </label>
+                  <p className="text-xs text-[#86868b] mt-0.5">
+                    Hours per day before overtime rate applies.
+                  </p>
+                </div>
                 <input
                   id="salary-rate-hours"
                   type="number"
@@ -1181,90 +1202,95 @@ export const SalaryView: React.FC = () => {
                   placeholder="Not configured"
                   value={standardWorkingHoursInput}
                   onChange={(e) => setStandardWorkingHoursInput(e.target.value)}
-                  className={MONO_INPUT_CLASS}
+                  className={`${MONO_INPUT_CLASS} sm:w-44 sm:text-right`}
                 />
-                <p className="text-xs text-[#86868b] mt-1">
-                  Hours per day before overtime rate applies.
-                </p>
               </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label htmlFor="salary-rate-addon" className="text-xs font-medium text-[#6e6e73]">
-                    Daily Add-on Salary ({data.settings.currency})
-                  </label>
-                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1d1d1f] cursor-pointer">
+              <div className="p-4 sm:p-5 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <label htmlFor="salary-rate-addon" className="text-sm font-medium text-[#1d1d1f] block">
+                      Daily Add-on Salary ({data.settings.currency})
+                    </label>
+                    <p className="text-xs text-[#86868b] mt-0.5">
+                      {addonEnabled
+                        ? 'Added to daily base salary on Present workdays.'
+                        : 'Add-on salary disabled for new entries.'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1d1d1f] cursor-pointer whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={addonEnabled}
+                        onChange={(e) => setAddonEnabled(e.target.checked)}
+                        className="rounded border-black/20 text-[#0071e3] focus:ring-[#0071e3]"
+                      />
+                      <span>Enable</span>
+                    </label>
                     <input
-                      type="checkbox"
-                      checked={addonEnabled}
-                      onChange={(e) => setAddonEnabled(e.target.checked)}
-                      className="rounded border-black/20 text-[#0284c7] focus:ring-[#0284c7]"
+                      id="salary-rate-addon"
+                      type="number"
+                      min="0"
+                      step="any"
+                      inputMode="decimal"
+                      placeholder="0"
+                      disabled={!addonEnabled}
+                      value={addonSalaryInput}
+                      onChange={(e) => setAddonSalaryInput(e.target.value)}
+                      className={`${MONO_INPUT_CLASS} sm:w-36 sm:text-right`}
                     />
-                    <span>Enable Add-on</span>
-                  </label>
+                  </div>
                 </div>
-                <input
-                  id="salary-rate-addon"
-                  type="number"
-                  min="0"
-                  step="any"
-                  inputMode="decimal"
-                  placeholder="0"
-                  disabled={!addonEnabled}
-                  value={addonSalaryInput}
-                  onChange={(e) => setAddonSalaryInput(e.target.value)}
-                  className={MONO_INPUT_CLASS}
-                />
-                <p className="text-xs text-[#86868b] mt-1">
-                  {addonEnabled
-                    ? 'Added to daily base salary on Present workdays.'
-                    : 'Add-on salary disabled for new entries.'}
-                </p>
               </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label htmlFor="salary-rate-extra" className="text-xs font-medium text-[#6e6e73]">
-                    Extra-Hour Rate ({data.settings.currency}/hour)
-                  </label>
-                  <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1d1d1f] cursor-pointer">
+              <div className="p-4 sm:p-5 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <label htmlFor="salary-rate-extra" className="text-sm font-medium text-[#1d1d1f] block">
+                      Extra-Hour Rate ({data.settings.currency}/hour)
+                    </label>
+                    <p className="text-xs text-[#86868b] mt-0.5">
+                      {overtimeEnabled
+                        ? 'Additional rate paid per hour beyond standard daily duty hours.'
+                        : 'Overtime calculation disabled for new entries.'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1d1d1f] cursor-pointer whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={overtimeEnabled}
+                        onChange={(e) => setOvertimeEnabled(e.target.checked)}
+                        className="rounded border-black/20 text-[#0071e3] focus:ring-[#0071e3]"
+                      />
+                      <span>Enable</span>
+                    </label>
                     <input
-                      type="checkbox"
-                      checked={overtimeEnabled}
-                      onChange={(e) => setOvertimeEnabled(e.target.checked)}
-                      className="rounded border-black/20 text-[#0284c7] focus:ring-[#0284c7]"
+                      id="salary-rate-extra"
+                      type="number"
+                      min="0"
+                      step="any"
+                      inputMode="decimal"
+                      placeholder="Not configured"
+                      disabled={!overtimeEnabled}
+                      value={extraHourRateInput}
+                      onChange={(e) => setExtraHourRateInput(e.target.value)}
+                      className={`${MONO_INPUT_CLASS} sm:w-36 sm:text-right`}
                     />
-                    <span>Enable Overtime Pay</span>
-                  </label>
+                  </div>
                 </div>
-                <input
-                  id="salary-rate-extra"
-                  type="number"
-                  min="0"
-                  step="any"
-                  inputMode="decimal"
-                  placeholder="Not configured"
-                  disabled={!overtimeEnabled}
-                  value={extraHourRateInput}
-                  onChange={(e) => setExtraHourRateInput(e.target.value)}
-                  className={MONO_INPUT_CLASS}
-                />
-                <p className="text-xs text-[#86868b] mt-1">
-                  {overtimeEnabled
-                    ? 'Additional rate paid per hour beyond standard daily duty hours.'
-                    : 'Overtime calculation disabled for new entries.'}
-                </p>
               </div>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-[#f5f5f7] flex items-start gap-2.5 text-xs text-[#6e6e73]">
-              <ShieldCheck className="w-4 h-4 text-[#0284c7] shrink-0 mt-0.5" />
+            <div className="p-3.5 rounded-2xl bg-white border border-black/[0.06] flex items-start gap-2.5 text-xs text-[#6e6e73]">
+              <ShieldCheck className="w-4 h-4 text-[#0071e3] shrink-0 mt-0.5" />
               <p className="leading-relaxed">
                 Saved daily entries preserve their historical rates and custom earnings. Updating these defaults affects future records only.
               </p>
             </div>
 
-            <div className="pt-3 border-t border-black/[0.06] flex items-center justify-end gap-2">
+            <div className="pt-2 flex items-center justify-end gap-2">
               {hasRateSettingsChanges && (
                 <button
                   type="button"
@@ -1318,8 +1344,8 @@ export const SalaryView: React.FC = () => {
         }
       >
         {dailyFormError && (
-          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+          <div className="mb-4 p-3 bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] text-xs rounded-xl flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-[#c92a2a]" />
             <span>{dailyFormError}</span>
           </div>
         )}
@@ -1398,7 +1424,7 @@ export const SalaryView: React.FC = () => {
                       type="checkbox"
                       checked={dailyCustomAddonEnabled}
                       onChange={(e) => setDailyCustomAddonEnabled(e.target.checked)}
-                      className="rounded border-black/20 text-[#0284c7]"
+                      className="rounded border-black/20 text-[#0071e3]"
                     />
                     <span>Add-on</span>
                   </label>
@@ -1425,7 +1451,7 @@ export const SalaryView: React.FC = () => {
                       type="checkbox"
                       checked={dailyCustomOvertimeEnabled}
                       onChange={(e) => setDailyCustomOvertimeEnabled(e.target.checked)}
-                      className="rounded border-black/20 text-[#0284c7]"
+                      className="rounded border-black/20 text-[#0071e3]"
                     />
                     <span>Overtime</span>
                   </label>
@@ -1462,7 +1488,7 @@ export const SalaryView: React.FC = () => {
                         setDirectEarnedSalaryInput(String(dailyFormulaPreview.dailyEarnedSalary));
                       }
                     }}
-                    className="rounded border-black/20 text-[#0284c7]"
+                    className="rounded border-black/20 text-[#0071e3]"
                   />
                   <span>Override final earned amount (bonus, add-on, or adjustment)</span>
                 </label>
@@ -1532,8 +1558,8 @@ export const SalaryView: React.FC = () => {
         }
       >
         {paymentError && (
-          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+          <div className="mb-4 p-3 bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] text-xs rounded-xl flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-[#c92a2a]" />
             <span>{paymentError}</span>
           </div>
         )}
@@ -1587,7 +1613,7 @@ export const SalaryView: React.FC = () => {
                 type="checkbox"
                 checked={isSyncingToIncome}
                 onChange={(e) => setIsSyncingToIncome(e.target.checked)}
-                className="rounded border-black/20 text-[#0284c7]"
+                className="rounded border-black/20 text-[#0071e3]"
               />
               <span>Automatically sync to Income Module</span>
             </label>
@@ -1599,7 +1625,7 @@ export const SalaryView: React.FC = () => {
                     type="checkbox"
                     checked={allowReplace}
                     onChange={(e) => setAllowReplace(e.target.checked)}
-                    className="rounded border-black/20 text-[#0284c7]"
+                    className="rounded border-black/20 text-[#0071e3]"
                   />
                   <span>Replace existing payout for {selectedMonth}</span>
                 </label>

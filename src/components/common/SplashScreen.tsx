@@ -78,8 +78,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
 
           {error ? (
             <div className="pt-2 space-y-4">
-              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs leading-relaxed flex items-start gap-2.5 text-left">
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div className="p-3.5 rounded-xl bg-[#c92a2a]/8 border border-[#c92a2a]/20 text-[#c92a2a] text-xs leading-relaxed flex items-start gap-2.5 text-left">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{error}</span>
               </div>
 
@@ -88,7 +88,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                   <button
                     type="button"
                     onClick={onRetry}
-                    className="w-full min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#1d1d1f] hover:bg-black text-white text-[13px] font-medium transition-colors cursor-pointer"
+                    className="w-full min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#0071e3] hover:bg-[#0077ed] text-white text-[13px] font-medium transition-colors cursor-pointer"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                     <span>Try Again</span>
@@ -114,7 +114,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
               </div>
 
               <div className="w-24 h-1 mx-auto rounded-full bg-[#f5f5f7] overflow-hidden mt-3">
-                <div className="h-full w-1/2 rounded-full bg-[#0284c7] animate-[pulse_1.4s_ease-in-out_infinite]" />
+                <div className="h-full w-1/2 rounded-full bg-[#0071e3] animate-[pulse_1.4s_ease-in-out_infinite]" />
               </div>
             </>
           )}

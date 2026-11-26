@@ -74,7 +74,7 @@ export const ArchivedChatsView: React.FC<ArchivedChatsViewProps> = ({
                     type="button"
                     disabled={isBusy}
                     onClick={() => onRestore(conv)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#0284c7]/10 text-[#0284c7] hover:bg-[#0284c7]/15 text-xs font-semibold cursor-pointer disabled:opacity-50 min-h-[36px]"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#e8f2ff] text-[#0071e3] hover:bg-[#dcebff] text-xs font-semibold cursor-pointer disabled:opacity-50 min-h-[36px]"
                   >
                     <ArchiveRestore className="w-3.5 h-3.5" />
                     <span>Restore</span>
@@ -83,7 +83,7 @@ export const ArchivedChatsView: React.FC<ArchivedChatsViewProps> = ({
                     type="button"
                     disabled={isBusy}
                     onClick={() => onRequestDelete(conv)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 text-xs font-medium cursor-pointer disabled:opacity-50 min-h-[36px]"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[#c92a2a] hover:bg-[#fef2f2] text-xs font-medium cursor-pointer disabled:opacity-50 min-h-[36px]"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Delete</span>

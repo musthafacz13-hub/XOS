@@ -15,6 +15,7 @@ import { formatCurrency, formatHumanDate, getTodayString } from '../../utils/for
 import { calculateUnifiedGoalTotals, resolveGoalsWithSavings } from '../../utils/calculations';
 import { EmptyState } from '../common/EmptyState';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import { XOSModuleIcon } from '../icons/XOSIcons';
 import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
 import {
   ACCENT_BUTTON_CLASS,
@@ -23,7 +24,6 @@ import {
   INPUT_CLASS,
   LABEL_CLASS,
   MONO_INPUT_CLASS,
-  MetricCard,
   Modal,
   PRIMARY_BUTTON_CLASS,
   PageHeader,
@@ -313,30 +313,61 @@ export const GoalsAndSavingsView: React.FC = () => {
         }
       />
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
-        <MetricCard
-          variant="focal"
-          label="Total Saved Across Goals"
-          value={formatCurrency(totalSavedAmount, data.settings.currency)}
-          progress={overallProgress}
-          sublabel={`Target sum: ${formatCurrency(totalTargetAmount, data.settings.currency)} · ${overallProgress}% funded`}
-        />
+      {/* Unified Savings Progress Stage */}
+      <section aria-label="Goals & Savings Summary" className="rounded-3xl bg-[#f5f5f7] p-4 sm:p-5">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+          <div className="lg:col-span-6 rounded-2xl bg-white border border-black/[0.06] p-5 sm:p-6 flex flex-col justify-between gap-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-[#6e6e73]">Total Saved Across Goals</span>
+              <span className="text-[#0071e3]">
+                <XOSModuleIcon name="goals" isActive size={16} />
+              </span>
+            </div>
+            <div className="space-y-3">
+              <div className="text-[28px] sm:text-[32px] font-semibold font-mono tabular-nums tracking-[-0.03em] text-[#1d1d1f] leading-tight">
+                {formatCurrency(totalSavedAmount, data.settings.currency)}
+              </div>
+              <div className="w-full h-1.5 bg-black/[0.06] rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    overallProgress >= 100 ? 'bg-[#1f7a4c]' : 'bg-[#0071e3]'
+                  }`}
+                  style={{ width: `${Math.min(100, Math.max(0, overallProgress))}%` }}
+                />
+              </div>
+              <p className="text-xs text-[#86868b] font-mono tabular-nums">
+                Target sum: {formatCurrency(totalTargetAmount, data.settings.currency)} · {overallProgress}% funded
+              </p>
+            </div>
+          </div>
 
-        <MetricCard
-          label="Remaining to Save"
-          value={formatCurrency(totalRemainingAmount, data.settings.currency)}
-          sublabel={`${activeGoalsCount} active · ${totalCount} total accounts`}
-        />
+          <div className="lg:col-span-6 rounded-2xl bg-white border border-black/[0.06] grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-black/[0.06] overflow-hidden">
+            <div className="p-5 sm:p-6 flex flex-col justify-between gap-2">
+              <span className="text-xs font-medium text-[#6e6e73]">Remaining to Save</span>
+              <div>
+                <div className="text-[22px] font-semibold font-mono tabular-nums tracking-[-0.02em] text-[#1d1d1f]">
+                  {formatCurrency(totalRemainingAmount, data.settings.currency)}
+                </div>
+                <p className="mt-1 text-xs text-[#86868b]">
+                  {activeGoalsCount} active · {totalCount} total accounts
+                </p>
+              </div>
+            </div>
 
-        <MetricCard
-          variant="subtle"
-          tone="positive"
-          label="Accomplished Goals"
-          value={completedGoalsCount}
-          sublabel={`Out of ${totalCount} goal accounts`}
-        />
-      </div>
+            <div className="p-5 sm:p-6 flex flex-col justify-between gap-2">
+              <span className="text-xs font-medium text-[#6e6e73]">Accomplished Goals</span>
+              <div>
+                <div className="text-[22px] font-semibold font-mono tabular-nums tracking-[-0.02em] text-[#1f7a4c]">
+                  {completedGoalsCount}
+                </div>
+                <p className="mt-1 text-xs text-[#86868b]">
+                  Out of {totalCount} goal accounts
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Filters */}
       <FilterBar
@@ -371,6 +402,7 @@ export const GoalsAndSavingsView: React.FC = () => {
       {filteredResolvedGoals.length === 0 ? (
         <EmptyState
           icon={Target}
+          iconName="goals"
           title="No unified goal & savings accounts found"
           description={
             searchQuery || activeTab !== 'all' || selectedCategory !== 'all'
@@ -386,10 +418,10 @@ export const GoalsAndSavingsView: React.FC = () => {
             const { goal, savedAmount, targetAmount, remainingAmount, progressPercentage, isCompleted, isPaused, hasValidSavingsLink } = item;
             const statusLabel = isCompleted ? 'Completed' : isPaused ? 'Paused' : 'In Progress';
             const statusToneClass = isCompleted
-              ? 'text-emerald-700'
+              ? 'text-[#1f7a4c]'
               : isPaused
                 ? 'text-[#6e6e73]'
-                : 'text-[#0284c7]';
+                : 'text-[#0071e3]';
 
             return (
               <div
@@ -414,7 +446,7 @@ export const GoalsAndSavingsView: React.FC = () => {
                         </p>
                       )}
                       {!hasValidSavingsLink && (
-                        <p className="text-xs text-amber-700 mt-1">
+                        <p className="text-xs text-[#a16207] mt-1">
                           Savings account link unavailable
                         </p>
                       )}
@@ -435,7 +467,7 @@ export const GoalsAndSavingsView: React.FC = () => {
                     </div>
                     <div className="w-full h-1.5 bg-black/[0.06] rounded-full overflow-hidden">
                       <div
-                        className={`h-full rounded-full transition-all duration-300 ${isCompleted ? 'bg-emerald-600' : 'bg-[#0284c7]'}`}
+                        className={`h-full rounded-full transition-all duration-300 ${isCompleted ? 'bg-[#1f7a4c]' : 'bg-[#0071e3]'}`}
                         style={{ width: `${progressPercentage}%` }}
                       />
                     </div>
@@ -450,7 +482,7 @@ export const GoalsAndSavingsView: React.FC = () => {
 
                 <div className="pt-3 border-t border-black/[0.06] flex items-center justify-between text-xs">
                   <span className="text-[#6e6e73]">View savings activity &amp; transactions</span>
-                  <span className="font-medium text-[#0284c7] group-hover:translate-x-0.5 transition-transform">Manage →</span>
+                  <span className="font-medium text-[#0071e3] group-hover:translate-x-0.5 transition-transform">Manage →</span>
                 </div>
               </div>
             );
@@ -488,8 +520,8 @@ export const GoalsAndSavingsView: React.FC = () => {
         }
       >
         {goalFormError && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+          <div className="mb-4 p-3 rounded-xl bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-[#c92a2a]" />
             <span>{goalFormError}</span>
           </div>
         )}
@@ -617,7 +649,7 @@ export const GoalsAndSavingsView: React.FC = () => {
                     </div>
                     <div>
                       <span className="text-[11px] text-[#6e6e73] font-medium block">Saved</span>
-                      <div className="text-base sm:text-xl font-semibold font-mono text-emerald-700 tabular-nums">
+                      <div className="text-base sm:text-xl font-semibold font-mono text-[#1f7a4c] tabular-nums">
                         {formatCurrency(detail.savedAmount, data.settings.currency)}
                       </div>
                     </div>
@@ -632,7 +664,7 @@ export const GoalsAndSavingsView: React.FC = () => {
                   <div className="space-y-1.5">
                     <div className="w-full h-2 bg-black/[0.08] rounded-full overflow-hidden">
                       <div
-                        className={`h-full rounded-full transition-all duration-300 ${detail.isCompleted ? 'bg-emerald-600' : 'bg-[#0284c7]'}`}
+                        className={`h-full rounded-full transition-all duration-300 ${detail.isCompleted ? 'bg-[#1f7a4c]' : 'bg-[#0071e3]'}`}
                         style={{ width: `${detail.progressPercentage}%` }}
                       />
                     </div>
@@ -650,8 +682,8 @@ export const GoalsAndSavingsView: React.FC = () => {
                 </div>
 
                 {!detail.hasValidSavingsLink && (
-                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                  <div className="p-3 rounded-xl bg-[#fefce8] border border-[#a16207]/20 text-[#854d0e] text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-[#a16207]" />
                     <span>This goal has no connected savings account record. Deposits and withdrawals are disabled.</span>
                   </div>
                 )}
@@ -718,9 +750,9 @@ export const GoalsAndSavingsView: React.FC = () => {
                           <div key={tx.id} className="p-3.5 flex items-center justify-between text-xs gap-3">
                             <div className="flex items-center gap-3 min-w-0">
                               {isDeposit ? (
-                                <ArrowUpRight className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <ArrowUpRight className="w-4 h-4 text-[#1f7a4c] shrink-0" />
                               ) : (
-                                <ArrowDownLeft className="w-4 h-4 text-amber-600 shrink-0" />
+                                <ArrowDownLeft className="w-4 h-4 text-[#a16207] shrink-0" />
                               )}
                               <div className="min-w-0">
                                 <span className="font-mono font-semibold text-[#1d1d1f] block tabular-nums">
@@ -731,7 +763,7 @@ export const GoalsAndSavingsView: React.FC = () => {
                                 </span>
                               </div>
                             </div>
-                            <span className={`text-xs font-medium capitalize shrink-0 ${isDeposit ? 'text-emerald-700' : 'text-amber-700'}`}>
+                            <span className={`text-xs font-medium capitalize shrink-0 ${isDeposit ? 'text-[#1f7a4c]' : 'text-[#a16207]'}`}>
                               {tx.type}
                             </span>
                           </div>
@@ -776,8 +808,8 @@ export const GoalsAndSavingsView: React.FC = () => {
         }
       >
         {txError && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+          <div className="mb-4 p-3 rounded-xl bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-[#c92a2a]" />
             <span>{txError}</span>
           </div>
         )}

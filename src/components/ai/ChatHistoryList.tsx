@@ -57,11 +57,11 @@ export const ChatHistoryList: React.FC<ChatHistoryListProps> = ({
         </div>
       ) : error && !hasAny ? (
         <div className="px-3 py-6 text-center space-y-2.5">
-          <p className="text-xs text-rose-700 leading-relaxed">{error}</p>
+          <p className="text-xs text-[#c92a2a] leading-relaxed">{error}</p>
           <button
             type="button"
             onClick={onRetry}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0284c7] hover:bg-[#0284c7]/10 cursor-pointer min-h-[36px]"
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#0071e3] hover:bg-[#e8f2ff] cursor-pointer min-h-[36px]"
           >
             Retry
           </button>
@@ -77,12 +77,12 @@ export const ChatHistoryList: React.FC<ChatHistoryListProps> = ({
       ) : (
         <>
           {error && (
-            <div className="mx-2 mb-2 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200/80 flex items-center justify-between gap-2">
-              <span className="text-[11px] text-rose-800 leading-snug">{error}</span>
+            <div className="mx-2 mb-2 px-3 py-2 rounded-xl bg-[#fef2f2] border border-[#c92a2a]/20 flex items-center justify-between gap-2">
+              <span className="text-[11px] text-[#991b1b] leading-snug">{error}</span>
               <button
                 type="button"
                 onClick={onRetry}
-                className="text-[11px] font-semibold text-[#0284c7] shrink-0 cursor-pointer"
+                className="text-[11px] font-semibold text-[#0071e3] shrink-0 cursor-pointer"
               >
                 Retry
               </button>

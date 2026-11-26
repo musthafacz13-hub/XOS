@@ -22,9 +22,9 @@ export const NoteCard: React.FC<NoteCardProps> = React.memo(({
       type="button"
       onClick={() => onSelect(note)}
       aria-pressed={isSelected}
-      className={`w-full text-left p-4 rounded-2xl border transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7] ${
+      className={`w-full text-left p-4 rounded-2xl border transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] ${
         isSelected
-          ? 'bg-[#f5f5f7] border-[#0284c7]/40'
+          ? 'bg-[#e8f2ff]/45 border-[#0071e3]/35'
           : 'bg-white border-black/[0.08] hover:border-black/[0.16] hover:bg-[#fbfbfd]'
       }`}
     >

@@ -3,19 +3,26 @@
 :root {
   --xos-bg: #ffffff;
   --xos-surface: #f5f5f7;
+  --xos-surface-alt: #fbfbfd;
   --xos-surface-elevated: #ffffff;
-  --xos-surface-inset: #f9f9fb;
   --xos-ink: #1d1d1f;
   --xos-ink-secondary: #6e6e73;
   --xos-ink-tertiary: #86868b;
   --xos-border: rgba(0, 0, 0, 0.08);
+  --xos-border-subtle: rgba(0, 0, 0, 0.06);
   --xos-border-strong: rgba(0, 0, 0, 0.14);
-  --xos-accent: #0284c7;
-  --xos-accent-hover: #0369a1;
-  --xos-accent-soft: #e0f2fe;
-  --xos-positive: #15803d;
-  --xos-warning: #b45309;
-  --xos-danger: #dc2626;
+  --xos-accent: #0071e3;
+  --xos-accent-hover: #0077ed;
+  --xos-accent-pressed: #0062c4;
+  --xos-accent-soft: #e8f2ff;
+  --xos-positive: #1f7a4c;
+  --xos-warning: #a16207;
+  --xos-danger: #c92a2a;
+  --xos-info: #0071e3;
+
+  --xos-radius-control: 12px;
+  --xos-radius-card: 16px;
+  --xos-radius-stage: 24px;
 }
 
 @layer base {
@@ -29,7 +36,7 @@
   }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Plus Jakarta Sans", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Plus Jakarta Sans", system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     background-color: var(--xos-bg);
     color: var(--xos-ink);
     -webkit-font-smoothing: antialiased;
@@ -48,7 +55,7 @@
   }
 
   .font-mono, .tabular-nums {
-    font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Monaco, Consolas, monospace;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", "JetBrains Mono", Menlo, Monaco, Consolas, monospace;
     font-variant-numeric: tabular-nums;
   }
 }
@@ -56,8 +63,7 @@
 /*
  * Prevent iOS / iPadOS Safari automatic zoom on input/select/textarea focus.
  * Kept outside @layer base so it cleanly overrides Tailwind v4 @layer utilities
- * (such as text-xs / text-sm) on mobile viewports and touch devices while
- * keeping normal user pinch-zoom intact.
+ * on mobile viewports and touch devices while keeping pinch-zoom intact.
  */
 @media (max-width: 767px), (hover: none) and (pointer: coarse) {
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
@@ -69,12 +75,33 @@
   }
 }
 
+/* Reusable Editorial Typography Utilities */
+.xos-display {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Plus Jakarta Sans", system-ui, sans-serif;
+  letter-spacing: -0.032em;
+  line-height: 1.06;
+  text-wrap: balance;
+}
+
+.xos-page-title {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Plus Jakarta Sans", system-ui, sans-serif;
+  letter-spacing: -0.022em;
+  line-height: 1.14;
+  text-wrap: balance;
+}
+
+.xos-section-heading {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Plus Jakarta Sans", system-ui, sans-serif;
+  letter-spacing: -0.016em;
+  line-height: 1.2;
+}
+
 .cv-auto {
   content-visibility: auto;
   contain-intrinsic-size: auto 76px;
 }
 
-/* Custom minimal scrollbar */
+/* Minimal Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -92,19 +119,19 @@
 
 /* Apple Translucent Backdrop Chrome */
 .liquid-glass {
-  background-color: rgba(255, 255, 255, 0.82);
+  background-color: rgba(255, 255, 255, 0.84);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 
 .liquid-glass-dock {
-  background-color: rgba(255, 255, 255, 0.88);
+  background-color: rgba(255, 255, 255, 0.9);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 
 .liquid-glass-sheet {
-  background-color: rgba(255, 255, 255, 0.96);
+  background-color: rgba(255, 255, 255, 0.97);
   backdrop-filter: saturate(180%) blur(24px);
   -webkit-backdrop-filter: saturate(180%) blur(24px);
 }
@@ -117,109 +144,48 @@
   }
 }
 
-/* Subtle water ripple preserved only if explicitly referenced */
-@keyframes waterRipple {
-  0% {
-    transform: scale(0);
-    opacity: 0.3;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 0;
-  }
-}
-
-.animate-water-ripple {
-  animation: waterRipple 360ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  pointer-events: none;
-}
-
-/* Welcome Page — Editorial Entrance & Bidirectional Scroll Reveal */
-@keyframes welcomeHeroEnter {
+/* Editorial Blur-to-Sharp CSS Animation (Progressive Enhancement) */
+@keyframes xosBlurReveal {
   from {
     opacity: 0;
+    filter: blur(8px);
     transform: translate3d(0, 10px, 0);
   }
   to {
     opacity: 1;
+    filter: blur(0px);
     transform: translate3d(0, 0, 0);
   }
 }
 
-@keyframes welcomeEnterFromBelow {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 18px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
+.xos-blur-reveal {
+  animation: xosBlurReveal 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-@keyframes welcomeEnterFromAbove {
-  from {
-    opacity: 0;
-    transform: translate3d(0, -18px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
+.xos-blur-reveal-delay-1 {
+  animation: xosBlurReveal 560ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both;
 }
 
-.welcome-hero-enter {
-  animation: welcomeHeroEnter 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.welcome-hero-enter-delay-1 {
-  animation: welcomeHeroEnter 480ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both;
-}
-
-.welcome-hero-enter-delay-2 {
-  animation: welcomeHeroEnter 480ms cubic-bezier(0.22, 1, 0.36, 1) 120ms both;
-}
-
-[data-welcome-reveal="hidden-below"] {
-  opacity: 0;
-  transform: translate3d(0, 18px, 0);
-}
-
-[data-welcome-reveal="hidden-above"] {
-  opacity: 0;
-  transform: translate3d(0, -18px, 0);
-}
-
-[data-welcome-reveal="visible-from-below"] {
-  animation: welcomeEnterFromBelow 480ms cubic-bezier(0.22, 1, 0.36, 1) var(--welcome-stagger, 0ms) both;
-}
-
-[data-welcome-reveal="visible-from-above"] {
-  animation: welcomeEnterFromAbove 480ms cubic-bezier(0.22, 1, 0.36, 1) var(--welcome-stagger, 0ms) both;
-}
-
-[data-welcome-reveal="visible-static"] {
-  opacity: 1;
-  transform: translate3d(0, 0, 0);
-}
-
-@media (max-width: 639px) {
-  [data-welcome-reveal] {
-    --welcome-stagger: 0ms !important;
-  }
+.xos-blur-reveal-delay-2 {
+  animation: xosBlurReveal 560ms cubic-bezier(0.22, 1, 0.36, 1) 160ms both;
 }
 
 /* Support prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
-  *, ::before, ::after {
+  *,
+  ::before,
+  ::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
 
-  [data-welcome-reveal] {
+  .xos-blur-reveal,
+  .xos-blur-reveal-delay-1,
+  .xos-blur-reveal-delay-2 {
     opacity: 1 !important;
+    filter: none !important;
     transform: none !important;
     animation: none !important;
   }

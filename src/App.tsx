@@ -89,15 +89,15 @@ const NotFoundView = lazy(() =>
 export type AuthRoute = PublicOrAuthRoute;
 
 const AuthRouteFallback: React.FC = () => (
-  <div className="min-h-screen min-h-[100dvh] bg-[#fbfbfd] flex items-center justify-center p-4" aria-busy="true">
-    <div className="w-8 h-8 rounded-full border-2 border-black/[0.08] border-t-[#0284c7] animate-spin" />
+  <div className="min-h-screen min-h-[100dvh] bg-[#f5f5f7] flex items-center justify-center p-4" aria-busy="true">
+    <div className="w-8 h-8 rounded-full border-2 border-black/[0.08] border-t-[#0071e3] animate-spin" />
   </div>
 );
 
 const WorkspaceViewFallback: React.FC = () => (
   <div className="min-h-[60vh] space-y-6 animate-pulse" aria-busy="true">
     <div className="pb-3 border-b border-black/[0.06] space-y-2">
-      <div className="h-7 w-48 bg-[#f5f5f7] rounded-lg" />
+      <div className="h-7 w-48 bg-[#f5f5f7] rounded-xl" />
       <div className="h-4 w-72 bg-[#f5f5f7] rounded-lg" />
     </div>
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
@@ -108,7 +108,7 @@ const WorkspaceViewFallback: React.FC = () => (
   </div>
 );
 
-const TAB_TRANSITION = { duration: 0.14, ease: [0.16, 1, 0.3, 1] as const };
+const TAB_TRANSITION = { duration: 0.18, ease: [0.22, 1, 0.36, 1] as const };
 
 function XOSApplication() {
   const data = useXOSData();

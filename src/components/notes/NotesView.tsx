@@ -232,15 +232,15 @@ export const NotesView: React.FC = () => {
           role={feedbackNotice.type === 'error' ? 'alert' : 'status'}
           className={`p-3.5 rounded-xl border text-xs flex items-center justify-between gap-2 ${
             feedbackNotice.type === 'error'
-              ? 'bg-rose-50 border-rose-200 text-rose-800'
-              : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              ? 'bg-[#fef2f2] border-[#c92a2a]/20 text-[#991b1b]'
+              : 'bg-[#f0fdf4] border-[#1f7a4c]/20 text-[#166534]'
           }`}
         >
           <div className="flex items-center gap-2">
             {feedbackNotice.type === 'error' ? (
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <AlertCircle className="w-4 h-4 text-[#c92a2a] shrink-0" />
             ) : (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <CheckCircle2 className="w-4 h-4 text-[#1f7a4c] shrink-0" />
             )}
             <span className="font-medium">{feedbackNotice.text}</span>
           </div>
@@ -268,7 +268,7 @@ export const NotesView: React.FC = () => {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search notes by title or content..."
                 aria-label="Search notes by title or content"
-                className="w-full min-h-[44px] sm:min-h-[40px] pl-10 pr-9 py-2 text-base md:text-sm text-[#1d1d1f] bg-[#f5f5f7] border border-transparent focus:bg-white focus:border-[#0284c7] focus:ring-2 focus:ring-[#0284c7]/15 rounded-xl placeholder:text-[#86868b] transition-colors focus:outline-none"
+                className="w-full min-h-[44px] sm:min-h-[40px] pl-10 pr-9 py-2 text-base md:text-sm text-[#1d1d1f] bg-[#f5f5f7] border border-transparent focus:bg-white focus:border-[#0071e3] focus:ring-2 focus:ring-[#0071e3]/15 rounded-xl placeholder:text-[#86868b] transition-colors focus:outline-none"
               />
               {searchQuery && (
                 <button
@@ -291,7 +291,7 @@ export const NotesView: React.FC = () => {
                 id="notes-sort-order"
                 value={sortOrder}
                 onChange={(e) => setSortOrder(e.target.value as NoteSortOrder)}
-                className="w-full sm:w-auto min-h-[44px] sm:min-h-[40px] px-3.5 py-2 text-base md:text-sm font-medium text-[#1d1d1f] bg-white border border-black/[0.12] rounded-xl focus:outline-none focus:border-[#0284c7] focus:ring-2 focus:ring-[#0284c7]/15 cursor-pointer"
+                className="w-full sm:w-auto min-h-[44px] sm:min-h-[40px] px-3.5 py-2 text-base md:text-sm font-medium text-[#1d1d1f] bg-white border border-black/[0.12] rounded-xl focus:outline-none focus:border-[#0071e3] focus:ring-2 focus:ring-[#0071e3]/15 cursor-pointer"
               >
                 <option value="updated_desc">Recently updated</option>
                 <option value="updated_asc">Oldest first</option>
@@ -310,7 +310,7 @@ export const NotesView: React.FC = () => {
               role="tab"
               aria-selected={noteTypeFilter === 'all'}
               onClick={() => setNoteTypeFilter('all')}
-              className={`min-h-[38px] sm:min-h-[32px] px-3 py-1 text-xs rounded-lg whitespace-nowrap shrink-0 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7] ${
+              className={`min-h-[38px] sm:min-h-[32px] px-3 py-1 text-xs rounded-lg whitespace-nowrap shrink-0 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] ${
                 noteTypeFilter === 'all'
                   ? 'bg-white text-[#1d1d1f] font-semibold shadow-2xs ring-1 ring-black/[0.05]'
                   : 'text-[#6e6e73] font-medium hover:text-[#1d1d1f]'
@@ -327,7 +327,7 @@ export const NotesView: React.FC = () => {
                   role="tab"
                   aria-selected={active}
                   onClick={() => setNoteTypeFilter(opt.value)}
-                  className={`min-h-[38px] sm:min-h-[32px] px-3 py-1 text-xs rounded-lg whitespace-nowrap shrink-0 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7] ${
+                  className={`min-h-[38px] sm:min-h-[32px] px-3 py-1 text-xs rounded-lg whitespace-nowrap shrink-0 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] ${
                     active
                       ? 'bg-white text-[#1d1d1f] font-semibold shadow-2xs ring-1 ring-black/[0.05]'
                       : 'text-[#6e6e73] font-medium hover:text-[#1d1d1f]'
@@ -352,9 +352,9 @@ export const NotesView: React.FC = () => {
           <div className="hidden lg:block lg:col-span-7 h-80 bg-[#f5f5f7] rounded-2xl" />
         </div>
       ) : fetchError ? (
-        <SectionCard padding="lg" className="border-rose-200 bg-rose-50/60 text-center">
+        <SectionCard padding="lg" className="border-[#c92a2a]/20 bg-[#fef2f2]/60 text-center">
           <div className="space-y-3">
-            <AlertCircle className="w-6 h-6 text-rose-600 mx-auto" />
+            <AlertCircle className="w-6 h-6 text-[#c92a2a] mx-auto" />
             <div className="space-y-1">
               <h3 className="text-sm font-semibold text-[#1d1d1f]">Unable to load notes</h3>
               <p className="text-xs text-[#6e6e73] max-w-md mx-auto">{fetchError}</p>
@@ -460,7 +460,7 @@ export const NotesView: React.FC = () => {
                       setDeleteError(null);
                       setDeleteTarget(selectedNote);
                     }}
-                    className="min-h-[44px] sm:min-h-[40px] inline-flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                    className="min-h-[44px] sm:min-h-[40px] inline-flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium text-[#c92a2a] bg-[#fef2f2] hover:bg-[#fee2e2] rounded-xl transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c92a2a]"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Delete</span>

@@ -5,7 +5,7 @@ interface SectionCardProps {
   subtitle?: string;
   action?: React.ReactNode;
   children: React.ReactNode;
-  surface?: 'white' | 'subtle';
+  surface?: 'white' | 'subtle' | 'grouped';
   padding?: 'none' | 'sm' | 'md' | 'lg';
   className?: string;
 }
@@ -29,7 +29,9 @@ export const SectionCard: React.FC<SectionCardProps> = ({
   const surfaceClasses =
     surface === 'subtle'
       ? 'bg-[#f5f5f7] border border-transparent'
-      : 'bg-white border border-black/[0.08]';
+      : surface === 'grouped'
+        ? 'bg-[#fbfbfd] border border-black/[0.06]'
+        : 'bg-white border border-black/[0.08]';
 
   return (
     <section
@@ -43,7 +45,7 @@ export const SectionCard: React.FC<SectionCardProps> = ({
         >
           <div className="min-w-0">
             {title && (
-              <h3 className="text-[15px] font-semibold text-[#1d1d1f] tracking-[-0.01em]">
+              <h3 className="xos-section-heading text-[15px] font-semibold text-[#1d1d1f]">
                 {title}
               </h3>
             )}

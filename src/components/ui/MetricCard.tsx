@@ -4,7 +4,7 @@ interface MetricCardProps {
   label: string;
   value: React.ReactNode;
   sublabel?: React.ReactNode;
-  variant?: 'default' | 'subtle' | 'focal';
+  variant?: 'default' | 'subtle' | 'focal' | 'plain';
   tone?: 'default' | 'positive' | 'negative' | 'accent';
   progress?: number;
   className?: string;
@@ -12,9 +12,9 @@ interface MetricCardProps {
 
 const VALUE_TONE_CLASS = {
   default: 'text-[#1d1d1f]',
-  positive: 'text-emerald-700',
-  negative: 'text-rose-600',
-  accent: 'text-[#0284c7]'
+  positive: 'text-[#1f7a4c]',
+  negative: 'text-[#c92a2a]',
+  accent: 'text-[#0071e3]'
 } as const;
 
 export const MetricCard: React.FC<MetricCardProps> = ({
@@ -27,22 +27,24 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   className = ''
 }) => {
   const surfaceClass =
-    variant === 'focal'
-      ? 'bg-[#f5f5f7] border border-black/[0.06]'
-      : variant === 'subtle'
-        ? 'bg-[#f5f5f7] border border-transparent'
-        : 'bg-white border border-black/[0.08]';
+    variant === 'plain'
+      ? 'bg-transparent border-0 p-0'
+      : variant === 'focal'
+        ? 'bg-[#f5f5f7] border border-black/[0.06] rounded-2xl p-4 sm:p-5'
+        : variant === 'subtle'
+          ? 'bg-[#f5f5f7] border border-transparent rounded-2xl p-4 sm:p-5'
+          : 'bg-white border border-black/[0.08] rounded-2xl p-4 sm:p-5';
 
   return (
     <div
-      className={`rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-2.5 ${surfaceClass} ${className}`}
+      className={`flex flex-col justify-between gap-2.5 ${surfaceClass} ${className}`}
     >
       <div className="space-y-1.5">
-        <span className="block text-[11px] font-medium text-[#6e6e73] tracking-normal">
+        <span className="block text-[12px] font-medium text-[#6e6e73]">
           {label}
         </span>
         <div
-          className={`text-2xl sm:text-[28px] font-semibold tracking-[-0.02em] font-mono tabular-nums leading-tight ${VALUE_TONE_CLASS[tone]}`}
+          className={`text-2xl sm:text-[28px] font-semibold tracking-[-0.025em] font-mono tabular-nums leading-tight ${VALUE_TONE_CLASS[tone]}`}
         >
           {value}
         </div>
@@ -51,7 +53,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
       {typeof progress === 'number' && Number.isFinite(progress) && (
         <div className="w-full h-1.5 rounded-full bg-black/[0.06] overflow-hidden">
           <div
-            className="h-full rounded-full bg-[#0284c7] transition-all duration-300"
+            className="h-full rounded-full bg-[#0071e3] transition-all duration-300"
             style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
           />
         </div>

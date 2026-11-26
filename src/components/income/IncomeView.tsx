@@ -22,7 +22,7 @@ import {
   SectionCard
 } from '../ui';
 
-const BAR_COLORS = ['#0284c7', '#1d1d1f', '#38bdf8', '#6e6e73', '#a1a1aa', '#0369a1'];
+const BAR_COLORS = ['#0071e3', '#1f7a4c', '#1d1d1f', '#5ac8fa', '#6e6e73', '#aeaeb2'];
 
 export const IncomeView: React.FC = () => {
   const data = useXOSData();
@@ -199,53 +199,59 @@ export const IncomeView: React.FC = () => {
         }
       />
 
-      {/* Summary & Chart */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-stretch">
-        <MetricCard
-          variant="focal"
-          tone="positive"
-          label="Total Revenue"
-          value={formatCurrency(totalIncomeSum, data.settings.currency)}
-          sublabel={`${filteredIncomes.length} ${filteredIncomes.length === 1 ? 'entry' : 'entries'} · ${sourceChartData.length} ${sourceChartData.length === 1 ? 'source' : 'sources'}`}
-        />
+      {/* Unified Summary & Chart Stage */}
+      <section aria-label="Revenue Overview" className="rounded-3xl bg-[#f5f5f7] p-4 sm:p-5">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+          <div className="lg:col-span-4 rounded-2xl bg-white border border-black/[0.06] p-5 sm:p-6 flex flex-col justify-between gap-4">
+            <span className="text-xs font-medium text-[#6e6e73]">Total Revenue</span>
+            <div>
+              <div className="text-[28px] sm:text-[32px] font-semibold font-mono tabular-nums tracking-[-0.03em] text-[#1f7a4c] leading-tight">
+                {formatCurrency(totalIncomeSum, data.settings.currency)}
+              </div>
+              <p className="mt-1.5 text-xs text-[#86868b]">
+                {filteredIncomes.length} {filteredIncomes.length === 1 ? 'entry' : 'entries'} · {sourceChartData.length} {sourceChartData.length === 1 ? 'source' : 'sources'}
+              </p>
+            </div>
+          </div>
 
-        <SectionCard
-          title="Revenue by Source"
-          subtitle="Earnings across income categories"
-          className="lg:col-span-3"
-        >
-          {sourceChartData.length === 0 ? (
-            <div className="h-40 flex items-center justify-center text-xs text-[#86868b]">
-              No revenue entries logged yet. Log income to view breakdown by source.
-            </div>
-          ) : (
-            <div className="h-40 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={sourceChartData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#6e6e73' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#6e6e73' }} axisLine={false} tickLine={false} />
-                  <Tooltip
-                    formatter={(val: any) => [formatCurrency(Number(val || 0), data.settings.currency), 'Amount']}
-                    contentStyle={{
-                      backgroundColor: '#ffffff',
-                      color: '#1d1d1f',
-                      borderRadius: '12px',
-                      fontSize: '12px',
-                      border: '1px solid rgba(0,0,0,0.08)',
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.08)'
-                    }}
-                  />
-                  <Bar dataKey="amount" radius={[6, 6, 0, 0]}>
-                    {sourceChartData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={BAR_COLORS[index % BAR_COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </SectionCard>
-      </div>
+          <SectionCard
+            title="Revenue by Source"
+            subtitle="Earnings across income categories"
+            className="lg:col-span-8"
+          >
+            {sourceChartData.length === 0 ? (
+              <div className="h-40 flex items-center justify-center text-xs text-[#86868b]">
+                No revenue entries logged yet. Log income to view breakdown by source.
+              </div>
+            ) : (
+              <div className="h-44 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={sourceChartData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#6e6e73' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 11, fill: '#6e6e73' }} axisLine={false} tickLine={false} />
+                    <Tooltip
+                      formatter={(val: any) => [formatCurrency(Number(val || 0), data.settings.currency), 'Amount']}
+                      contentStyle={{
+                        backgroundColor: '#ffffff',
+                        color: '#1d1d1f',
+                        borderRadius: '12px',
+                        fontSize: '12px',
+                        border: '1px solid rgba(0,0,0,0.08)',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.08)'
+                      }}
+                    />
+                    <Bar dataKey="amount" radius={[6, 6, 0, 0]}>
+                      {sourceChartData.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={BAR_COLORS[index % BAR_COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </SectionCard>
+        </div>
+      </section>
 
       {/* Filters */}
       <FilterBar
@@ -272,6 +278,7 @@ export const IncomeView: React.FC = () => {
       {filteredIncomes.length === 0 ? (
         <EmptyState
           icon={TrendingUp}
+          iconName="income"
           title="No income records yet"
           description={
             searchQuery || selectedSource !== 'all'
@@ -298,7 +305,7 @@ export const IncomeView: React.FC = () => {
                       </span>
                     </div>
                     <div className="text-right shrink-0">
-                      <span className="font-mono font-semibold text-sm text-emerald-700 block tabular-nums">
+                      <span className="font-mono font-semibold text-sm text-[#1f7a4c] block tabular-nums">
                         +{formatCurrency(inc.amount, data.settings.currency)}
                       </span>
                       <span className="text-[11px] text-[#86868b] font-mono tabular-nums block">
@@ -359,7 +366,7 @@ export const IncomeView: React.FC = () => {
                         <span className="font-medium text-[#1d1d1f] block">
                           {inc.title}
                           {isSynced && (
-                            <span className="ml-2 text-xs font-normal text-[#0284c7]">· Payout Synced</span>
+                            <span className="ml-2 text-xs font-normal text-[#0071e3]">· Payout Synced</span>
                           )}
                         </span>
                         {inc.notes && <span className="text-xs text-[#6e6e73] block mt-0.5">{inc.notes}</span>}
@@ -370,7 +377,7 @@ export const IncomeView: React.FC = () => {
                       <td className="py-3 px-4 font-mono text-xs text-[#6e6e73] tabular-nums">
                         {formatHumanDate(inc.date)} {inc.time ? `· ${inc.time}` : ''}
                       </td>
-                      <td className="py-3 px-4 text-right font-mono font-semibold text-emerald-700 tabular-nums">
+                      <td className="py-3 px-4 text-right font-mono font-semibold text-[#1f7a4c] tabular-nums">
                         +{formatCurrency(inc.amount, data.settings.currency)}
                       </td>
                       <td className="py-3 px-4 text-right">
@@ -437,7 +444,7 @@ export const IncomeView: React.FC = () => {
       >
         <form id="income-form" onSubmit={handleSubmit} className="space-y-4">
           {formError && (
-            <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-medium">
+            <div className="p-3 text-xs bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] rounded-xl font-medium">
               {formError}
             </div>
           )}

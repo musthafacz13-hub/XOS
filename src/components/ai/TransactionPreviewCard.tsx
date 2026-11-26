@@ -347,7 +347,7 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
   );
 
   const fieldInputClass =
-    'w-full min-h-[44px] sm:min-h-[38px] rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-base sm:text-sm text-[#1d1d1f] focus:outline-none focus:border-[#0284c7] focus:ring-2 focus:ring-[#0284c7]/15';
+    'w-full min-h-[44px] sm:min-h-[38px] rounded-xl border border-black/[0.12] bg-white px-3 py-2 text-base sm:text-sm text-[#1d1d1f] focus:outline-none focus:border-[#0071e3] focus:ring-2 focus:ring-[#0071e3]/15';
 
   return (
     <div
@@ -356,7 +356,7 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs font-semibold text-[#0284c7] truncate">
+          <span className="text-xs font-semibold text-[#0071e3] truncate">
             {getIntentBadge(tx)}
           </span>
           <span aria-hidden="true" className="text-[#86868b] text-xs">·</span>
@@ -588,7 +588,7 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
           </div>
 
           {combinedError && (
-            <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200/80 rounded-lg px-2.5 py-1.5">
+            <p className="text-xs text-[#991b1b] bg-[#fef2f2] border border-[#c92a2a]/20 rounded-lg px-2.5 py-1.5">
               {combinedError}
             </p>
           )}
@@ -603,7 +603,7 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
             </button>
             <button
               type="submit"
-              className="px-4 py-2 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold cursor-pointer min-h-[44px] sm:min-h-[38px]"
+              className="px-4 py-2 rounded-xl bg-[#0071e3] hover:bg-[#0077ed] text-white text-xs font-semibold cursor-pointer min-h-[44px] sm:min-h-[38px]"
             >
               Apply Changes
             </button>
@@ -710,7 +710,7 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
                   </span>
                 </div>
                 {tx.direction === 'pay' && (
-                  <div className="col-span-2 text-[11px] text-[#0284c7]">
+                  <div className="col-span-2 text-[11px] text-[#0071e3]">
                     Also logs a linked Debt Repayment expense automatically.
                   </div>
                 )}
@@ -752,7 +752,7 @@ export const TransactionPreviewCard: React.FC<TransactionPreviewCardProps> = ({
               type="button"
               onClick={onConfirm}
               disabled={isSaving}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 min-h-[44px] sm:min-h-[40px]"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#1f7a4c] hover:bg-[#19663e] text-white text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 min-h-[44px] sm:min-h-[40px]"
             >
               <Check className="w-3.5 h-3.5" />
               <span>{isSaving ? 'Saving…' : 'Confirm & Save'}</span>

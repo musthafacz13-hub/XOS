@@ -1,25 +1,16 @@
 import React, { useState } from 'react';
 import {
-  LayoutDashboard,
-  Target,
-  CreditCard,
-  TrendingUp,
-  CalendarCheck,
-  Banknote,
-  BarChart3,
-  Settings,
   ChevronLeft,
   ChevronRight,
-  LucideIcon,
-  HandCoins,
-  LogOut,
-  AudioLines,
-  StickyNote
+  LogOut
 } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 import { UserSettings } from '../../types';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { useAuth } from '../../context/AuthContext';
 import { XOSLogo } from '../common/XOSLogo';
+import { XOSIconName, XOSModuleIcon } from '../icons/XOSIcons';
+import { MOTION_SPRINGS } from '../../utils/motion';
 
 export type ActiveTab =
   | 'dashboard'
@@ -46,22 +37,22 @@ interface SidebarProps {
 export interface NavItemConfig {
   id: ActiveTab;
   label: string;
-  icon: LucideIcon;
+  iconName: XOSIconName;
   category: 'core' | 'finance' | 'work' | 'assistant' | 'settings';
 }
 
 export const NAV_ITEMS: NavItemConfig[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, category: 'core' },
-  { id: 'goals', label: 'Goals & Savings', icon: Target, category: 'core' },
-  { id: 'notes', label: 'Notes', icon: StickyNote, category: 'core' },
-  { id: 'expenses', label: 'Expenses', icon: CreditCard, category: 'finance' },
-  { id: 'income', label: 'Income', icon: TrendingUp, category: 'finance' },
-  { id: 'debt', label: 'Debt Management', icon: HandCoins, category: 'finance' },
-  { id: 'salary', label: 'Salary Management', icon: Banknote, category: 'finance' },
-  { id: 'attendance', label: 'Work Attendance', icon: CalendarCheck, category: 'work' },
-  { id: 'reports', label: 'Reports & Analytics', icon: BarChart3, category: 'work' },
-  { id: 'ai-agent', label: 'Jarvis AI', icon: AudioLines, category: 'assistant' },
-  { id: 'settings', label: 'Settings', icon: Settings, category: 'settings' }
+  { id: 'dashboard', label: 'Dashboard', iconName: 'dashboard', category: 'core' },
+  { id: 'goals', label: 'Goals & Savings', iconName: 'goals', category: 'core' },
+  { id: 'notes', label: 'Notes', iconName: 'notes', category: 'core' },
+  { id: 'expenses', label: 'Expenses', iconName: 'expenses', category: 'finance' },
+  { id: 'income', label: 'Income', iconName: 'income', category: 'finance' },
+  { id: 'debt', label: 'Debt Management', iconName: 'debt', category: 'finance' },
+  { id: 'salary', label: 'Salary Management', iconName: 'salary', category: 'finance' },
+  { id: 'attendance', label: 'Work Attendance', iconName: 'attendance', category: 'work' },
+  { id: 'reports', label: 'Reports & Analytics', iconName: 'reports', category: 'work' },
+  { id: 'ai-agent', label: 'Jarvis AI', iconName: 'ai-agent', category: 'assistant' },
+  { id: 'settings', label: 'Settings', iconName: 'settings', category: 'settings' }
 ];
 
 interface NavGroup {
@@ -97,6 +88,8 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
 }) => {
   const { user, signOut } = useAuth();
   const [isSignOutDialogOpen, setIsSignOutDialogOpen] = useState(false);
+  const [hoveredItemId, setHoveredItemId] = useState<ActiveTab | null>(null);
+  const prefersReducedMotion = useReducedMotion();
 
   const userName = settings.profile.name.trim() || 'My Workspace';
   const avatarLetter = (userName.charAt(0) || 'X').toUpperCase();
@@ -104,7 +97,7 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
   return (
     <aside
       className={`hidden md:flex flex-col bg-[#fbfbfd] border-r border-black/[0.06] transition-[width] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] shrink-0 relative z-30 ${
-        collapsed ? 'w-[72px]' : 'w-60'
+        collapsed ? 'w-[76px]' : 'w-[248px]'
       }`}
       aria-label="Primary Desktop Navigation"
     >
@@ -116,7 +109,7 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
           </div>
           {!collapsed && (
             <div className="flex flex-col min-w-0">
-              <span className="font-semibold text-[15px] text-[#1d1d1f] tracking-[-0.015em] leading-none truncate">
+              <span className="font-semibold text-[15px] text-[#1d1d1f] tracking-[-0.02em] leading-none truncate">
                 XOS
               </span>
               <span className="text-[11px] text-[#86868b] font-normal mt-1 truncate">
@@ -129,7 +122,7 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
         <button
           onClick={() => setCollapsed(!collapsed)}
           type="button"
-          className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg text-[#86868b] hover:text-[#1d1d1f] hover:bg-black/[0.04] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7] cursor-pointer"
+          className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-xl text-[#86868b] hover:text-[#1d1d1f] hover:bg-black/[0.04] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] cursor-pointer"
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
@@ -142,7 +135,7 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
         {NAV_GROUPS.map((group) => (
           <div key={group.name} className="space-y-1">
             {!collapsed ? (
-              <div className="px-2.5 pb-1 text-[11px] font-medium text-[#86868b]">
+              <div className="px-3 pb-1 text-[11px] font-medium text-[#86868b]">
                 {group.name}
               </div>
             ) : (
@@ -151,32 +144,62 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
 
             <div className="space-y-0.5">
               {group.items.map((item) => {
-                const Icon = item.icon;
                 const isActive =
                   activeTab === item.id ||
                   (item.id === 'goals' && activeTab === 'savings');
+                const isHovered = hoveredItemId === item.id;
 
                 return (
                   <div key={item.id} className="relative group">
                     <button
                       onClick={() => setActiveTab(item.id)}
+                      onMouseEnter={() => setHoveredItemId(item.id)}
+                      onMouseLeave={() => setHoveredItemId((curr) => (curr === item.id ? null : curr))}
+                      onFocus={() => setHoveredItemId(item.id)}
+                      onBlur={() => setHoveredItemId((curr) => (curr === item.id ? null : curr))}
                       type="button"
-                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-[13px] cursor-pointer text-left transition-colors ${
+                      className={`relative w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13px] cursor-pointer text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] ${
                         isActive
-                          ? 'bg-[#e8e8ed]/85 text-[#1d1d1f] font-semibold'
+                          ? 'text-[#1d1d1f] font-semibold'
                           : 'text-[#6e6e73] font-medium hover:text-[#1d1d1f] hover:bg-black/[0.03]'
-                      } ${collapsed ? 'justify-center px-0 min-h-[40px]' : ''}`}
+                      } ${collapsed ? 'justify-center px-0 min-h-[42px]' : 'min-h-[38px]'}`}
                       aria-current={isActive ? 'page' : undefined}
                     >
-                      <Icon
-                        className={`w-4 h-4 shrink-0 transition-colors ${
+                      {isActive && (
+                        <motion.span
+                          layoutId="xos-desktop-nav-active"
+                          transition={prefersReducedMotion ? { duration: 0 } : MOTION_SPRINGS.navIndicator}
+                          className="absolute inset-0 rounded-xl bg-white shadow-2xs ring-1 ring-black/[0.06]"
+                          aria-hidden="true"
+                        />
+                      )}
+
+                      {isActive && !collapsed && (
+                        <motion.span
+                          layoutId="xos-desktop-nav-accent-bar"
+                          transition={prefersReducedMotion ? { duration: 0 } : MOTION_SPRINGS.navIndicator}
+                          className="absolute left-1 top-2 bottom-2 w-[2.5px] rounded-full bg-[#0071e3] z-10"
+                          aria-hidden="true"
+                        />
+                      )}
+
+                      <span
+                        className={`relative z-10 flex items-center justify-center transition-colors ${
                           isActive
-                            ? 'text-[#0284c7]'
+                            ? 'text-[#0071e3]'
                             : 'text-[#86868b] group-hover:text-[#1d1d1f]'
                         }`}
-                      />
+                      >
+                        <XOSModuleIcon
+                          name={item.iconName}
+                          isActive={isActive}
+                          isHovered={isHovered}
+                          size={18}
+                        />
+                      </span>
+
                       {!collapsed && (
-                        <span className="truncate flex-1 tracking-[-0.005em]">
+                        <span className="relative z-10 truncate flex-1 tracking-[-0.005em]">
                           {item.label}
                         </span>
                       )}
@@ -203,10 +226,12 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
         <div className="relative group">
           <button
             onClick={() => setActiveTab('settings')}
+            onMouseEnter={() => setHoveredItemId('settings')}
+            onMouseLeave={() => setHoveredItemId((curr) => (curr === 'settings' ? null : curr))}
             type="button"
-            className={`w-full flex items-center gap-2.5 p-2 rounded-xl cursor-pointer text-left transition-colors ${
+            className={`relative w-full flex items-center gap-2.5 p-2 rounded-xl cursor-pointer text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] ${
               activeTab === 'settings'
-                ? 'bg-[#e8e8ed]/85 text-[#1d1d1f]'
+                ? 'bg-white shadow-2xs ring-1 ring-black/[0.06] text-[#1d1d1f]'
                 : 'hover:bg-black/[0.03] text-[#1d1d1f]'
             } ${collapsed ? 'justify-center p-1.5' : ''}`}
             aria-label="Account Settings"
@@ -214,7 +239,7 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
             <div
               className={`w-8 h-8 rounded-full font-semibold text-xs flex items-center justify-center shrink-0 transition-colors ${
                 activeTab === 'settings'
-                  ? 'bg-[#0284c7] text-white'
+                  ? 'bg-[#0071e3] text-white'
                   : 'bg-[#1d1d1f] text-white'
               }`}
             >
@@ -233,11 +258,18 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({
             )}
 
             {!collapsed && (
-              <Settings
-                className={`w-4 h-4 shrink-0 ${
-                  activeTab === 'settings' ? 'text-[#0284c7]' : 'text-[#86868b] group-hover:text-[#1d1d1f]'
+              <span
+                className={`shrink-0 transition-colors ${
+                  activeTab === 'settings' ? 'text-[#0071e3]' : 'text-[#86868b] group-hover:text-[#1d1d1f]'
                 }`}
-              />
+              >
+                <XOSModuleIcon
+                  name="settings"
+                  isActive={activeTab === 'settings'}
+                  isHovered={hoveredItemId === 'settings'}
+                  size={17}
+                />
+              </span>
             )}
           </button>
 

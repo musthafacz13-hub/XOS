@@ -18,7 +18,7 @@ interface NoteEditorProps {
 }
 
 const NOTE_INPUT_CLASS =
-  'w-full min-h-[44px] px-3.5 py-2 text-base md:text-sm text-[#1d1d1f] bg-white border border-black/[0.12] rounded-xl placeholder:text-[#86868b] transition-colors focus:outline-none focus:border-[#0284c7] focus:ring-2 focus:ring-[#0284c7]/15 disabled:bg-[#f5f5f7] disabled:text-[#86868b]';
+  'w-full min-h-[44px] px-3.5 py-2 text-base md:text-sm text-[#1d1d1f] bg-white border border-black/[0.12] rounded-xl placeholder:text-[#86868b] transition-colors focus:outline-none focus:border-[#0071e3] focus:ring-2 focus:ring-[#0071e3]/15 disabled:bg-[#f5f5f7] disabled:text-[#86868b]';
 
 export const NoteEditor: React.FC<NoteEditorProps> = ({
   isOpen,
@@ -158,9 +158,9 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         {formError && (
           <div
             role="alert"
-            className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start gap-2"
+            className="p-3 bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] text-xs rounded-xl flex items-start gap-2"
           >
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <AlertCircle className="w-4 h-4 text-[#c92a2a] shrink-0 mt-0.5" />
             <span className="leading-relaxed">{formError}</span>
           </div>
         )}
@@ -168,7 +168,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         {/* Title (Required) */}
         <div>
           <label htmlFor="note-title" className={LABEL_CLASS}>
-            Title <span className="text-rose-600">*</span>
+            Title <span className="text-[#c92a2a]">*</span>
           </label>
           <input
             id="note-title"
@@ -189,7 +189,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         {/* Content (Required) */}
         <div>
           <label htmlFor="note-content" className={LABEL_CLASS}>
-            Content <span className="text-rose-600">*</span>
+            Content <span className="text-[#c92a2a]">*</span>
           </label>
           <textarea
             id="note-content"
@@ -203,7 +203,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
               setContent(e.target.value);
               if (formError) setFormError(null);
             }}
-            className="w-full px-3.5 py-2.5 text-base md:text-sm text-[#1d1d1f] bg-white border border-black/[0.12] rounded-xl placeholder:text-[#86868b] focus:outline-none focus:border-[#0284c7] focus:ring-2 focus:ring-[#0284c7]/15 transition-colors resize-y min-h-[120px] disabled:bg-[#f5f5f7] disabled:text-[#86868b]"
+            className="w-full px-3.5 py-2.5 text-base md:text-sm text-[#1d1d1f] bg-white border border-black/[0.12] rounded-xl placeholder:text-[#86868b] focus:outline-none focus:border-[#0071e3] focus:ring-2 focus:ring-[#0071e3]/15 transition-colors resize-y min-h-[120px] disabled:bg-[#f5f5f7] disabled:text-[#86868b]"
           />
         </div>
 
@@ -243,7 +243,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                     setEstimatedAmountInput('');
                     if (formError) setFormError(null);
                   }}
-                  className="text-xs font-medium text-[#0284c7] hover:underline cursor-pointer disabled:opacity-50"
+                  className="text-xs font-medium text-[#0071e3] hover:text-[#0077ed] hover:underline cursor-pointer disabled:opacity-50"
                 >
                   Clear
                 </button>
@@ -284,7 +284,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                   setTargetDateInput('');
                   if (formError) setFormError(null);
                 }}
-                className="text-xs font-medium text-[#0284c7] hover:underline cursor-pointer disabled:opacity-50"
+                className="text-xs font-medium text-[#0071e3] hover:text-[#0077ed] hover:underline cursor-pointer disabled:opacity-50"
               >
                 Clear
               </button>
@@ -314,7 +314,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
                 type="button"
                 disabled={isSubmitting}
                 onClick={() => setAdditionalDetailsInput('')}
-                className="text-xs font-medium text-[#0284c7] hover:underline cursor-pointer disabled:opacity-50"
+                className="text-xs font-medium text-[#0071e3] hover:text-[#0077ed] hover:underline cursor-pointer disabled:opacity-50"
               >
                 Clear
               </button>
@@ -331,7 +331,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
               setAdditionalDetailsInput(e.target.value);
               if (formError) setFormError(null);
             }}
-            className="w-full px-3.5 py-2 text-base md:text-sm text-[#1d1d1f] bg-white border border-black/[0.12] rounded-xl placeholder:text-[#86868b] focus:outline-none focus:border-[#0284c7] focus:ring-2 focus:ring-[#0284c7]/15 transition-colors resize-y disabled:bg-[#f5f5f7] disabled:text-[#86868b]"
+            className="w-full px-3.5 py-2 text-base md:text-sm text-[#1d1d1f] bg-white border border-black/[0.12] rounded-xl placeholder:text-[#86868b] focus:outline-none focus:border-[#0071e3] focus:ring-2 focus:ring-[#0071e3]/15 transition-colors resize-y disabled:bg-[#f5f5f7] disabled:text-[#86868b]"
           />
         </div>
       </form>

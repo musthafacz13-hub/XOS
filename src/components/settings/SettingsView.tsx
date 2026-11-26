@@ -593,8 +593,8 @@ export const SettingsView: React.FC = () => {
         actions={
           <div className="flex items-center gap-3">
             {saveSuccessMessage && (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
-                <Check className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1f7a4c]">
+                <Check className="w-3.5 h-3.5 text-[#1f7a4c]" />
                 <span>{saveSuccessMessage}</span>
               </span>
             )}
@@ -625,16 +625,16 @@ export const SettingsView: React.FC = () => {
       {saveErrorMessage && (
         <div
           role="alert"
-          className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm flex items-start justify-between gap-3"
+          className="p-3.5 rounded-xl bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] text-xs sm:text-sm flex items-start justify-between gap-3"
         >
           <div className="flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
+            <AlertCircle className="w-4 h-4 text-[#c92a2a] mt-0.5 shrink-0" />
             <span>{saveErrorMessage}</span>
           </div>
           <button
             type="button"
             onClick={() => setSaveErrorMessage(null)}
-            className="text-rose-700 hover:text-rose-900 p-1 rounded-lg cursor-pointer shrink-0"
+            className="text-[#c92a2a] hover:text-[#991b1b] p-1 rounded-lg cursor-pointer shrink-0"
             aria-label="Dismiss error"
           >
             <X className="w-4 h-4" />
@@ -648,7 +648,7 @@ export const SettingsView: React.FC = () => {
           className="p-3.5 rounded-xl bg-[#f5f5f7] border border-black/[0.08] text-[#1d1d1f] text-xs sm:text-sm flex items-center justify-between gap-3"
         >
           <div className="flex items-center gap-2.5">
-            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+            <Check className="w-4 h-4 text-[#1f7a4c] shrink-0" />
             <span>{bannerMessage}</span>
           </div>
           <button
@@ -664,9 +664,9 @@ export const SettingsView: React.FC = () => {
       {connectionError && (
         <div
           role="alert"
-          className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs sm:text-sm flex items-start gap-2.5"
+          className="p-3.5 rounded-xl bg-[#fefce8] border border-[#a16207]/20 text-[#854d0e] text-xs sm:text-sm flex items-start gap-2.5"
         >
-          <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+          <AlertCircle className="w-4 h-4 text-[#a16207] mt-0.5 shrink-0" />
           <span>Some settings could not load from the server: {connectionError}</span>
         </div>
       )}
@@ -683,53 +683,55 @@ export const SettingsView: React.FC = () => {
             </p>
           </div>
 
-          <div className="md:col-span-8 space-y-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Account Email */}
-              <div>
-                <span className={LABEL_CLASS}>Account Email</span>
-                <div className="min-h-[44px] sm:min-h-[40px] px-3.5 flex items-center rounded-xl bg-[#f5f5f7] border border-black/[0.06] text-base sm:text-sm text-[#6e6e73] truncate">
-                  {user?.email || 'Not signed in'}
+          <div className="md:col-span-8">
+            <div className="rounded-2xl bg-white border border-black/[0.08] divide-y divide-black/[0.06]">
+              <div className="p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Account Email */}
+                <div>
+                  <span className={LABEL_CLASS}>Account Email</span>
+                  <div className="min-h-[44px] sm:min-h-[40px] px-3.5 flex items-center rounded-xl bg-[#f5f5f7] border border-black/[0.06] text-base sm:text-sm text-[#6e6e73] truncate">
+                    {user?.email || 'Not signed in'}
+                  </div>
+                  <p className="text-xs text-[#6e6e73] mt-1.5">
+                    Managed by your sign-in account.
+                  </p>
                 </div>
-                <p className="text-xs text-[#6e6e73] mt-1.5">
-                  Managed by your sign-in account.
-                </p>
+
+                {/* Display Name */}
+                <div>
+                  <label htmlFor="profile-name" className={LABEL_CLASS}>
+                    Display Name
+                  </label>
+                  <input
+                    id="profile-name"
+                    type="text"
+                    placeholder="Enter your name"
+                    value={profileName}
+                    onChange={(e) => setProfileName(e.target.value)}
+                    className={INPUT_CLASS}
+                  />
+                  <p className="text-xs text-[#6e6e73] mt-1.5">
+                    Shown on your dashboard and PDF reports.
+                  </p>
+                </div>
               </div>
 
-              {/* Display Name */}
-              <div>
-                <label htmlFor="profile-name" className={LABEL_CLASS}>
-                  Display Name
-                </label>
-                <input
-                  id="profile-name"
-                  type="text"
-                  placeholder="Enter your name"
-                  value={profileName}
-                  onChange={(e) => setProfileName(e.target.value)}
-                  className={INPUT_CLASS}
-                />
-                <p className="text-xs text-[#6e6e73] mt-1.5">
-                  Shown on your dashboard and PDF reports.
-                </p>
+              {/* Sign Out Row */}
+              <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-[#1d1d1f]">Sign out</p>
+                  <p className="text-xs text-[#6e6e73]">
+                    End your current session on this device.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSignOutModalOpen(true)}
+                  className={`${SECONDARY_BUTTON_CLASS} self-start sm:self-auto`}
+                >
+                  Sign Out
+                </button>
               </div>
-            </div>
-
-            {/* Sign Out Row */}
-            <div className="pt-4 border-t border-black/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-[#1d1d1f]">Sign out</p>
-                <p className="text-xs text-[#6e6e73]">
-                  End your current session on this device.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsSignOutModalOpen(true)}
-                className={`${SECONDARY_BUTTON_CLASS} self-start sm:self-auto`}
-              >
-                Sign Out
-              </button>
             </div>
           </div>
         </section>
@@ -873,7 +875,7 @@ export const SettingsView: React.FC = () => {
                       type="checkbox"
                       checked={addonEnabled}
                       onChange={(e) => setAddonEnabled(e.target.checked)}
-                      className="rounded border-black/[0.2] text-[#0284c7] accent-[#0284c7] focus:ring-[#0284c7]"
+                      className="rounded border-black/[0.2] text-[#0071e3] accent-[#0071e3] focus:ring-[#0071e3]"
                     />
                     <span>Enable Add-on</span>
                   </label>
@@ -940,7 +942,7 @@ export const SettingsView: React.FC = () => {
                       type="checkbox"
                       checked={overtimeEnabled}
                       onChange={(e) => setOvertimeEnabled(e.target.checked)}
-                      className="rounded border-black/[0.2] text-[#0284c7] accent-[#0284c7] focus:ring-[#0284c7]"
+                      className="rounded border-black/[0.2] text-[#0071e3] accent-[#0071e3] focus:ring-[#0071e3]"
                     />
                     <span>Overtime</span>
                   </label>
@@ -1059,7 +1061,7 @@ export const SettingsView: React.FC = () => {
             {/* Historical Protection */}
             <div className="p-4 rounded-2xl bg-white border border-black/[0.08] space-y-1 text-xs text-[#6e6e73]">
               <div className="flex items-center gap-1.5 font-semibold text-[#1d1d1f]">
-                <ShieldCheck className="w-4 h-4 text-[#0284c7] shrink-0" />
+                <ShieldCheck className="w-4 h-4 text-[#0071e3] shrink-0" />
                 <span>Historical Record Protection</span>
               </div>
               <p className="leading-relaxed">
@@ -1121,7 +1123,7 @@ export const SettingsView: React.FC = () => {
               </div>
 
               {catFeedback && (
-                <p className="text-xs text-rose-600">{catFeedback}</p>
+                <p className="text-xs text-[#c92a2a]">{catFeedback}</p>
               )}
 
               <div className="rounded-xl border border-black/[0.08] bg-white divide-y divide-black/[0.06] sm:divide-y-0 sm:grid sm:grid-cols-2">
@@ -1135,7 +1137,7 @@ export const SettingsView: React.FC = () => {
                       type="button"
                       onClick={() => handleRemoveCategory(cat)}
                       disabled={expenseCategories.length <= 1}
-                      className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-[#86868b] hover:text-rose-600 hover:bg-rose-50 disabled:opacity-25 cursor-pointer disabled:cursor-not-allowed transition-colors shrink-0"
+                      className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-[#86868b] hover:text-[#c92a2a] hover:bg-[#fef2f2] disabled:opacity-25 cursor-pointer disabled:cursor-not-allowed transition-colors shrink-0"
                       aria-label={`Remove expense category ${cat}`}
                     >
                       <X className="w-3.5 h-3.5" />
@@ -1185,7 +1187,7 @@ export const SettingsView: React.FC = () => {
               </div>
 
               {incFeedback && (
-                <p className="text-xs text-rose-600">{incFeedback}</p>
+                <p className="text-xs text-[#c92a2a]">{incFeedback}</p>
               )}
 
               <div className="rounded-xl border border-black/[0.08] bg-white divide-y divide-black/[0.06] sm:divide-y-0 sm:grid sm:grid-cols-2">
@@ -1199,7 +1201,7 @@ export const SettingsView: React.FC = () => {
                       type="button"
                       onClick={() => handleRemoveIncomeSource(src)}
                       disabled={incomeSources.length <= 1}
-                      className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-[#86868b] hover:text-rose-600 hover:bg-rose-50 disabled:opacity-25 cursor-pointer disabled:cursor-not-allowed transition-colors shrink-0"
+                      className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-[#86868b] hover:text-[#c92a2a] hover:bg-[#fef2f2] disabled:opacity-25 cursor-pointer disabled:cursor-not-allowed transition-colors shrink-0"
                       aria-label={`Remove income source ${src}`}
                     >
                       <X className="w-3.5 h-3.5" />
@@ -1295,7 +1297,7 @@ export const SettingsView: React.FC = () => {
             {/* Reset All App Data */}
             <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
-                <h4 className="text-sm font-medium text-rose-600">
+                <h4 className="text-sm font-medium text-[#c92a2a]">
                   Reset All App Data
                 </h4>
                 <p className="text-xs text-[#6e6e73] leading-relaxed max-w-md">
@@ -1309,7 +1311,7 @@ export const SettingsView: React.FC = () => {
                 }}
                 disabled={isResetting || isSaving}
                 type="button"
-                className="inline-flex items-center justify-center gap-2 min-h-[44px] sm:min-h-[40px] px-4 py-2 text-[13px] font-medium text-rose-600 bg-white hover:bg-rose-50 border border-rose-200 hover:border-rose-300 rounded-xl transition-colors whitespace-nowrap shrink-0 self-start sm:self-center cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30"
+                className="inline-flex items-center justify-center gap-2 min-h-[44px] sm:min-h-[40px] px-4 py-2 text-[13px] font-medium text-[#c92a2a] bg-white hover:bg-[#fef2f2] border border-[#c92a2a]/25 hover:border-[#c92a2a]/40 rounded-xl transition-colors whitespace-nowrap shrink-0 self-start sm:self-center cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c92a2a]/30"
               >
                 {isResetting ? (
                   <>

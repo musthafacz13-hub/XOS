@@ -28,10 +28,10 @@ import {
 } from '../ui';
 
 const STATUS_TEXT_TONE: Record<AttendanceStatus, string> = {
-  Present: 'text-emerald-700',
-  Absent: 'text-rose-600',
-  Leave: 'text-amber-700',
-  Holiday: 'text-[#0284c7]'
+  Present: 'text-[#1f7a4c]',
+  Absent: 'text-[#c92a2a]',
+  Leave: 'text-[#a16207]',
+  Holiday: 'text-[#0071e3]'
 };
 
 export const WorkView: React.FC = () => {
@@ -239,79 +239,92 @@ export const WorkView: React.FC = () => {
       />
 
       {pageError && (
-        <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-2xl flex items-center justify-between gap-2">
+        <div className="p-3.5 bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] text-xs rounded-2xl flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+            <AlertCircle className="w-4 h-4 shrink-0 text-[#c92a2a]" />
             <span>{pageError}</span>
           </div>
           <button
             type="button"
             onClick={() => setPageError(null)}
-            className="text-rose-700 hover:text-rose-900 font-medium cursor-pointer"
+            className="text-[#991b1b] hover:text-[#1d1d1f] font-medium cursor-pointer"
           >
             Dismiss
           </button>
         </div>
       )}
 
-      {/* Today Check-In & Monthly Counters */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4 items-stretch">
-        <div className="lg:col-span-1 rounded-2xl p-4 sm:p-5 bg-[#f5f5f7] border border-black/[0.06] flex flex-col justify-between gap-3">
-          <div className="space-y-1.5">
-            <span className="block text-[11px] font-medium text-[#6e6e73]">
-              Today · <span className="font-mono tabular-nums">{todayStr}</span>
-            </span>
-            {todayRecord ? (
-              <>
-                <div className={`text-xl font-semibold tracking-tight ${STATUS_TEXT_TONE[todayRecord.status]}`}>
-                  {todayRecord.status}
-                </div>
-                {todayRecord.status === 'Present' && (
-                  <p className="text-xs text-[#6e6e73] font-mono tabular-nums">
-                    {todayRecord.checkInTime} – {todayRecord.checkOutTime} · {todayRecord.calculatedHours}h
-                  </p>
-                )}
-              </>
-            ) : (
-              <>
-                <div className="text-lg font-semibold text-[#1d1d1f]">Not marked</div>
-                <p className="text-xs text-[#6e6e73]">Record today&apos;s shift details.</p>
-              </>
-            )}
+      {/* Today Check-In & Monthly Counters Stage */}
+      <section aria-label="Attendance Summary" className="rounded-3xl bg-[#f5f5f7] p-4 sm:p-5">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+          <div className="lg:col-span-4 rounded-2xl p-5 bg-white border border-black/[0.06] flex flex-col justify-between gap-3">
+            <div className="space-y-1.5">
+              <span className="block text-[11px] font-medium text-[#6e6e73]">
+                Today · <span className="font-mono tabular-nums">{todayStr}</span>
+              </span>
+              {todayRecord ? (
+                <>
+                  <div className={`text-xl font-semibold tracking-tight ${STATUS_TEXT_TONE[todayRecord.status]}`}>
+                    {todayRecord.status}
+                  </div>
+                  {todayRecord.status === 'Present' && (
+                    <p className="text-xs text-[#6e6e73] font-mono tabular-nums">
+                      {todayRecord.checkInTime} – {todayRecord.checkOutTime} · {todayRecord.calculatedHours}h
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="text-lg font-semibold text-[#1d1d1f]">Not marked</div>
+                  <p className="text-xs text-[#6e6e73]">Record today&apos;s shift details.</p>
+                </>
+              )}
+            </div>
+
+            <button
+              onClick={() => openLogModalForDate(todayStr)}
+              type="button"
+              className="w-full min-h-[40px] py-2 px-3.5 bg-[#1d1d1f] hover:bg-black text-white text-xs font-medium rounded-full transition-colors cursor-pointer"
+            >
+              {todayRecord ? 'Edit Today' : 'Log Today'}
+            </button>
           </div>
 
-          <button
-            onClick={() => openLogModalForDate(todayStr)}
-            type="button"
-            className="w-full min-h-[40px] py-2 px-3 bg-[#1d1d1f] hover:bg-black text-white text-xs font-medium rounded-xl transition-colors cursor-pointer"
-          >
-            {todayRecord ? 'Edit Today' : 'Log Today'}
-          </button>
-        </div>
+          <div className="lg:col-span-8 rounded-2xl bg-white border border-black/[0.06] grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-black/[0.06] overflow-hidden">
+            <div className="p-4 sm:p-5 flex flex-col justify-between gap-1">
+              <span className="text-xs font-medium text-[#6e6e73]">Working Days</span>
+              <div className="text-2xl font-semibold font-mono tabular-nums text-[#1d1d1f]">
+                {monthlyStats.presentDays}
+              </div>
+              <span className="text-[11px] text-[#86868b]">Present in {monthName}</span>
+            </div>
 
-        <div className="lg:col-span-4 grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-          <MetricCard
-            label="Working Days"
-            value={monthlyStats.presentDays}
-            sublabel={`Present in ${monthName}`}
-          />
-          <MetricCard
-            label="Total Hours"
-            value={`${monthlyStats.totalHours}h`}
-            sublabel="Recorded work time"
-          />
-          <MetricCard
-            label="Leaves"
-            value={monthlyStats.leaveDays}
-            sublabel="Time-off days"
-          />
-          <MetricCard
-            label="Off / Absent"
-            value={`${monthlyStats.absentDays} / ${monthlyStats.holidayDays}`}
-            sublabel="Absent / Holidays"
-          />
+            <div className="p-4 sm:p-5 flex flex-col justify-between gap-1">
+              <span className="text-xs font-medium text-[#6e6e73]">Total Hours</span>
+              <div className="text-2xl font-semibold font-mono tabular-nums text-[#1d1d1f]">
+                {monthlyStats.totalHours}h
+              </div>
+              <span className="text-[11px] text-[#86868b]">Recorded work time</span>
+            </div>
+
+            <div className="p-4 sm:p-5 flex flex-col justify-between gap-1">
+              <span className="text-xs font-medium text-[#6e6e73]">Leaves</span>
+              <div className="text-2xl font-semibold font-mono tabular-nums text-[#1d1d1f]">
+                {monthlyStats.leaveDays}
+              </div>
+              <span className="text-[11px] text-[#86868b]">Time-off days</span>
+            </div>
+
+            <div className="p-4 sm:p-5 flex flex-col justify-between gap-1">
+              <span className="text-xs font-medium text-[#6e6e73]">Off / Absent</span>
+              <div className="text-2xl font-semibold font-mono tabular-nums text-[#1d1d1f]">
+                {monthlyStats.absentDays} / {monthlyStats.holidayDays}
+              </div>
+              <span className="text-[11px] text-[#86868b]">Absent / Holidays</span>
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
 
       {/* Monthly Attendance Calendar */}
       <SectionCard
@@ -367,12 +380,12 @@ export const WorkView: React.FC = () => {
                   isFuture
                     ? 'border-black/[0.04] bg-[#fbfbfd] text-[#d2d2d7] cursor-not-allowed'
                     : isToday
-                      ? 'ring-2 ring-[#0284c7] border-[#0284c7] bg-[#0284c7]/[0.04] cursor-pointer'
+                      ? 'ring-2 ring-[#0071e3] border-[#0071e3] bg-[#e8f2ff]/60 cursor-pointer'
                       : 'border-black/[0.07] hover:border-black/20 hover:bg-[#f5f5f7]/60 bg-white cursor-pointer'
                 }`}
               >
                 <div className="flex items-center justify-between w-full">
-                  <span className={`text-[11px] sm:text-xs font-semibold font-mono tabular-nums ${isToday ? 'text-[#0284c7]' : isFuture ? 'text-[#86868b]' : 'text-[#1d1d1f]'}`}>
+                  <span className={`text-[11px] sm:text-xs font-semibold font-mono tabular-nums ${isToday ? 'text-[#0071e3]' : isFuture ? 'text-[#86868b]' : 'text-[#1d1d1f]'}`}>
                     {dayNum}
                   </span>
                 </div>
@@ -396,6 +409,7 @@ export const WorkView: React.FC = () => {
       {data.attendance.length === 0 ? (
         <EmptyState
           icon={CalendarCheck}
+          iconName="attendance"
           title="No attendance records yet"
           description="Log daily check-in times to automatically track total hours, leaves, and salary earnings."
           actionLabel="Log Today's Attendance"
@@ -531,8 +545,8 @@ export const WorkView: React.FC = () => {
       >
         <form id="attendance-form" onSubmit={handleSubmit} className="space-y-4">
           {formError && (
-            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+            <div className="p-3 bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] text-xs rounded-xl flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-[#c92a2a]" />
               <span>{formError}</span>
             </div>
           )}

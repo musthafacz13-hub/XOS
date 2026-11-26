@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useId } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
+import { MOTION_SPRINGS } from '../../utils/motion';
 
 export interface SegmentedOption<T extends string> {
   id: T;
@@ -24,6 +26,9 @@ export function SegmentedControl<T extends string>({
   fullWidth = false,
   className = ''
 }: SegmentedControlProps<T>) {
+  const groupId = useId();
+  const prefersReducedMotion = useReducedMotion();
+
   return (
     <div
       role="group"
@@ -40,7 +45,7 @@ export function SegmentedControl<T extends string>({
             type="button"
             onClick={() => onChange(opt.id)}
             aria-pressed={active}
-            className={`rounded-lg font-medium transition-all cursor-pointer whitespace-nowrap shrink-0 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0284c7] ${
+            className={`relative rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3] ${
               fullWidth ? 'flex-1' : ''
             } ${
               size === 'md'
@@ -48,11 +53,19 @@ export function SegmentedControl<T extends string>({
                 : 'min-h-[38px] sm:min-h-[32px] px-3 py-1 text-xs'
             } ${
               active
-                ? 'bg-white text-[#1d1d1f] font-semibold shadow-2xs ring-1 ring-black/[0.05]'
+                ? 'text-[#1d1d1f] font-semibold'
                 : 'text-[#6e6e73] hover:text-[#1d1d1f]'
             }`}
           >
-            {opt.label}
+            {active && (
+              <motion.span
+                layoutId={`seg-${groupId}`}
+                transition={prefersReducedMotion ? { duration: 0 } : MOTION_SPRINGS.navIndicator}
+                className="absolute inset-0 bg-white rounded-lg shadow-2xs ring-1 ring-black/[0.06]"
+                aria-hidden="true"
+              />
+            )}
+            <span className="relative z-10">{opt.label}</span>
           </button>
         );
       })}

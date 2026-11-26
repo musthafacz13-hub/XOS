@@ -88,7 +88,7 @@ export const MagicLinkView: React.FC<MagicLinkViewProps> = ({ onNavigate }) => {
     >
       {sentSuccess ? (
         <div className="space-y-5 text-center py-2">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
+          <div className="w-12 h-12 rounded-2xl bg-[#f0fdf4] text-[#1f7a4c] flex items-center justify-center mx-auto">
             <CheckCircle2 className="w-6 h-6" />
           </div>
 
@@ -138,9 +138,9 @@ export const MagicLinkView: React.FC<MagicLinkViewProps> = ({ onNavigate }) => {
           {errorMessage && (
             <div
               role="alert"
-              className="p-3 bg-rose-50 border border-rose-200/80 text-rose-800 text-xs rounded-xl flex items-start gap-2"
+              className="p-3 bg-[#fef2f2] border border-[#c92a2a]/20 text-[#991b1b] text-xs rounded-xl flex items-start gap-2"
             >
-              <AlertCircle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
+              <AlertCircle className="w-4 h-4 text-[#c92a2a] mt-0.5 shrink-0" />
               <span className="leading-relaxed">{errorMessage}</span>
             </div>
           )}
@@ -211,7 +211,7 @@ export const MagicLinkView: React.FC<MagicLinkViewProps> = ({ onNavigate }) => {
               type="button"
               disabled={loading}
               onClick={() => onNavigate('login')}
-              className="font-semibold text-[#0284c7] hover:underline cursor-pointer disabled:opacity-50"
+              className="font-semibold text-[#0071e3] hover:text-[#0077ed] hover:underline cursor-pointer disabled:opacity-50"
             >
               Sign In with Password
             </button>

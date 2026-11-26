@@ -14,9 +14,9 @@ import {
 } from '../../utils/calculations';
 import { formatCurrency, getMonthString } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
+import { XOSModuleIcon } from '../icons/XOSIcons';
 import {
   INPUT_CLASS,
-  MetricCard,
   PRIMARY_BUTTON_CLASS,
   PageHeader,
   SectionCard,
@@ -148,9 +148,9 @@ export const ReportsView: React.FC = () => {
   const attendancePieData = useMemo(
     () =>
       [
-        { name: 'Present', count: attStats.presentDays, fill: '#0284c7' },
+        { name: 'Present', count: attStats.presentDays, fill: '#0071e3' },
         { name: 'Absent', count: attStats.absentDays, fill: '#6e6e73' },
-        { name: 'Leave', count: attStats.leaveDays, fill: '#a1a1aa' },
+        { name: 'Leave', count: attStats.leaveDays, fill: '#aeaeb2' },
         { name: 'Holiday', count: attStats.holidayDays, fill: '#1d1d1f' }
       ].filter(d => d.count > 0),
     [attStats.presentDays, attStats.absentDays, attStats.leaveDays, attStats.holidayDays]
@@ -188,6 +188,7 @@ export const ReportsView: React.FC = () => {
       {!hasData ? (
         <EmptyState
           icon={BarChart3}
+          iconName="reports"
           title="Add records to see your financial reports"
           description="Log income, track expenses, or mark attendance to generate detailed cash flow analytics and visual breakdown charts."
         />
@@ -223,65 +224,91 @@ export const ReportsView: React.FC = () => {
             )}
           </div>
 
-          {/* KPI Overview */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-4">
-            <MetricCard
-              variant="focal"
-              label="Net Cash Flow"
-              tone={totals.netCashFlow >= 0 ? 'default' : 'negative'}
-              value={formatCurrency(totals.netCashFlow, data.settings.currency)}
-              sublabel="Period Income minus Expense"
-            />
+          {/* Unified Executive Analytics Stage */}
+          <section aria-label="Period Summary" className="rounded-3xl bg-[#f5f5f7] p-4 sm:p-5">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+              <div className="lg:col-span-4 rounded-2xl bg-white border border-black/[0.06] p-5 sm:p-6 flex flex-col justify-between gap-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-[#6e6e73]">Net Cash Flow</span>
+                  <span className="text-[#0071e3]">
+                    <XOSModuleIcon name="reports" isActive size={16} />
+                  </span>
+                </div>
+                <div>
+                  <div
+                    className={`text-[28px] sm:text-[32px] font-semibold font-mono tabular-nums tracking-[-0.03em] leading-tight ${
+                      totals.netCashFlow >= 0 ? 'text-[#1d1d1f]' : 'text-[#c92a2a]'
+                    }`}
+                  >
+                    {formatCurrency(totals.netCashFlow, data.settings.currency)}
+                  </div>
+                  <p className="mt-1.5 text-xs text-[#86868b]">Period Income minus Expense</p>
+                </div>
+              </div>
 
-            <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-              <MetricCard
-                label="Period Revenue"
-                tone="positive"
-                value={formatCurrency(totals.totalIncome, data.settings.currency)}
-                sublabel={`${filteredIncomes.length} ${filteredIncomes.length === 1 ? 'entry' : 'entries'} logged`}
-              />
+              <div className="lg:col-span-8 rounded-2xl bg-white border border-black/[0.06] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 divide-y sm:divide-y-0 overflow-hidden">
+                <div className="p-4 sm:p-5 sm:border-b sm:border-r border-black/[0.06] flex flex-col justify-between gap-1.5">
+                  <span className="text-xs font-medium text-[#6e6e73]">Period Revenue</span>
+                  <div className="text-xl font-semibold font-mono tabular-nums tracking-[-0.02em] text-[#1f7a4c]">
+                    {formatCurrency(totals.totalIncome, data.settings.currency)}
+                  </div>
+                  <span className="text-xs text-[#86868b]">
+                    {filteredIncomes.length} {filteredIncomes.length === 1 ? 'entry' : 'entries'} logged
+                  </span>
+                </div>
 
-              <MetricCard
-                label="Period Expenses"
-                value={formatCurrency(totals.totalExpenses, data.settings.currency)}
-                sublabel={`${filteredExpenses.length} ${filteredExpenses.length === 1 ? 'transaction' : 'transactions'}`}
-              />
+                <div className="p-4 sm:p-5 sm:border-b lg:border-r border-black/[0.06] flex flex-col justify-between gap-1.5">
+                  <span className="text-xs font-medium text-[#6e6e73]">Period Expenses</span>
+                  <div className="text-xl font-semibold font-mono tabular-nums tracking-[-0.02em] text-[#1d1d1f]">
+                    {formatCurrency(totals.totalExpenses, data.settings.currency)}
+                  </div>
+                  <span className="text-xs text-[#86868b]">
+                    {filteredExpenses.length} {filteredExpenses.length === 1 ? 'transaction' : 'transactions'}
+                  </span>
+                </div>
 
-              <MetricCard
-                label="Total Reserves"
-                value={formatCurrency(totals.currentSavingsBalance, data.settings.currency)}
-                sublabel={`Across ${activeSavingsGoals.length} funds`}
-              />
+                <div className="p-4 sm:p-5 sm:border-b sm:border-r lg:border-r-0 border-black/[0.06] flex flex-col justify-between gap-1.5">
+                  <span className="text-xs font-medium text-[#6e6e73]">Total Reserves</span>
+                  <div className="text-xl font-semibold font-mono tabular-nums tracking-[-0.02em] text-[#1d1d1f]">
+                    {formatCurrency(totals.currentSavingsBalance, data.settings.currency)}
+                  </div>
+                  <span className="text-xs text-[#86868b]">Across {activeSavingsGoals.length} funds</span>
+                </div>
 
-              <MetricCard
-                label="Remaining Salary"
-                value={
-                  !salaryConfigured && periodSalary.earnedSalary === 0 && periodSalary.salaryReceived === 0 ? (
-                    <span className="text-lg font-medium text-[#6e6e73] font-sans">Not configured</span>
-                  ) : (
-                    formatCurrency(periodSalary.remainingSalary, data.settings.currency)
-                  )
-                }
-                sublabel={
-                  !salaryConfigured && periodSalary.earnedSalary === 0 && periodSalary.salaryReceived === 0
-                    ? 'Configure in Salary Settings'
-                    : `Earned: ${formatCurrency(periodSalary.earnedSalary, data.settings.currency)}`
-                }
-              />
+                <div className="p-4 sm:p-5 sm:border-b lg:border-b-0 lg:border-r border-black/[0.06] flex flex-col justify-between gap-1.5">
+                  <span className="text-xs font-medium text-[#6e6e73]">Remaining Salary</span>
+                  <div className="text-xl font-semibold font-mono tabular-nums tracking-[-0.02em] text-[#1d1d1f]">
+                    {!salaryConfigured && periodSalary.earnedSalary === 0 && periodSalary.salaryReceived === 0 ? (
+                      <span className="text-base font-medium text-[#6e6e73] font-sans">Not configured</span>
+                    ) : (
+                      formatCurrency(periodSalary.remainingSalary, data.settings.currency)
+                    )}
+                  </div>
+                  <span className="text-xs text-[#86868b] font-mono tabular-nums">
+                    {!salaryConfigured && periodSalary.earnedSalary === 0 && periodSalary.salaryReceived === 0
+                      ? 'Configure in Salary Settings'
+                      : `Earned: ${formatCurrency(periodSalary.earnedSalary, data.settings.currency)}`}
+                  </span>
+                </div>
 
-              <MetricCard
-                label="Money Owed to Me"
-                value={formatCurrency(debtSummary.outstandingReceivable, data.settings.currency)}
-                sublabel="Outstanding receivables"
-              />
+                <div className="p-4 sm:p-5 sm:border-r border-black/[0.06] flex flex-col justify-between gap-1.5">
+                  <span className="text-xs font-medium text-[#6e6e73]">Money Owed to Me</span>
+                  <div className="text-xl font-semibold font-mono tabular-nums tracking-[-0.02em] text-[#0071e3]">
+                    {formatCurrency(debtSummary.outstandingReceivable, data.settings.currency)}
+                  </div>
+                  <span className="text-xs text-[#86868b]">Outstanding receivables</span>
+                </div>
 
-              <MetricCard
-                label="Money to Pay"
-                value={formatCurrency(totalToPay, data.settings.currency)}
-                sublabel="Outstanding payables"
-              />
+                <div className="p-4 sm:p-5 flex flex-col justify-between gap-1.5">
+                  <span className="text-xs font-medium text-[#6e6e73]">Money to Pay</span>
+                  <div className="text-xl font-semibold font-mono tabular-nums tracking-[-0.02em] text-[#1d1d1f]">
+                    {formatCurrency(totalToPay, data.settings.currency)}
+                  </div>
+                  <span className="text-xs text-[#86868b]">Outstanding payables</span>
+                </div>
+              </div>
             </div>
-          </div>
+          </section>
 
           {/* Cash Flow Timeline */}
           <SectionCard
@@ -303,7 +330,7 @@ export const ReportsView: React.FC = () => {
                       formatter={(val: any) => [formatCurrency(Number(val || 0), data.settings.currency)]}
                       contentStyle={tooltipStyle}
                     />
-                    <Area type="monotone" dataKey="income" stroke="#0284c7" fill="#0284c7" fillOpacity={0.18} name="Income" />
+                    <Area type="monotone" dataKey="income" stroke="#0071e3" fill="#0071e3" fillOpacity={0.16} name="Income" />
                     <Area type="monotone" dataKey="expense" stroke="#1d1d1f" fill="#1d1d1f" fillOpacity={0.08} name="Expense" />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -328,7 +355,7 @@ export const ReportsView: React.FC = () => {
                         formatter={(val: any) => [formatCurrency(Number(val || 0), data.settings.currency), 'Amount']}
                         contentStyle={tooltipStyle}
                       />
-                      <Bar dataKey="amount" fill="#0284c7" radius={[0, 6, 6, 0]} />
+                      <Bar dataKey="amount" fill="#0071e3" radius={[0, 6, 6, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
