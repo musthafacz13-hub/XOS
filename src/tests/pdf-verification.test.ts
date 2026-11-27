@@ -45,7 +45,7 @@ async function runPDFTests() {
   );
   // Ensure no legacy sky-blue (135, 206, 235 -> 0.529 0.808 0.922) or green/red colored fills/text exist
   assert(!emptyPdfText.includes('0.529 0.808 0.922'), 'PDF must not contain decorative sky-blue accents');
-  assert(emptyPdfText.includes('Salary & Working Time Config: Not configured'), 'Empty PDF must show unconfigured salary config');
+  assert(emptyPdfText.includes('Daily Salary: Not configured'), 'Empty PDF must show unconfigured daily salary');
   assert(!emptyPdfText.includes('Daily Base USD 500') && !emptyPdfText.includes('Standard 8h'), 'Empty PDF must not fabricate 500/8h salary defaults');
   console.log(`✓ Test 1 passed: Empty PDF generated cleanly as A4 (${emptyBlob.size} bytes).`);
 
@@ -69,8 +69,8 @@ async function runPDFTests() {
       { id: 'dr1', debt_id: 'd1', amount: 200, repayment_date: '2026-05-12', created_at: '2026-05-12' }
     ],
     attendance: [
-      { id: 'a1', date: '2026-05-01', status: 'Present', calculatedHours: 8, checkInTime: '09:00', checkOutTime: '17:30' },
-      { id: 'a2', date: '2026-05-02', status: 'Present', calculatedHours: 8.5, checkInTime: '08:30', checkOutTime: '17:30' },
+      { id: 'a1', date: '2026-05-01', status: 'Present', dayType: 'full_day', dailyEarnedSalary: 500 },
+      { id: 'a2', date: '2026-05-02', status: 'Present', dayType: 'half_day', dailyEarnedSalary: 250 },
       { id: 'a3', date: '2026-05-03', status: 'Leave' }
     ],
     salaryPayouts: [
@@ -122,10 +122,8 @@ async function runPDFTests() {
     attendance: Array.from({ length: 31 }, (_, i) => ({
       id: `att_large_${i}`,
       date: `2026-05-${String(i + 1).padStart(2, '0')}`,
-      status: i % 7 === 0 ? ('Leave' as const) : ('Present' as const),
-      calculatedHours: 8,
-      checkInTime: '09:00',
-      checkOutTime: '17:30'
+      status: i % 7 === 0 ? ('Holiday' as const) : ('Present' as const),
+      dayType: i % 5 === 0 ? ('half_day' as const) : ('full_day' as const)
     }))
   };
 

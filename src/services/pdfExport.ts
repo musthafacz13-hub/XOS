@@ -21,6 +21,8 @@ import {
   calculateSeparateDebtTotals,
   calculatePeriodSalarySummary,
   isSalaryConfigured,
+  resolveAttendanceDayType,
+  resolveAttendanceRecordSalary,
   resolveGoalsWithSavings
 } from '../utils/calculations';
 
@@ -561,81 +563,105 @@ export async function generateXOSReportPDF(
   }
 
   // ==========================================
-  // SECTION 4: WORK ATTENDANCE & HOURS
+  // SECTION 4: WORK ATTENDANCE
   // ==========================================
   if (includeAttendance) {
     renderedAnySection = true;
-    drawSectionHeader('Work Attendance & Duty History', `${filteredAttendance.length} days logged`);
+    drawSectionHeader('Work Attendance History', `${filteredAttendance.length} days logged`);
 
     const attRows: any[][] = filteredAttendance.length > 0
       ? filteredAttendance.map(a => [
           sanitizePdfText(formatDate(a.date, dateFormat)),
-          sanitizePdfText(a.status),
-          sanitizePdfText(a.checkInTime || '-'),
-          sanitizePdfText(a.checkOutTime || '-'),
-          a.status === 'Present' && typeof a.calculatedHours === 'number' ? `${a.calculatedHours} hrs` : '-',
+          sanitizePdfText(a.status === 'Leave' ? 'Leave (Legacy)' : a.status),
+          a.status === 'Present'
+            ? (resolveAttendanceDayType(a) === 'half_day' ? 'Half Day' : 'Full Day')
+            : '-',
+          formatPdfCurrency(resolveAttendanceRecordSalary(a, data.settings.salaryConfig).earnedSalary, currencyCode),
           sanitizePdfText(a.notes || '-')
         ])
       : [[{
           content: 'No attendance records recorded for this period.',
-          colSpan: 6,
+          colSpan: 5,
           styles: { textColor: COLOR_SECONDARY, fontStyle: 'italic' }
         }]];
 
     renderStatementTable({
-      head: ['Date', 'Status', 'Check In', 'Check Out', 'Hours', 'Notes'],
+      head: ['Date', 'Status', 'Day Type', 'Earned', 'Notes'],
       body: attRows,
       columnStyles: {
-        0: { cellWidth: 24, halign: 'left' },
-        1: { cellWidth: 22, halign: 'left' },
-        2: { cellWidth: 22, halign: 'left' },
-        3: { cellWidth: 22, halign: 'left' },
-        4: { cellWidth: 22, halign: 'right' },
-        5: { cellWidth: 66, halign: 'left' }
+        0: { cellWidth: 26, halign: 'left' },
+        1: { cellWidth: 28, halign: 'left' },
+        2: { cellWidth: 24, halign: 'left' },
+        3: { cellWidth: 28, halign: 'right' },
+        4: { cellWidth: 72, halign: 'left' }
       }
     });
   }
 
   // ==========================================
-  // SECTION 5: SALARY INFORMATION & PAYOUTS
+  // SECTION 5: SALARY SUMMARY
   // ==========================================
   if (includeSalary) {
     renderedAnySection = true;
     const salaryCfg = data.settings.salaryConfig;
     const periodSalary = calculatePeriodSalarySummary(filteredAttendance, filteredPayouts, salaryCfg, 'all');
     const rateLine = isSalaryConfigured(salaryCfg)
-      ? `Current Config: Daily Base ${formatPdfCurrency(salaryCfg.dailyBaseSalary ?? 0, currencyCode)} | Standard ${salaryCfg.standardWorkingHours}h | Extra ${salaryCfg.overtimeEnabled ? `${formatPdfCurrency(salaryCfg.extraHourRate ?? 0, currencyCode)}/hr` : 'Disabled'}`
-      : 'Salary & Working Time Config: Not configured';
-    const totalsLine = `Period Earned: ${formatPdfCurrency(periodSalary.earnedSalary, currencyCode)}  |  Paid: ${formatPdfCurrency(periodSalary.salaryReceived, currencyCode)}  |  Remaining Due: ${formatPdfCurrency(periodSalary.remainingSalary, currencyCode)}`;
+      ? `Daily Salary: ${formatPdfCurrency(salaryCfg.dailyBaseSalary ?? 0, currencyCode)} (Full Day 100% | Half Day 50%)`
+      : 'Daily Salary: Not configured';
+    const totalsLine = `Period Earned: ${formatPdfCurrency(periodSalary.earnedSalary, currencyCode)}  |  Full Days: ${periodSalary.fullDays}  |  Half Days: ${periodSalary.halfDays}  |  Absent: ${periodSalary.absentDays}  |  Holiday: ${periodSalary.holidayDays}`;
     const salarySubtitle = rateLine ? `${totalsLine}\n${rateLine}` : totalsLine;
 
     drawSectionHeader(
-      'Salary Information & Payout Records',
-      `${filteredPayouts.length} slips`,
+      'Salary Summary & Daily Breakdown',
+      `${periodSalary.presentDays} present days`,
       salarySubtitle
     );
 
-    const salaryRows: any[][] = filteredPayouts.length > 0
-      ? filteredPayouts.map(p => [
-          sanitizePdfText(`${formatDate(p.periodStart, dateFormat)} to ${formatDate(p.periodEnd, dateFormat)}`),
-          sanitizePdfText(formatDate(p.paidAt, dateFormat)),
-          formatPdfCurrency(p.amountPaid, currencyCode),
-          sanitizePdfText(p.notes || '-')
-        ])
+    const salaryRows: any[][] = filteredAttendance.length > 0
+      ? filteredAttendance.map(a => {
+          const dayTypeLabel =
+            a.status === 'Present'
+              ? (resolveAttendanceDayType(a) === 'half_day' ? 'Half Day' : 'Full Day')
+              : '-';
+          const dailyRate =
+            typeof a.dailyBaseSalary === 'number' && Number.isFinite(a.dailyBaseSalary)
+              ? formatPdfCurrency(a.dailyBaseSalary, currencyCode)
+              : isSalaryConfigured(salaryCfg)
+              ? formatPdfCurrency(salaryCfg.dailyBaseSalary ?? 0, currencyCode)
+              : '-';
+
+          return [
+            sanitizePdfText(formatDate(a.date, dateFormat)),
+            sanitizePdfText(a.status === 'Leave' ? 'Leave (Legacy)' : a.status),
+            dayTypeLabel,
+            dailyRate,
+            formatPdfCurrency(resolveAttendanceRecordSalary(a, salaryCfg).earnedSalary, currencyCode)
+          ];
+        })
       : [[{
-          content: 'No recorded salary payout slips.',
-          colSpan: 4,
+          content: 'No daily salary entries recorded for this period.',
+          colSpan: 5,
           styles: { textColor: COLOR_SECONDARY, fontStyle: 'italic' }
         }]];
 
+    if (filteredAttendance.length > 0) {
+      salaryRows.push([
+        { content: 'Total Earned', colSpan: 3 },
+        { content: `${periodSalary.fullDays} Full · ${periodSalary.halfDays} Half`, styles: { fontStyle: 'normal', textColor: COLOR_SECONDARY } },
+        { content: formatPdfCurrency(periodSalary.earnedSalary, currencyCode), styles: { halign: 'right' } }
+      ]);
+    }
+
     renderStatementTable({
-      head: ['Pay Period', 'Paid Date', 'Amount Paid', 'Notes'],
+      head: ['Date', 'Status', 'Day Type', 'Daily Rate', 'Earned'],
       body: salaryRows,
+      hasTotalRow: filteredAttendance.length > 0,
       columnStyles: {
-        0: { cellWidth: 48, halign: 'left' },
-        1: { cellWidth: 28, halign: 'left' },
-        2: { cellWidth: 32, halign: 'right', fontStyle: 'bold' },
-        3: { cellWidth: 70, halign: 'left' }
+        0: { cellWidth: 28, halign: 'left' },
+        1: { cellWidth: 34, halign: 'left' },
+        2: { cellWidth: 32, halign: 'left' },
+        3: { cellWidth: 42, halign: 'right' },
+        4: { cellWidth: 42, halign: 'right', fontStyle: 'bold' }
       }
     });
   }

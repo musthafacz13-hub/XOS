@@ -892,7 +892,8 @@ async function runPersistenceTests() {
       await repository.fetchAllUserData(USER_A);
       assert(repository.getSettings().currency === 'USD', 'Saved USD currency_code preference MUST be preserved');
       assert(repository.getSettings().salaryConfig.currency === 'USD', 'salary_configs currency_code USD mapped');
-      assert(repository.getSettings().salaryConfig.standardWorkingHours === 7, 'salary_configs standard_hours mapped');
+      assert(repository.getSettings().salaryConfig.dailyBaseSalary === 200, 'salary_configs daily_base_salary mapped');
+      assert(repository.getSettings().salaryConfig.isConfigured === true, 'salary_configs isConfigured mapped');
       assert(repository.getSettings().dateFormat === 'MM/DD/YYYY', 'Saved date format preserved');
       assert(repository.getSettings().weekStartDay === 'Sunday', 'Saved week_starts_on 0 maps to Sunday');
       assert(repository.getSettings().customExpenseCategories.join(',') === 'Housing,Other', 'Saved expense_categories preserved');
@@ -952,13 +953,8 @@ async function runPersistenceTests() {
           attendance_records: (ctx) => {
             if (ctx.op === 'upsert') {
               assert('attendance_date' in ctx.payload && !('date' in ctx.payload), 'attendance_records MUST write attendance_date');
-              assert('check_in' in ctx.payload && !('check_in_time' in ctx.payload), 'attendance_records MUST write check_in');
-              assert('check_out' in ctx.payload && !('check_out_time' in ctx.payload), 'attendance_records MUST write check_out');
-              assert('break_minutes' in ctx.payload && !('break_duration_minutes' in ctx.payload), 'attendance_records MUST write break_minutes');
-              assert('hours_worked' in ctx.payload && !('calculated_hours' in ctx.payload), 'attendance_records MUST write hours_worked');
-              assert('daily_base_salary' in ctx.payload && 'extra_hour_rate' in ctx.payload && 'calculated_salary' in ctx.payload, 'attendance_records writes snapshot salary columns');
-              assert('addon_salary' in ctx.payload && 'addon_enabled' in ctx.payload && 'overtime_enabled' in ctx.payload, 'attendance_records writes add-on and overtime snapshot columns');
-              assert('salary_override_enabled' in ctx.payload && 'salary_override_amount' in ctx.payload, 'attendance_records writes manual salary override columns');
+              assert('day_type' in ctx.payload, 'attendance_records writes day_type');
+              assert('daily_base_salary' in ctx.payload && 'calculated_salary' in ctx.payload, 'attendance_records writes daily_base_salary and calculated_salary snapshot');
               capturedAttendancePayload = ctx.payload;
               return { data: { id: UUID_2, ...ctx.payload, created_at: '2026-05-01' }, error: null };
             }
@@ -998,21 +994,11 @@ async function runPersistenceTests() {
 
       await repository.persistSalaryConfig({
         currency: 'USD',
-        dailyBaseSalary: 1200,
-        addonSalary: 150,
-        addonEnabled: true,
-        standardWorkingHours: 9,
-        extraHourRate: 200,
-        overtimeEnabled: true
+        dailyBaseSalary: 1200
       });
 
       assert(capturedSalaryPayload?.currency_code === 'USD', 'salary_configs upsert sends currency_code');
       assert(capturedSalaryPayload?.daily_base_salary === 1200, 'salary_configs upsert sends daily_base_salary');
-      assert(capturedSalaryPayload?.addon_salary === 150, 'salary_configs upsert sends addon_salary');
-      assert(capturedSalaryPayload?.addon_enabled === true, 'salary_configs upsert sends addon_enabled');
-      assert(capturedSalaryPayload?.standard_hours === 9, 'salary_configs upsert sends standard_hours');
-      assert(capturedSalaryPayload?.extra_hour_rate === 200, 'salary_configs upsert sends extra_hour_rate');
-      assert(capturedSalaryPayload?.overtime_enabled === true, 'salary_configs upsert sends overtime_enabled');
 
       await repository.addGoal({ title: 'My Goal', description: '', category: 'Personal', targetAmount: 10000, priority: 'Medium' });
       await repository.updateGoal(UUID_1, { title: 'My Dream', targetAmount: 15000, priority: 'High' });
@@ -1023,22 +1009,14 @@ async function runPersistenceTests() {
       const att = await repository.upsertAttendanceRecord({
         date: '2026-05-01',
         status: 'Present',
-        checkInTime: '09:00',
-        checkOutTime: '20:00',
-        breakDurationMinutes: 60,
-        calculatedHours: 10,
-        notes: 'Extra hour shift'
+        dayType: 'full_day',
+        notes: 'Full day shift'
       });
       assert(capturedAttendancePayload.attendance_date === '2026-05-01', 'attendance_records writes attendance_date');
-      assert(capturedAttendancePayload.check_in === '09:00:00', 'attendance_records normalizes check_in');
-      assert(capturedAttendancePayload.extra_hours === 1, '10h with 9h standard -> 1 extra hour');
-      assert(capturedAttendancePayload.addon_salary === 150, 'attendance_records snapshots addon_salary=150');
-      assert(capturedAttendancePayload.addon_enabled === true, 'attendance_records snapshots addon_enabled=true');
-      assert(capturedAttendancePayload.overtime_enabled === true, 'attendance_records snapshots overtime_enabled=true');
-      assert(capturedAttendancePayload.salary_override_enabled === false, 'attendance_records defaults salary_override_enabled=false');
-      assert(capturedAttendancePayload.salary_override_amount === null, 'attendance_records defaults salary_override_amount=null');
-      assert(capturedAttendancePayload.calculated_salary === 1550, '1200 + 150 + 1*200 = 1550 snapshot calculated_salary');
-      assert(att.dailyEarnedSalary === 1550, 'Mapped dailyEarnedSalary from calculated_salary');
+      assert(capturedAttendancePayload.day_type === 'full_day', 'attendance_records writes day_type=full_day');
+      assert(capturedAttendancePayload.daily_base_salary === 1200, 'attendance_records snapshots daily_base_salary=1200');
+      assert(capturedAttendancePayload.calculated_salary === 1200, 'Full Day calculates 100% of Daily Salary (1200)');
+      assert(att.dayType === 'full_day' && att.dailyEarnedSalary === 1200, 'Mapped dayType & dailyEarnedSalary from DB');
     }
     console.log('✓ Test 14 passed.');
 
@@ -1081,18 +1059,13 @@ async function runPersistenceTests() {
         widgets: [{ id: 'w1', name: 'Income', visible: true, order: 1 }],
         salaryConfig: {
           dailyBaseSalary: 600,
-          addonSalary: 50,
-          addonEnabled: true,
-          standardWorkingHours: 8,
-          extraHourRate: 120,
-          overtimeEnabled: true,
           currency: 'EUR'
         }
       });
 
       assert(capturedUserSettings.currency_code === 'EUR', 'user_settings persisted currency_code EUR');
       assert(capturedUserSettings.week_starts_on === 1, 'user_settings persisted numeric SMALLINT week_starts_on = 1 for Monday');
-      assert(capturedSalaryCfg.currency_code === 'EUR' && capturedSalaryCfg.standard_hours === 8, 'salary_configs persisted currency_code & standard_hours');
+      assert(capturedSalaryCfg.currency_code === 'EUR' && capturedSalaryCfg.daily_base_salary === 600, 'salary_configs persisted currency_code & daily_base_salary');
       assert(repository.getSettings().currency === 'EUR', 'memoryState updated to EUR');
       assert(repository.getSettings().weekStartDay === 'Monday', 'memoryState weekStartDay hydrated to Monday');
     }
@@ -1207,22 +1180,23 @@ async function runPersistenceTests() {
       configureRepositoryBackendForTests(attClient, true);
       await repository.fetchAllUserData(USER_A);
 
-      await repository.upsertAttendanceRecord({ date: '2026-05-01', status: 'Present', checkInTime: '09:00', checkOutTime: '18:00', breakDurationMinutes: 0 });
-      await repository.upsertAttendanceRecord({ date: '2026-05-02', status: 'Absent' });
-      await repository.upsertAttendanceRecord({ date: '2026-05-03', status: 'Leave' });
-      await repository.upsertAttendanceRecord({ date: '2026-05-04', status: 'Holiday' });
+      await repository.upsertAttendanceRecord({ date: '2026-05-01', status: 'Present', dayType: 'full_day' });
+      await repository.upsertAttendanceRecord({ date: '2026-05-02', status: 'Present', dayType: 'half_day' });
+      await repository.upsertAttendanceRecord({ date: '2026-05-03', status: 'Absent' });
+      await repository.upsertAttendanceRecord({ date: '2026-05-04', status: 'Leave' });
+      await repository.upsertAttendanceRecord({ date: '2026-05-05', status: 'Holiday' });
 
-      assert(writtenStatuses.join(',') === 'present,absent,leave,holiday', `Expected lowercase statuses, got ${writtenStatuses.join(',')}`);
+      assert(writtenStatuses.join(',') === 'present,present,absent,leave,holiday', `Expected lowercase statuses, got ${writtenStatuses.join(',')}`);
 
       // Reload from DB and verify Title Case hydration + salary calculations
       repository.clearUserData();
       await repository.fetchAllUserData(USER_A);
       const loaded = repository.getAttendance();
-      assert(loaded.map(r => r.status).join(',') === 'Present,Absent,Leave,Holiday', 'All 4 statuses hydrate to Title Case');
+      assert(loaded.map(r => r.status).join(',') === 'Present,Present,Absent,Leave,Holiday', 'All statuses hydrate to Title Case including legacy Leave');
 
       const summary = calculateMonthlySalarySummary(loaded, [], repository.getSettings().salaryConfig, '2026-05');
-      assert(summary.presentDays === 1 && summary.absentDays === 1 && summary.leaveDays === 1 && summary.holidayDays === 1, 'Monthly stats count all 4 statuses after hydration');
-      assert(summary.earnedSalary === 600, `Expected 500 + 1*100 = 600 earned salary, got ${summary.earnedSalary}`);
+      assert(summary.presentDays === 2 && summary.fullDays === 1 && summary.halfDays === 1 && summary.absentDays === 1 && summary.leaveDays === 1 && summary.holidayDays === 1, 'Monthly stats count all day types and legacy statuses after hydration');
+      assert(summary.earnedSalary === 750, `Expected 500 + 250 = 750 earned salary, got ${summary.earnedSalary}`);
     }
     console.log('✓ Test 17 passed.');
 
@@ -1923,9 +1897,6 @@ async function runPersistenceTests() {
       assert(repository.getSettings().dateFormat === 'YYYY-MM-DD', 'Date format reset to default');
       assert(repository.getSettings().weekStartDay === 'Monday', 'Week start reset to default');
       assert(repository.getSettings().salaryConfig.dailyBaseSalary === undefined, 'Salary config dailyBaseSalary cleared on reset');
-      assert(repository.getSettings().salaryConfig.standardWorkingHours === undefined, 'Salary config standardWorkingHours cleared on reset');
-      assert(repository.getSettings().salaryConfig.extraHourRate === undefined, 'Salary config extraHourRate cleared on reset');
-      assert(repository.getSettings().salaryConfig.overtimeEnabled === false, 'Salary config overtimeEnabled reset to false');
       assert(repository.getSettings().salaryConfig.isConfigured === false, 'Salary config marked unconfigured after reset');
       assert(repository.getSettings().profile.name === 'Preserved User', 'Preserved profile display_name hydrated from profiles');
       assert(repository.getSettings().profile.email === 'musthafa@test.local', 'Authenticated profile email preserved');
@@ -2193,64 +2164,48 @@ async function runPersistenceTests() {
       configureRepositoryBackendForTests(salaryMockClient, true);
       await repository.persistSalaryConfig({
         dailyBaseSalary: 500,
-        addonSalary: 0,
-        addonEnabled: false,
-        standardWorkingHours: 8,
-        extraHourRate: 100,
-        overtimeEnabled: true,
         currency: 'INR'
       });
 
       const customDay = await repository.upsertAttendanceRecord({
         date: '2026-07-04',
         status: 'Present',
-        calculatedHours: 10,
+        dayType: 'full_day',
         dailyBaseSalary: 800,
-        extraHourRate: 150,
-        salaryOverrideEnabled: true,
-        salaryOverrideAmount: 1250,
-        notes: 'Holiday shift bonus'
+        notes: 'Custom day rate'
       });
 
       assert(savedAttendanceRows.length === 1, 'One attendance_records row upserted');
-      assert(savedAttendanceRows[0].daily_base_salary === 800, 'DB daily_base_salary reflects custom day rate 800');
-      assert(savedAttendanceRows[0].extra_hour_rate === 150, 'DB extra_hour_rate reflects custom overtime rate 150');
-      assert(savedAttendanceRows[0].salary_override_enabled === true, 'DB salary_override_enabled persists true');
-      assert(savedAttendanceRows[0].salary_override_amount === 1250, 'DB salary_override_amount persists 1250');
-      assert(savedAttendanceRows[0].calculated_salary === 1250, 'DB calculated_salary persists explicit override 1250');
-      assert(customDay.salaryOverrideEnabled === true && customDay.salaryOverrideAmount === 1250, 'Returned AttendanceRecord exposes explicit override flag and amount');
-      assert(customDay.dailyEarnedSalary === 1250, 'Returned AttendanceRecord preserves custom earned salary');
+      assert(savedAttendanceRows[0].daily_base_salary === 800, 'DB daily_base_salary reflects rate 800');
+      assert(savedAttendanceRows[0].day_type === 'full_day', 'DB day_type persists full_day');
+      assert(savedAttendanceRows[0].calculated_salary === 800, 'DB calculated_salary persists 800');
+      assert(customDay.dayType === 'full_day', 'Returned AttendanceRecord exposes dayType=full_day');
+      assert(customDay.dailyEarnedSalary === 800, 'Returned AttendanceRecord preserves earned salary 800');
 
       await repository.persistSalaryConfig({
         dailyBaseSalary: 950,
-        addonSalary: 150,
-        addonEnabled: true,
-        standardWorkingHours: 8,
-        extraHourRate: 175,
-        overtimeEnabled: false,
         currency: 'INR'
       });
 
-      assert(savedSalaryConfigRow.addon_salary === 150 && savedSalaryConfigRow.addon_enabled === true, 'Add-on config persisted to salary_configs');
-      assert(savedSalaryConfigRow.extra_hour_rate === 175 && savedSalaryConfigRow.overtime_enabled === false, 'Disabling overtime preserves extra_hour_rate=175 and writes overtime_enabled=false');
-      assert(savedAttendanceRows[0].calculated_salary === 1250, 'Historical attendance calculated_salary untouched after config update');
-      assert(repository.getAttendance()[0].dailyEarnedSalary === 1250, 'In-memory historical attendance untouched after config update');
+      assert(savedSalaryConfigRow.daily_base_salary === 950, 'Daily salary persisted to salary_configs');
+      assert(savedAttendanceRows[0].calculated_salary === 800, 'Historical attendance calculated_salary untouched after config update');
+      assert(repository.getAttendance()[0].dailyEarnedSalary === 800, 'In-memory historical attendance untouched after config update');
     }
     console.log('✓ Test 25 passed.');
 
     // ==========================================
-    // TEST 26: New Supabase Salary Schema Columns, Legacy Defaults, Snapshot Preservation on Edit & Non-Substitution
+    // TEST 26: Simplified Daily Salary, Day Type, Legacy Defaults, Snapshot Preservation & Missing-Column Fallback
     // ==========================================
-    console.log('Test 26: New salary schema columns, legacy defaults, edit snapshot preservation & calculated_salary non-substitution...');
+    console.log('Test 26: Simplified daily salary, dayType, legacy defaults, edit snapshot preservation & day_type fallback...');
     {
       let dbSalaryConfig: any = {
         id: 'sal_cfg_26',
         user_id: USER_A,
         daily_base_salary: 600,
-        addon_salary: 120,
-        addon_enabled: true,
+        addon_salary: 0,
+        addon_enabled: false,
         standard_hours: 8,
-        extra_hour_rate: 200,
+        extra_hour_rate: 0,
         overtime_enabled: false,
         currency_code: 'INR',
         created_at: new Date().toISOString(),
@@ -2258,17 +2213,18 @@ async function runPersistenceTests() {
       };
 
       const dbAttendance: any[] = [
-        // Legacy row with NULL/missing new schema columns & a drifted calculated_salary (must NOT imply salary_override_enabled)
+        // Legacy row with NULL day_type & a saved calculated_salary snapshot
         {
           id: 'att_legacy_1',
           user_id: USER_A,
           attendance_date: '2026-08-01',
           status: 'present',
+          day_type: null,
           hours_worked: 9,
           extra_hours: 1,
           daily_base_salary: 500,
           extra_hour_rate: 100,
-          calculated_salary: 777, // differs from 600, but salary_override_enabled is missing/null
+          calculated_salary: 777,
           addon_salary: null,
           addon_enabled: null,
           overtime_enabled: null,
@@ -2279,6 +2235,8 @@ async function runPersistenceTests() {
           updated_at: new Date().toISOString()
         }
       ];
+
+      let simulateMissingDayTypeColumn = false;
 
       const schemaClient = createMockSupabase(USER_A, {
         user_settings: (ctx) => ({ data: ctx.payload, error: null }),
@@ -2291,6 +2249,12 @@ async function runPersistenceTests() {
         },
         attendance_records: (ctx) => {
           if (ctx.op === 'upsert') {
+            if (simulateMissingDayTypeColumn && 'day_type' in ctx.payload) {
+              return {
+                data: null,
+                error: { code: 'PGRST204', message: "Could not find the 'day_type' column of 'attendance_records'" }
+              };
+            }
             const idx = dbAttendance.findIndex(r => r.attendance_date === ctx.payload.attendance_date);
             const row = {
               id: idx >= 0 ? dbAttendance[idx].id : `att_${dbAttendance.length + 1}`,
@@ -2314,33 +2278,27 @@ async function runPersistenceTests() {
       await repository.fetchAllUserData(USER_A);
       const hydratedCfg = repository.getSettings().salaryConfig;
       assert(hydratedCfg.dailyBaseSalary === 600, 'Hydrated dailyBaseSalary=600');
-      assert(hydratedCfg.addonSalary === 120, 'Hydrated addonSalary=120');
-      assert(hydratedCfg.addonEnabled === true, 'Hydrated addonEnabled=true');
-      assert(hydratedCfg.extraHourRate === 200, 'Hydrated extraHourRate=200');
-      assert(hydratedCfg.overtimeEnabled === false, 'Hydrated overtimeEnabled=false');
+      assert(hydratedCfg.isConfigured === true, 'Hydrated isConfigured=true');
 
       const legacyHydrated = repository.getAttendance().find(a => a.date === '2026-08-01')!;
-      assert(legacyHydrated.addonSalary === 0, 'Legacy null addon_salary defaults to 0');
-      assert(legacyHydrated.addonEnabled === false, 'Legacy null addon_enabled defaults to false');
-      assert(legacyHydrated.overtimeEnabled === true, 'Legacy null overtime_enabled defaults to true');
-      assert(legacyHydrated.salaryOverrideEnabled === false, 'Legacy null salary_override_enabled defaults to false even when calculated_salary differs from formula');
-      assert(legacyHydrated.salaryOverrideAmount === undefined, 'Legacy null salary_override_amount defaults to undefined');
-      assert(legacyHydrated.dailyEarnedSalary === 777, 'Legacy calculated_salary preserved as read-only value without promoting to override flag');
+      assert(legacyHydrated.dayType === 'full_day', 'Legacy null day_type defaults to full_day for Present');
+      assert(legacyHydrated.dailyEarnedSalary === 777, 'Legacy calculated_salary snapshot 777 preserved');
 
-      // 2. Save new attendance under global config (base=600, addon=120 enabled, extraRate=200 overtime_enabled=false)
-      const newDay = await repository.upsertAttendanceRecord({
+      // 2. Save Full Day and Half Day under global Daily Salary = 600
+      const fullDay = await repository.upsertAttendanceRecord({
         date: '2026-08-02',
         status: 'Present',
-        calculatedHours: 10
+        dayType: 'full_day'
       });
-      const newDbRow = dbAttendance.find(r => r.attendance_date === '2026-08-02')!;
-      assert(newDbRow.addon_salary === 120 && newDbRow.addon_enabled === true, 'New record saves per-date add-on snapshot');
-      assert(newDbRow.extra_hour_rate === 200 && newDbRow.overtime_enabled === false, 'New record preserves extra_hour_rate=200 and overtime_enabled=false');
-      assert(newDbRow.salary_override_enabled === false && newDbRow.salary_override_amount === null, 'New formula record sets override disabled');
-      assert(newDbRow.calculated_salary === 720, 'Formula computes 600 + 120 + 0 (OT disabled) = 720');
-      assert(newDay.dailyEarnedSalary === 720, 'Mapped dailyEarnedSalary matches 720');
+      const halfDay = await repository.upsertAttendanceRecord({
+        date: '2026-08-03',
+        status: 'Present',
+        dayType: 'half_day'
+      });
+      assert(fullDay.dailyEarnedSalary === 600 && fullDay.dayType === 'full_day', 'Full Day computes 600');
+      assert(halfDay.dailyEarnedSalary === 300 && halfDay.dayType === 'half_day', 'Half Day computes 300');
 
-      // 3. Change global settings via persistSettingsBundle, then partially edit 2026-08-02 -> MUST preserve 2026-08-02 snapshot!
+      // 3. Change Daily Salary via persistSettingsBundle, then edit notes on 2026-08-02 -> MUST preserve 600 snapshot!
       await repository.persistSettingsBundle({
         currency: 'INR',
         dateFormat: 'YYYY-MM-DD',
@@ -2350,74 +2308,63 @@ async function runPersistenceTests() {
         widgets: [{ id: 'w1', name: 'Balance', visible: true, order: 1 }],
         salaryConfig: {
           dailyBaseSalary: 1500,
-          addonSalary: 300,
-          addonEnabled: false,
-          standardWorkingHours: 8,
-          extraHourRate: 350,
-          overtimeEnabled: true,
           currency: 'INR'
         }
       });
 
-      assert(dbSalaryConfig.addon_salary === 300 && dbSalaryConfig.addon_enabled === false && dbSalaryConfig.overtime_enabled === true, 'persistSettingsBundle saves new salary_configs fields');
+      assert(dbSalaryConfig.daily_base_salary === 1500, 'persistSettingsBundle saves new daily_base_salary');
 
       await repository.upsertAttendanceRecord({
         date: '2026-08-02',
         status: 'Present',
-        calculatedHours: 11,
-        notes: 'Partial edit after global change'
+        dayType: 'full_day',
+        notes: 'Note updated after rate hike'
       });
       const afterPartialEditRow = dbAttendance.find(r => r.attendance_date === '2026-08-02')!;
-      assert(afterPartialEditRow.daily_base_salary === 600, 'Partial edit does NOT overwrite daily_base_salary with new global 1500');
-      assert(afterPartialEditRow.addon_salary === 120 && afterPartialEditRow.addon_enabled === true, 'Partial edit preserves per-date addon snapshot');
-      assert(afterPartialEditRow.extra_hour_rate === 200 && afterPartialEditRow.overtime_enabled === false, 'Partial edit preserves per-date overtime snapshot');
-      assert(afterPartialEditRow.calculated_salary === 720, 'Calculated salary stays 720 using preserved snapshot');
+      assert(afterPartialEditRow.daily_base_salary === 600, 'Partial edit preserves historical daily_base_salary=600');
+      assert(afterPartialEditRow.calculated_salary === 600, 'Calculated salary stays 600 after note update');
 
-      // 4. Enable manual override explicitly, then disable it later -> recalculates from formula and clears override amount
+      // 4. Toggling dayType on 2026-08-02 from full_day -> half_day recalculates using that day's snapshot (300)
       await repository.upsertAttendanceRecord({
         date: '2026-08-02',
         status: 'Present',
-        calculatedHours: 11,
-        salaryOverrideEnabled: true,
-        salaryOverrideAmount: 1400
+        dayType: 'half_day'
       });
-      assert(dbAttendance.find(r => r.attendance_date === '2026-08-02')!.salary_override_enabled === true, 'Manual override flag saved as true');
-      assert(dbAttendance.find(r => r.attendance_date === '2026-08-02')!.salary_override_amount === 1400, 'Manual override amount saved as 1400');
-      assert(dbAttendance.find(r => r.attendance_date === '2026-08-02')!.calculated_salary === 1400, 'Calculated salary matches override amount 1400');
+      assert(dbAttendance.find(r => r.attendance_date === '2026-08-02')!.calculated_salary === 300, 'Changing to half_day computes 300');
 
-      await repository.upsertAttendanceRecord({
-        date: '2026-08-02',
+      // 5. Missing day_type column fallback persists half_day cleanly via note tag and strips tag from hydrated notes
+      simulateMissingDayTypeColumn = true;
+      const fallbackHalfDay = await repository.upsertAttendanceRecord({
+        date: '2026-08-04',
         status: 'Present',
-        calculatedHours: 11,
-        salaryOverrideEnabled: false,
-        salaryOverrideAmount: undefined
+        dayType: 'half_day',
+        notes: 'Afternoon only'
       });
-      const clearedRow = dbAttendance.find(r => r.attendance_date === '2026-08-02')!;
-      assert(clearedRow.salary_override_enabled === false && clearedRow.salary_override_amount === null, 'Disabling manual override clears DB override fields');
-      assert(clearedRow.calculated_salary === 720, 'Disabling manual override restores formula calculation from snapshot (720)');
+      assert(fallbackHalfDay.dayType === 'half_day', 'Fallback preserves dayType=half_day when day_type column is absent');
+      assert(fallbackHalfDay.notes === 'Afternoon only', 'Fallback strips internal day-type marker from notes');
+      assert(fallbackHalfDay.dailyEarnedSalary === 750, 'Fallback computes 50% of 1500 = 750');
     }
     console.log('✓ Test 26 passed.');
 
     // ==========================================
-    // TEST 27: Override Reload, Non-Present Normalization, Multi-Date, Duplicate Prevention, Failure/Retry & User Isolation
+    // TEST 27: Reload, Non-Present Normalization, Multi-Date, Duplicate Prevention, Failure/Retry & User Isolation
     // ==========================================
-    console.log('Test 27: Override reload, Non-Present normalization, multi-date, duplicate coalescing, failure/retry & user isolation...');
+    console.log('Test 27: Reload, Non-Present normalization, multi-date, duplicate coalescing, failure/retry & user isolation...');
     {
       const dbConfigsByUser: Record<string, any> = {
         [USER_A]: {
           id: 'cfg_a',
           user_id: USER_A,
           daily_base_salary: 700,
-          addon_salary: 150,
-          addon_enabled: true,
+          addon_salary: 0,
+          addon_enabled: false,
           standard_hours: 8,
-          extra_hour_rate: 120,
-          overtime_enabled: true,
+          extra_hour_rate: 0,
+          overtime_enabled: false,
           currency_code: 'INR',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         }
-        // Note: USER_B intentionally starts with NO salary_configs row
       };
       const dbAttendanceByUser: Record<string, any[]> = {
         [USER_A]: [],
@@ -2481,89 +2428,60 @@ async function runPersistenceTests() {
       switchUser(USER_A);
       await repository.fetchAllUserData(USER_A);
 
-      // 1. Multiple attendance records across different dates + manual override reload persistence
+      // 1. Full Day & Half Day reload persistence
       await repository.upsertAttendanceRecord({
         date: '2026-09-01',
         status: 'Present',
-        calculatedHours: 9,
-        salaryOverrideEnabled: true,
-        salaryOverrideAmount: 1350,
-        notes: 'Override day'
+        dayType: 'full_day',
+        notes: 'Full day'
       });
       await repository.upsertAttendanceRecord({
         date: '2026-09-02',
         status: 'Present',
-        calculatedHours: 10
+        dayType: 'half_day',
+        notes: 'Half day'
       });
 
-      // Reload from DB and verify manual override + formula day both persisted accurately
       repository.clearUserData();
       repository.setActiveUserId(USER_A);
       await repository.fetchAllUserData(USER_A);
       const reloadedSept1 = repository.getAttendance().find(a => a.date === '2026-09-01')!;
       const reloadedSept2 = repository.getAttendance().find(a => a.date === '2026-09-02')!;
-      assert(reloadedSept1.salaryOverrideEnabled === true && reloadedSept1.salaryOverrideAmount === 1350 && reloadedSept1.dailyEarnedSalary === 1350, 'Manual override persists after reload');
-      assert(reloadedSept2.dailyEarnedSalary === 700 + 150 + 2 * 120, `Multi-date Sept 2 formula computed 1090, got ${reloadedSept2.dailyEarnedSalary}`);
+      assert(reloadedSept1.dayType === 'full_day' && reloadedSept1.dailyEarnedSalary === 700, 'Full Day persists after reload');
+      assert(reloadedSept2.dayType === 'half_day' && reloadedSept2.dailyEarnedSalary === 350, 'Half Day persists after reload');
 
-      // 2. Non-Present normalization across Leave, Absent, and Holiday while preserving historical rate snapshots
-      for (const nonPresentStatus of ['Leave', 'Absent', 'Holiday'] as const) {
+      // 2. Non-Present normalization across Absent and Holiday
+      for (const nonPresentStatus of ['Absent', 'Holiday'] as const) {
         const res = await repository.upsertAttendanceRecord({
           date: '2026-09-01',
           status: nonPresentStatus,
-          calculatedHours: 9,
           notes: `Changed to ${nonPresentStatus}`
         });
         const dbRow = dbAttendanceByUser[USER_A].find(r => r.attendance_date === '2026-09-01')!;
-        assert(dbRow.salary_override_enabled === false && dbRow.salary_override_amount === null, `${nonPresentStatus} clears override fields in DB`);
-        assert(dbRow.calculated_salary === 0 && dbRow.hours_worked === 0 && dbRow.extra_hours === 0, `${nonPresentStatus} zeroes salary and hours in DB`);
-        assert(dbRow.daily_base_salary === 700 && dbRow.addon_salary === 150 && dbRow.addon_enabled === true && dbRow.extra_hour_rate === 120 && dbRow.overtime_enabled === true, `${nonPresentStatus} preserves historical rate snapshots`);
-        assert(res.dailyEarnedSalary === 0 && res.salaryOverrideEnabled === false && res.salaryOverrideAmount === undefined, `${nonPresentStatus} maps cleanly in returned record`);
+        assert(dbRow.calculated_salary === 0 && dbRow.day_type === null, `${nonPresentStatus} zeroes salary and clears day_type in DB`);
+        assert(res.dailyEarnedSalary === 0 && res.dayType === undefined, `${nonPresentStatus} maps cleanly in returned record`);
       }
 
       // 3. Duplicate submission prevention (concurrent identical saves coalesce to 1 DB write)
       const salBefore = salaryUpsertCount;
       await Promise.all([
-        repository.persistSalaryConfig({
-          dailyBaseSalary: 750,
-          addonSalary: 150,
-          addonEnabled: false,
-          standardWorkingHours: 8,
-          extraHourRate: 140,
-          overtimeEnabled: true,
-          currency: 'INR'
-        }),
-        repository.persistSalaryConfig({
-          dailyBaseSalary: 750,
-          addonSalary: 150,
-          addonEnabled: false,
-          standardWorkingHours: 8,
-          extraHourRate: 140,
-          overtimeEnabled: true,
-          currency: 'INR'
-        })
+        repository.persistSalaryConfig({ dailyBaseSalary: 750, currency: 'INR' }),
+        repository.persistSalaryConfig({ dailyBaseSalary: 750, currency: 'INR' })
       ]);
       assert(salaryUpsertCount === salBefore + 1, `Concurrent identical persistSalaryConfig calls coalesced to 1 upsert (got ${salaryUpsertCount - salBefore})`);
 
       const attBefore = attendanceUpsertCount;
       await Promise.all([
-        repository.upsertAttendanceRecord({ date: '2026-09-03', status: 'Present', calculatedHours: 8 }),
-        repository.upsertAttendanceRecord({ date: '2026-09-03', status: 'Present', calculatedHours: 8 })
+        repository.upsertAttendanceRecord({ date: '2026-09-03', status: 'Present', dayType: 'full_day' }),
+        repository.upsertAttendanceRecord({ date: '2026-09-03', status: 'Present', dayType: 'full_day' })
       ]);
       assert(attendanceUpsertCount === attBefore + 1, `Concurrent identical upsertAttendanceRecord calls coalesced to 1 upsert (got ${attendanceUpsertCount - attBefore})`);
 
-      // 4. Write failure and retry behavior (error does NOT corrupt state; retry succeeds)
+      // 4. Write failure and retry behavior
       failNextSalaryWrite = true;
       let salaryErrCaught = false;
       try {
-        await repository.persistSalaryConfig({
-          dailyBaseSalary: 9999,
-          addonSalary: 500,
-          addonEnabled: true,
-          standardWorkingHours: 8,
-          extraHourRate: 300,
-          overtimeEnabled: true,
-          currency: 'INR'
-        });
+        await repository.persistSalaryConfig({ dailyBaseSalary: 9999, currency: 'INR' });
       } catch {
         salaryErrCaught = true;
       }
@@ -2571,25 +2489,13 @@ async function runPersistenceTests() {
       assert(repository.getSettings().salaryConfig.dailyBaseSalary === 750, 'Failed salary_configs write preserves previous state (750)');
 
       failNextSalaryWrite = false;
-      await repository.persistSalaryConfig({
-        dailyBaseSalary: 9999,
-        addonSalary: 500,
-        addonEnabled: true,
-        standardWorkingHours: 8,
-        extraHourRate: 300,
-        overtimeEnabled: true,
-        currency: 'INR'
-      });
+      await repository.persistSalaryConfig({ dailyBaseSalary: 9999, currency: 'INR' });
       assert(repository.getSettings().salaryConfig.dailyBaseSalary === 9999, 'Retry after salary_configs failure succeeds cleanly');
 
       failNextAttendanceWrite = true;
       let attErrCaught = false;
       try {
-        await repository.upsertAttendanceRecord({
-          date: '2026-09-04',
-          status: 'Present',
-          calculatedHours: 8
-        });
+        await repository.upsertAttendanceRecord({ date: '2026-09-04', status: 'Present', dayType: 'full_day' });
       } catch {
         attErrCaught = true;
       }
@@ -2600,23 +2506,19 @@ async function runPersistenceTests() {
       const retriedAtt = await repository.upsertAttendanceRecord({
         date: '2026-09-04',
         status: 'Present',
-        calculatedHours: 8
+        dayType: 'full_day'
       });
       assert(retriedAtt.date === '2026-09-04' && repository.getAttendance().some(a => a.date === '2026-09-04'), 'Retry after attendance failure succeeds cleanly');
 
-      // 5. User-specific data isolation & user with NO salary_configs row safely hydrates unconfigured state
+      // 5. User-specific data isolation & unconfigured state
       switchUser(USER_B);
       await repository.fetchAllUserData(USER_B);
       assert(repository.getAttendance().length === 0, 'USER_B has zero attendance records (no USER_A leakage)');
       assert(repository.getSettings().salaryConfig.dailyBaseSalary === undefined, 'USER_B with no salary_configs row keeps dailyBaseSalary undefined');
-      assert(repository.getSettings().salaryConfig.standardWorkingHours === undefined, 'USER_B with no salary_configs row keeps standardWorkingHours undefined');
-      assert(repository.getSettings().salaryConfig.extraHourRate === undefined, 'USER_B with no salary_configs row keeps extraHourRate undefined');
-      assert(repository.getSettings().salaryConfig.addonEnabled === false && repository.getSettings().salaryConfig.overtimeEnabled === false, 'USER_B safe unconfigured toggles');
       assert(repository.getSettings().salaryConfig.isConfigured === false, 'USER_B salaryConfig isConfigured is false');
 
-      // USER_B saves their own attendance cleanly (daily_earned = 0 before configuring salary) without affecting USER_A
-      const userBAtt = await repository.upsertAttendanceRecord({ date: '2026-09-01', status: 'Present', calculatedHours: 8 });
-      assert(userBAtt.dailyEarnedSalary === 0, 'Unconfigured USER_B attendance yields 0 dailyEarnedSalary (no fabricated 500 default)');
+      const userBAtt = await repository.upsertAttendanceRecord({ date: '2026-09-01', status: 'Present', dayType: 'full_day' });
+      assert(userBAtt.dailyEarnedSalary === 0, 'Unconfigured USER_B attendance yields 0 dailyEarnedSalary');
       assert(dbAttendanceByUser[USER_B].length === 1 && dbAttendanceByUser[USER_A].length === 4, 'USER_B attendance isolated from USER_A');
       assert(currentAuthUser === USER_B, 'Active user check');
     }
@@ -2682,7 +2584,6 @@ async function runPersistenceTests() {
 
       assert(repository.getSettings().currency === 'USD', 'Pre-reset USD loaded');
       assert(repository.getSettings().salaryConfig.dailyBaseSalary === 1200, 'Pre-reset salary config loaded');
-      assert(repository.getSettings().salaryConfig.addonEnabled === true, 'Pre-reset addonEnabled loaded');
       assert(repository.getSettings().customExpenseCategories[0] === 'CustomCatOnly', 'Pre-reset custom categories loaded');
 
       await repository.resetUserData();
@@ -2695,10 +2596,6 @@ async function runPersistenceTests() {
       assert(afterSettings.customExpenseCategories.includes('Food & Dining') && !afterSettings.customExpenseCategories.includes('CustomCatOnly'), 'Expense categories restored to clean defaults (no stale pre-reset categories)');
       assert(afterSettings.customIncomeSources.includes('Salary') && !afterSettings.customIncomeSources.includes('CustomSourceOnly'), 'Income sources restored to clean defaults');
       assert(afterSettings.salaryConfig.dailyBaseSalary === undefined, 'Salary dailyBaseSalary cleared to undefined when salary_configs deleted');
-      assert(afterSettings.salaryConfig.standardWorkingHours === undefined, 'Salary standardWorkingHours cleared to undefined when salary_configs deleted');
-      assert(afterSettings.salaryConfig.extraHourRate === undefined, 'Salary extraHourRate cleared to undefined when salary_configs deleted');
-      assert(afterSettings.salaryConfig.addonEnabled === false && afterSettings.salaryConfig.addonSalary === 0, 'Salary addon config restored to disabled 0');
-      assert(afterSettings.salaryConfig.overtimeEnabled === false, 'Salary overtime config restored to disabled');
       assert(afterSettings.salaryConfig.isConfigured === false, 'Salary config marked unconfigured on reset');
       assert(afterSettings.profile.name === 'Musthafa', 'Authenticated profile preserved after missing-row reset');
     }
@@ -3354,7 +3251,7 @@ async function runPersistenceTests() {
         const savedIstToday = await repository.upsertAttendanceRecord({
           date: '2026-11-16',
           status: 'Present',
-          calculatedHours: 8
+          dayType: 'full_day'
         });
         assert(lastAttendanceUpdatePayload?.attendance_date === '2026-11-16', 'B-06: Sends exact YYYY-MM-DD 2026-11-16 without UTC shift');
         assert(savedIstToday.date === '2026-11-16', 'B-06: Accepts Nov 16 at 01:00 AM IST');
@@ -3363,7 +3260,7 @@ async function runPersistenceTests() {
         const savedIstPast = await repository.upsertAttendanceRecord({
           date: '2026-11-15',
           status: 'Present',
-          calculatedHours: 8
+          dayType: 'full_day'
         });
         assert(lastAttendanceUpdatePayload?.attendance_date === '2026-11-15', 'B-06: Accepts past date Nov 15 at 01:00 AM IST');
         assert(savedIstPast.date === '2026-11-15', 'B-06: Hydrated past date preserves 2026-11-15');
@@ -3374,7 +3271,7 @@ async function runPersistenceTests() {
           await repository.upsertAttendanceRecord({
             date: '2026-11-17',
             status: 'Present',
-            calculatedHours: 8
+            dayType: 'full_day'
           });
         } catch {
           futureIstBlocked = true;
@@ -3384,37 +3281,26 @@ async function runPersistenceTests() {
         (globalThis as any).Date = RealDate;
       }
 
-      // Restore dbAttendance[0] cleanly before N-02 unchanged-hours test
+      // Restore dbAttendance[0] cleanly before historical snapshot preservation test
       dbAttendance[0] = {
         id: uuidAtt,
         user_id: USER_A,
         attendance_date: '2026-05-05',
         status: 'present',
-        check_in: '09:00',
-        check_out: '19:30',
-        break_minutes: 30,
-        hours_worked: 10,
-        extra_hours: 2,
+        day_type: 'full_day',
         daily_base_salary: 500,
-        addon_salary: 0,
-        addon_enabled: false,
-        extra_hour_rate: 100,
-        overtime_enabled: true,
         calculated_salary: 700
       };
 
-      // N-02: Editing notes without changing Present working hours preserves existing extraHours (2h)
-      await repository.upsertAttendanceRecord({
+      // Editing notes without changing Present dayType preserves existing historical calculated_salary (700)
+      const noteEditedRecord = await repository.upsertAttendanceRecord({
         id: uuidAtt,
         date: '2026-05-05',
         status: 'Present',
-        checkInTime: '09:00',
-        checkOutTime: '19:30',
-        breakDurationMinutes: 30,
-        calculatedHours: 10,
+        dayType: 'full_day',
         notes: 'Updated memo only'
       });
-      assert(lastAttendanceUpdatePayload?.extra_hours === 2, `N-02: Unchanged hours edit preserves extra_hours=2 (got ${lastAttendanceUpdatePayload?.extra_hours})`);
+      assert(lastAttendanceUpdatePayload?.calculated_salary === 700 && noteEditedRecord.dailyEarnedSalary === 700, `Note-only edit preserves historical snapshot=700 (got ${lastAttendanceUpdatePayload?.calculated_salary})`);
 
       // Info: Unrecognized reset RPC object payload must be rejected (not treated as success)
       resetRpcResponse = { unexpected: true };
@@ -3477,9 +3363,6 @@ async function runPersistenceTests() {
       assert(newSettings.currency === 'INR', 'New user defaults to INR currency');
       assert(newSettings.salaryConfig.isConfigured === false, 'New user salaryConfig starts unconfigured');
       assert(newSettings.salaryConfig.dailyBaseSalary === undefined, 'New user dailyBaseSalary is undefined');
-      assert(newSettings.salaryConfig.standardWorkingHours === undefined, 'New user standardWorkingHours is undefined');
-      assert(newSettings.salaryConfig.extraHourRate === undefined, 'New user extraHourRate is undefined');
-      assert(newSettings.salaryConfig.overtimeEnabled === false, 'New user overtimeEnabled is false');
 
       // 2) Saving profile/currency/categories with unconfigured salary skips salary_configs upsert
       await repository.persistSettingsBundle({
@@ -3496,27 +3379,22 @@ async function runPersistenceTests() {
       assert(repository.getSettings().currency === 'USD' && repository.getSettings().profile.name === 'New User Renamed', 'Profile & preferences saved without forcing salary inputs');
       assert(repository.getSettings().salaryConfig.isConfigured === false, 'Salary remains unconfigured after saving preferences');
 
-      // 3) Explicitly configuring salary persists numeric values and flips isConfigured to true
+      // 3) Explicitly configuring salary persists daily salary and flips isConfigured to true
       await repository.persistSalaryConfig({
         dailyBaseSalary: 750,
-        addonSalary: 0,
-        addonEnabled: false,
-        standardWorkingHours: 9,
-        extraHourRate: 120,
-        overtimeEnabled: true,
         currency: 'USD',
         isConfigured: true
       });
-      assert(salaryUpserts === 1 && persistedSalaryRow?.daily_base_salary === 750 && persistedSalaryRow?.standard_hours === 9, 'Explicit salary config upserts real numeric values');
+      assert(salaryUpserts === 1 && persistedSalaryRow?.daily_base_salary === 750, 'Explicit salary config upserts daily_base_salary=750');
       assert(repository.getSettings().salaryConfig.isConfigured === true, 'Configured salary marks isConfigured=true');
 
-      // 4) Existing user reload preserves configured rates cleanly
+      // 4) Existing user reload preserves configured daily salary cleanly
       repository.clearUserData();
       repository.setActiveUserId(USER_A);
       await repository.fetchAllUserData(USER_A);
       const reloaded = repository.getSettings();
       assert(reloaded.salaryConfig.isConfigured === true, 'Existing user reload preserves isConfigured=true');
-      assert(reloaded.salaryConfig.dailyBaseSalary === 750 && reloaded.salaryConfig.standardWorkingHours === 9 && reloaded.salaryConfig.extraHourRate === 120, 'Existing user reload preserves configured rates');
+      assert(reloaded.salaryConfig.dailyBaseSalary === 750, 'Existing user reload preserves configured dailyBaseSalary');
       assert(reloaded.currency === 'USD' && reloaded.profile.name === 'New User Renamed', 'Existing user reload preserves settings & profile');
     }
     console.log('✓ Test 32 passed.');

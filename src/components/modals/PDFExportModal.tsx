@@ -13,8 +13,8 @@ import {
 import { useXOSData } from '../../hooks/useXOSData';
 import { generateXOSReportPDF, PDFExportOptions } from '../../services/pdfExport';
 import { DateFilterPreset } from '../../types';
-import { getTodayString } from '../../utils/formatters';
-import { resolveGoalsWithSavings } from '../../utils/calculations';
+import { formatCurrency, getTodayString } from '../../utils/formatters';
+import { isSalaryConfigured, resolveGoalsWithSavings } from '../../utils/calculations';
 import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
 import {
   Modal,
@@ -293,8 +293,10 @@ export const PDFExportModal: React.FC<PDFExportModalProps> = ({
                 toggle: () => setIncludeAttendance(!includeAttendance)
               },
               {
-                label: 'Salary Payouts',
-                count: `${data.salaryPayouts.length} slips`,
+                label: 'Salary Summary',
+                count: isSalaryConfigured(data.settings.salaryConfig)
+                  ? `Daily ${formatCurrency(data.settings.salaryConfig.dailyBaseSalary ?? 0, data.settings.currency)}`
+                  : 'Not configured',
                 icon: Banknote,
                 checked: includeSalary,
                 toggle: () => setIncludeSalary(!includeSalary)

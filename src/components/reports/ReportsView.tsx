@@ -88,8 +88,8 @@ export const ReportsView: React.FC = () => {
   const currentMonth = getMonthString();
 
   const attStats = useMemo(
-    () => calculateAttendanceStatsForRecords(filteredAttendance, data.settings.salaryConfig.standardWorkingHours),
-    [filteredAttendance, data.settings.salaryConfig.standardWorkingHours]
+    () => calculateAttendanceStatsForRecords(filteredAttendance),
+    [filteredAttendance]
   );
 
   const periodSalary = useMemo(
@@ -148,12 +148,15 @@ export const ReportsView: React.FC = () => {
   const attendancePieData = useMemo(
     () =>
       [
-        { name: 'Present', count: attStats.presentDays, fill: '#0071e3' },
+        { name: 'Full Day', count: attStats.fullDays, fill: '#0071e3' },
+        { name: 'Half Day', count: attStats.halfDays, fill: '#5ac8fa' },
         { name: 'Absent', count: attStats.absentDays, fill: '#6e6e73' },
-        { name: 'Leave', count: attStats.leaveDays, fill: '#aeaeb2' },
-        { name: 'Holiday', count: attStats.holidayDays, fill: '#1d1d1f' }
+        { name: 'Holiday', count: attStats.holidayDays, fill: '#1d1d1f' },
+        ...(attStats.leaveDays > 0
+          ? [{ name: 'Leave (Legacy)', count: attStats.leaveDays, fill: '#aeaeb2' }]
+          : [])
       ].filter(d => d.count > 0),
-    [attStats.presentDays, attStats.absentDays, attStats.leaveDays, attStats.holidayDays]
+    [attStats.fullDays, attStats.halfDays, attStats.absentDays, attStats.holidayDays, attStats.leaveDays]
   );
 
   const hasData = data.incomes.length > 0 || data.expenses.length > 0 || data.attendance.length > 0;
@@ -276,18 +279,18 @@ export const ReportsView: React.FC = () => {
                 </div>
 
                 <div className="p-4 sm:p-5 sm:border-b lg:border-b-0 lg:border-r border-black/[0.06] flex flex-col justify-between gap-1.5">
-                  <span className="text-xs font-medium text-[#6e6e73]">Remaining Salary</span>
+                  <span className="text-xs font-medium text-[#6e6e73]">Earned Salary</span>
                   <div className="text-xl font-semibold font-mono tabular-nums tracking-[-0.02em] text-[#1d1d1f]">
-                    {!salaryConfigured && periodSalary.earnedSalary === 0 && periodSalary.salaryReceived === 0 ? (
+                    {!salaryConfigured && periodSalary.earnedSalary === 0 ? (
                       <span className="text-base font-medium text-[#6e6e73] font-sans">Not configured</span>
                     ) : (
-                      formatCurrency(periodSalary.remainingSalary, data.settings.currency)
+                      formatCurrency(periodSalary.earnedSalary, data.settings.currency)
                     )}
                   </div>
                   <span className="text-xs text-[#86868b] font-mono tabular-nums">
-                    {!salaryConfigured && periodSalary.earnedSalary === 0 && periodSalary.salaryReceived === 0
-                      ? 'Configure in Salary Settings'
-                      : `Earned: ${formatCurrency(periodSalary.earnedSalary, data.settings.currency)}`}
+                    {!salaryConfigured && periodSalary.earnedSalary === 0
+                      ? 'Configure in Finance Settings'
+                      : `${periodSalary.fullDays} Full · ${periodSalary.halfDays} Half Day`}
                   </span>
                 </div>
 
@@ -368,7 +371,7 @@ export const ReportsView: React.FC = () => {
                 <span className="text-xs text-[#6e6e73] font-mono tabular-nums">
                   {!salaryConfigured && periodSalary.earnedSalary === 0
                     ? 'Salary: Not configured'
-                    : `Est Salary: ${formatCurrency(periodSalary.earnedSalary, data.settings.currency)}`}
+                    : `Earned Salary: ${formatCurrency(periodSalary.earnedSalary, data.settings.currency)}`}
                 </span>
               }
             >

@@ -31,14 +31,19 @@ export interface Deduction {
 export type FixedMonthlyAbsencePolicy = 'no_deduction' | 'deduct_unpaid_absent';
 
 export interface SalaryConfig {
-  dailyBaseSalary?: number; // Unconfigured until user explicitly sets -> DB daily_base_salary
-  addonSalary: number; // default: 0 -> DB addon_salary
-  addonEnabled: boolean; // default: false -> DB addon_enabled
-  standardWorkingHours?: number; // Unconfigured until user explicitly sets -> DB standard_hours
-  extraHourRate?: number; // Unconfigured until user explicitly sets -> DB extra_hour_rate
-  overtimeEnabled: boolean; // default: false -> DB overtime_enabled
-  isConfigured?: boolean; // Explicit frontend flag indicating whether rates have been configured
+  dailyBaseSalary?: number; // User-defined Daily Salary -> DB daily_base_salary
+  isConfigured?: boolean; // Explicit frontend flag indicating whether Daily Salary has been configured
   currency: CurrencyCode; // DB currency_code
+  /** @deprecated Legacy optional field kept for backward compatibility */
+  addonSalary?: number;
+  /** @deprecated Legacy optional field kept for backward compatibility */
+  addonEnabled?: boolean;
+  /** @deprecated Legacy optional field kept for backward compatibility */
+  standardWorkingHours?: number;
+  /** @deprecated Legacy optional field kept for backward compatibility */
+  extraHourRate?: number;
+  /** @deprecated Legacy optional field kept for backward compatibility */
+  overtimeEnabled?: boolean;
 }
 
 export interface UserProfile {
@@ -146,26 +151,44 @@ export interface Income {
   createdAt: string;
 }
 
-export type AttendanceStatus = 'Present' | 'Absent' | 'Leave' | 'Holiday';
+/** User-selectable attendance status values */
+export type SelectableAttendanceStatus = 'Present' | 'Absent' | 'Holiday';
+
+/** Includes 'Leave' only for non-destructive historical record compatibility */
+export type AttendanceStatus = SelectableAttendanceStatus | 'Leave';
+
+export type AttendanceDayType = 'full_day' | 'half_day';
 
 export interface AttendanceRecord {
   id: string;
   date: string; // YYYY-MM-DD -> DB attendance_date
   status: AttendanceStatus;
-  checkInTime?: string; // HH:mm -> DB check_in
-  checkOutTime?: string; // HH:mm -> DB check_out
-  breakDurationMinutes?: number; // DB break_minutes
-  calculatedHours?: number; // DB hours_worked
-  extraHours?: number; // DB extra_hours
-  dailyBaseSalary?: number; // DB daily_base_salary
-  addonSalary?: number; // DB addon_salary
-  addonEnabled?: boolean; // DB addon_enabled
-  extraHourRate?: number; // DB extra_hour_rate
-  overtimeEnabled?: boolean; // DB overtime_enabled
-  salaryOverrideEnabled?: boolean; // DB salary_override_enabled
-  salaryOverrideAmount?: number; // DB salary_override_amount
-  dailyEarnedSalary?: number; // DB calculated_salary
+  dayType?: AttendanceDayType; // 'full_day' | 'half_day' when Present -> DB day_type
+  dailyBaseSalary?: number; // Snapshot of Daily Salary at entry time -> DB daily_base_salary
+  dailyEarnedSalary?: number; // Saved/snapshotted earned salary -> DB calculated_salary
   notes?: string;
+  /** @deprecated Legacy optional field kept for backward compatibility */
+  checkInTime?: string;
+  /** @deprecated Legacy optional field kept for backward compatibility */
+  checkOutTime?: string;
+  /** @deprecated Legacy optional field kept for backward compatibility */
+  breakDurationMinutes?: number;
+  /** @deprecated Legacy optional field kept for backward compatibility */
+  calculatedHours?: number;
+  /** @deprecated Legacy optional field kept for backward compatibility */
+  extraHours?: number;
+  /** @deprecated Legacy optional field kept for backward compatibility */
+  addonSalary?: number;
+  /** @deprecated Legacy optional field kept for backward compatibility */
+  addonEnabled?: boolean;
+  /** @deprecated Legacy optional field kept for backward compatibility */
+  extraHourRate?: number;
+  /** @deprecated Legacy optional field kept for backward compatibility */
+  overtimeEnabled?: boolean;
+  /** @deprecated Legacy optional field kept for backward compatibility */
+  salaryOverrideEnabled?: boolean;
+  /** @deprecated Legacy optional field kept for backward compatibility */
+  salaryOverrideAmount?: number;
 }
 
 export interface SalaryPayout {

@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { CreditCard, TrendingUp, CalendarCheck, Target, PiggyBank } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
-import { AttendanceStatus, ExpenseCategory, IncomeSource, PaymentMethod } from '../../types';
 import {
-  getIstTodayString,
-  getTodayString,
-  formatCurrency,
-  calculateWorkingHours,
-  getShiftSpanMinutes,
-  isOvernightShift
-} from '../../utils/formatters';
-import { resolveGoalsWithSavings } from '../../utils/calculations';
+  AttendanceDayType,
+  ExpenseCategory,
+  IncomeSource,
+  PaymentMethod,
+  SelectableAttendanceStatus
+} from '../../types';
+import { getIstTodayString, getTodayString, formatCurrency } from '../../utils/formatters';
+import { calculateDailyEarnedSalary, isSalaryConfigured, resolveGoalsWithSavings } from '../../utils/calculations';
 import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
 import {
   Modal,
@@ -66,10 +65,8 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
 
   // Attendance State
   const [attDate, setAttDate] = useState(getIstTodayString());
-  const [attStatus, setAttStatus] = useState<AttendanceStatus>('Present');
-  const [attIn, setAttIn] = useState('');
-  const [attOut, setAttOut] = useState('');
-  const [attBreak, setAttBreak] = useState('');
+  const [attStatus, setAttStatus] = useState<SelectableAttendanceStatus>('Present');
+  const [attDayType, setAttDayType] = useState<AttendanceDayType>('full_day');
   const [attNotes, setAttNotes] = useState('');
 
   // Goal State
@@ -143,9 +140,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       setIncomeNotes('');
       setAttDate(getIstTodayString());
       setAttStatus('Present');
-      setAttIn('');
-      setAttOut('');
-      setAttBreak('');
+      setAttDayType('full_day');
       setAttNotes('');
       setGoalTitle('');
       setGoalTargetAmount('');
@@ -248,25 +243,6 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       setActionError('Attendance cannot be logged for future dates.');
       return;
     }
-    const rawBreak = attBreak.trim();
-    const parsedBreak = attStatus === 'Present' ? (rawBreak === '' ? 0 : Number(rawBreak)) : 0;
-    let hours = 0;
-    if (attStatus === 'Present') {
-      if (!attIn || !attOut) {
-        setActionError('Please enter both In Time and Out Time.');
-        return;
-      }
-      if (!Number.isFinite(parsedBreak) || parsedBreak < 0) {
-        setActionError('Break duration must be zero or a positive number.');
-        return;
-      }
-      const shiftMins = getShiftSpanMinutes(attIn, attOut);
-      if (parsedBreak >= shiftMins) {
-        setActionError('Break duration must be shorter than total shift duration.');
-        return;
-      }
-      hours = calculateWorkingHours(attIn, attOut, parsedBreak);
-    }
     isSubmittingRef.current = true;
     setActionError(null);
     setIsSubmitting(true);
@@ -274,10 +250,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       await data.upsertAttendanceRecord({
         date: attDate,
         status: attStatus,
-        checkInTime: attStatus === 'Present' ? attIn : undefined,
-        checkOutTime: attStatus === 'Present' ? attOut : undefined,
-        breakDurationMinutes: parsedBreak,
-        calculatedHours: attStatus === 'Present' ? hours : 0,
+        dayType: attStatus === 'Present' ? attDayType : undefined,
         notes: attNotes.trim()
       });
       onClose();
@@ -572,12 +545,11 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
                 <label className={LABEL_CLASS}>Status</label>
                 <select
                   value={attStatus}
-                  onChange={(e) => setAttStatus(e.target.value as AttendanceStatus)}
+                  onChange={(e) => setAttStatus(e.target.value as SelectableAttendanceStatus)}
                   className={SELECT_CLASS}
                 >
                   <option value="Present">Present</option>
                   <option value="Absent">Absent</option>
-                  <option value="Leave">Leave</option>
                   <option value="Holiday">Holiday</option>
                 </select>
               </div>
@@ -585,44 +557,29 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
 
             {attStatus === 'Present' && (
               <div className="space-y-2.5 p-3.5 bg-[#f5f5f7] rounded-xl">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <div className="min-w-0">
-                    <label className={LABEL_CLASS}>In Time</label>
-                    <input
-                      type="time"
-                      value={attIn}
-                      onChange={(e) => setAttIn(e.target.value)}
-                      className={MONO_INPUT_CLASS}
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <label className={LABEL_CLASS}>Out Time</label>
-                    <input
-                      type="time"
-                      value={attOut}
-                      onChange={(e) => setAttOut(e.target.value)}
-                      className={MONO_INPUT_CLASS}
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <label className={LABEL_CLASS}>Break (min)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={attBreak}
-                      onChange={(e) => setAttBreak(e.target.value)}
-                      className={MONO_INPUT_CLASS}
-                    />
-                  </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-[#6e6e73]">Day Type</span>
+                  <span className="text-xs font-mono font-semibold text-[#1d1d1f] tabular-nums">
+                    {isSalaryConfigured(data.settings.salaryConfig)
+                      ? formatCurrency(
+                          calculateDailyEarnedSalary('Present', attDayType, data.settings.salaryConfig)
+                            .dailyEarnedSalary,
+                          data.settings.currency
+                        )
+                      : 'Daily Salary unset'}
+                  </span>
                 </div>
-                <p className="text-xs text-[#6e6e73]">
-                  {!attIn || !attOut
-                    ? 'Enter in and out times to calculate hours'
-                    : isOvernightShift(attIn, attOut)
-                      ? `Overnight shift (+1 day) · Net: ${calculateWorkingHours(attIn, attOut, Math.max(0, parseInt(attBreak, 10) || 0))}h`
-                      : `Net working hours: ${calculateWorkingHours(attIn, attOut, Math.max(0, parseInt(attBreak, 10) || 0))}h`}
-                </p>
+                <SegmentedControl
+                  options={[
+                    { id: 'full_day' as const, label: 'Full Day' },
+                    { id: 'half_day' as const, label: 'Half Day' }
+                  ]}
+                  value={attDayType}
+                  onChange={setAttDayType}
+                  ariaLabel="Attendance day type"
+                  fullWidth
+                  size="md"
+                />
               </div>
             )}
 
@@ -630,7 +587,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
               <label className={LABEL_CLASS}>Notes</label>
               <input
                 type="text"
-                placeholder="Summary of today's work"
+                placeholder="Optional note"
                 value={attNotes}
                 onChange={(e) => setAttNotes(e.target.value)}
                 className={INPUT_CLASS}

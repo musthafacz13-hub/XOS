@@ -154,10 +154,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const displayName = data.settings.profile.name.trim();
   const salaryConfigured = isSalaryConfigured(data.settings.salaryConfig);
-  const salaryUnset =
-    !salaryConfigured &&
-    monthlySalarySummary.earnedSalary === 0 &&
-    monthlySalarySummary.salaryReceived === 0;
+  const salaryUnset = !salaryConfigured && monthlySalarySummary.earnedSalary === 0;
 
   return (
     <div className="space-y-6">
@@ -236,26 +233,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             <div className="p-5 sm:border-r border-black/[0.06] flex flex-col justify-between gap-1.5">
-              <span className="text-xs font-medium text-[#6e6e73]">Remaining Salary</span>
+              <span className="text-xs font-medium text-[#6e6e73]">Earned Salary ({currentMonthStr})</span>
               <div className="text-[22px] font-semibold font-mono tabular-nums tracking-[-0.02em] text-[#1d1d1f]">
                 {salaryUnset ? (
                   <span className="text-base font-medium text-[#6e6e73] font-sans">Not configured</span>
                 ) : (
-                  formatCurrency(monthlySalarySummary.remainingSalary, data.settings.currency)
+                  formatCurrency(monthlySalarySummary.earnedSalary, data.settings.currency)
                 )}
               </div>
               <div className="text-xs text-[#86868b]">
                 {salaryUnset ? (
                   <button
                     type="button"
-                    onClick={() => onNavigateTab('salary')}
+                    onClick={() => onNavigateTab('settings')}
                     className="text-[#0071e3] hover:text-[#0077ed] hover:underline font-medium cursor-pointer"
                   >
-                    Set daily base &amp; hours →
+                    Set daily salary →
                   </button>
                 ) : (
                   <span className="font-mono tabular-nums">
-                    Earned: {formatCurrency(monthlySalarySummary.earnedSalary, data.settings.currency)}
+                    {monthlySalarySummary.fullDays} Full · {monthlySalarySummary.halfDays} Half Day
                   </span>
                 )}
               </div>
@@ -306,19 +303,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <MetricCard
               variant="subtle"
-              label="Days Worked"
-              value={attendanceStats.presentDays}
-              sublabel={`${attendanceStats.leaveDays} Leave · ${attendanceStats.absentDays} Absent`}
+              label="Full Days"
+              value={attendanceStats.fullDays}
+              sublabel={`${attendanceStats.halfDays} Half Day${attendanceStats.halfDays === 1 ? '' : 's'} · ${attendanceStats.presentDays} Present`}
             />
 
             <MetricCard
               variant="subtle"
-              label="Hours Logged"
-              value={`${attendanceStats.totalHours}h`}
+              label="Absent & Holidays"
+              value={attendanceStats.absentDays + attendanceStats.holidayDays + attendanceStats.leaveDays}
               sublabel={
                 salaryConfigured
-                  ? `Base ${formatCurrency(data.settings.salaryConfig.dailyBaseSalary ?? 0, data.settings.currency)} · ${data.settings.salaryConfig.standardWorkingHours}h/day`
-                  : 'Salary & working hours not configured'
+                  ? `${attendanceStats.absentDays} Absent · ${attendanceStats.holidayDays} Holiday · Daily ${formatCurrency(data.settings.salaryConfig.dailyBaseSalary ?? 0, data.settings.currency)}`
+                  : `${attendanceStats.absentDays} Absent · ${attendanceStats.holidayDays} Holiday · Daily salary unset`
               }
             />
 
@@ -329,7 +326,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               sublabel={
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono tabular-nums">
-                    Received: {formatCurrency(monthlySalarySummary.salaryReceived, data.settings.currency)}
+                    {salaryConfigured
+                      ? `Daily: ${formatCurrency(data.settings.salaryConfig.dailyBaseSalary ?? 0, data.settings.currency)}`
+                      : 'Set in Finance Settings'}
                   </span>
                   <button
                     onClick={() => onNavigateTab('salary')}

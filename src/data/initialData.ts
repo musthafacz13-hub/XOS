@@ -2,11 +2,6 @@ import { SalaryConfig, UserSettings } from '../types';
 
 export const DEFAULT_SALARY_CONFIG: SalaryConfig = {
   dailyBaseSalary: undefined,
-  addonSalary: 0,
-  addonEnabled: false,
-  standardWorkingHours: undefined,
-  extraHourRate: undefined,
-  overtimeEnabled: false,
   isConfigured: false,
   currency: 'INR'
 };

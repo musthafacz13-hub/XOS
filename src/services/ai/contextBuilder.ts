@@ -20,6 +20,7 @@ import {
   calculateSeparateDebtTotals,
   calculateUnifiedGoalTotals,
   isSalaryConfigured,
+  resolveAttendanceRecordSalary,
   resolveGoalsWithSavings
 } from '../../utils/calculations';
 import { formatCurrency, getIstTodayString, getMonthString } from '../../utils/formatters';
@@ -442,14 +443,13 @@ export function buildSelectiveXosContext(params: {
       salaryConfigured: isSalaryConfigured(params.data.settings.salaryConfig),
       currentMonthEarnedSalary: salarySummary.earnedSalary,
       currentMonthEarnedSalaryFormatted: fmt(salarySummary.earnedSalary),
-      currentMonthRemainingSalary: salarySummary.remainingSalary,
-      currentMonthRemainingSalaryFormatted: fmt(salarySummary.remainingSalary),
+      currentMonthFullDays: salarySummary.fullDays,
+      currentMonthHalfDays: salarySummary.halfDays,
       recordCounts: {
         expenses: params.data.expenses.length,
         incomes: params.data.incomes.length,
         debts: params.data.debts.length,
         attendance: params.data.attendance.length,
-        salaryPayouts: params.data.salaryPayouts.length,
         savingsGoals: activeSavingsGoals.length,
         goals: resolvedGoals.length
       }
@@ -750,31 +750,23 @@ export function buildSelectiveXosContext(params: {
     const configured = isSalaryConfigured(cfg);
 
     if (modulesSet.has('attendance')) {
-      const targetStats = calculateAttendanceStats(
-        params.data.attendance,
-        targetMonth,
-        cfg.standardWorkingHours
-      );
-      const prevStats = calculateAttendanceStats(
-        params.data.attendance,
-        lastMonth,
-        cfg.standardWorkingHours
-      );
+      const targetStats = calculateAttendanceStats(params.data.attendance, targetMonth);
+      const prevStats = calculateAttendanceStats(params.data.attendance, lastMonth);
 
       const recentAttendance = params.data.attendance
         .filter(r => typeof r.date === 'string' && r.date.startsWith(targetMonth))
         .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
         .slice(0, 12)
-        .map(r => ({
-          date: r.date,
-          status: r.status,
-          hoursWorked: r.calculatedHours ?? null,
-          extraHours: r.extraHours ?? null,
-          dailyEarnedSalary: r.dailyEarnedSalary ?? null,
-          dailyEarnedFormatted:
-            typeof r.dailyEarnedSalary === 'number' ? fmt(r.dailyEarnedSalary) : null,
-          manualOverride: Boolean(r.salaryOverrideEnabled)
-        }));
+        .map(r => {
+          const resolved = resolveAttendanceRecordSalary(r, cfg);
+          return {
+            date: r.date,
+            status: r.status,
+            dayType: resolved.dayType ?? null,
+            dailyEarnedSalary: resolved.earnedSalary,
+            dailyEarnedFormatted: fmt(resolved.earnedSalary)
+          };
+        });
 
       payload.attendance = {
         targetMonth,
@@ -803,45 +795,31 @@ export function buildSelectiveXosContext(params: {
         isConfigured: configured,
         configuredRates: configured
           ? {
-              dailyBaseSalary: cfg.dailyBaseSalary,
-              dailyBaseSalaryFormatted: fmt(cfg.dailyBaseSalary || 0),
-              standardWorkingHours: cfg.standardWorkingHours,
-              addonEnabled: cfg.addonEnabled,
-              addonSalary: cfg.addonSalary,
-              addonSalaryFormatted: fmt(cfg.addonSalary),
-              overtimeEnabled: cfg.overtimeEnabled,
-              extraHourRate: cfg.extraHourRate ?? null,
-              extraHourRateFormatted:
-                typeof cfg.extraHourRate === 'number' ? fmt(cfg.extraHourRate) : null
+              dailySalary: cfg.dailyBaseSalary,
+              dailySalaryFormatted: fmt(cfg.dailyBaseSalary || 0)
             }
           : null,
         targetMonth,
         summary: {
-          ...targetSummary,
+          earnedSalary: targetSummary.earnedSalary,
           earnedSalaryFormatted: fmt(targetSummary.earnedSalary),
-          salaryReceivedFormatted: fmt(targetSummary.salaryReceived),
-          remainingSalaryFormatted: fmt(targetSummary.remainingSalary),
-          overpaidAmountFormatted: fmt(targetSummary.overpaidAmount)
+          fullDays: targetSummary.fullDays,
+          halfDays: targetSummary.halfDays,
+          presentDays: targetSummary.presentDays,
+          absentDays: targetSummary.absentDays,
+          holidayDays: targetSummary.holidayDays,
+          leaveDays: targetSummary.leaveDays,
+          recordCount: targetSummary.recordCount
         },
         previousMonthSummary: {
           periodMonth: lastMonth,
           earnedSalary: prevSummary.earnedSalary,
           earnedSalaryFormatted: fmt(prevSummary.earnedSalary),
-          salaryReceived: prevSummary.salaryReceived,
-          salaryReceivedFormatted: fmt(prevSummary.salaryReceived),
-          remainingSalary: prevSummary.remainingSalary,
-          remainingSalaryFormatted: fmt(prevSummary.remainingSalary)
-        },
-        recentPayouts: [...params.data.salaryPayouts]
-          .sort((a, b) => (b.paidAt || '').localeCompare(a.paidAt || ''))
-          .slice(0, 8)
-          .map(p => ({
-            periodStart: p.periodStart,
-            periodEnd: p.periodEnd,
-            amountPaid: p.amountPaid,
-            amountPaidFormatted: fmt(p.amountPaid),
-            paidAt: p.paidAt
-          }))
+          fullDays: prevSummary.fullDays,
+          halfDays: prevSummary.halfDays,
+          absentDays: prevSummary.absentDays,
+          holidayDays: prevSummary.holidayDays
+        }
       };
     }
   }

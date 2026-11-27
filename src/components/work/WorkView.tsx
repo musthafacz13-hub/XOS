@@ -1,15 +1,20 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { CalendarCheck, Plus, ChevronLeft, ChevronRight, Trash2, Edit3, AlertCircle } from 'lucide-react';
 import { useXOSData } from '../../hooks/useXOSData';
-import { AttendanceRecord, AttendanceStatus } from '../../types';
-import { calculateAttendanceStats } from '../../utils/calculations';
 import {
-  formatHumanDate,
-  getIstTodayString,
-  calculateWorkingHours,
-  getShiftSpanMinutes,
-  isOvernightShift
-} from '../../utils/formatters';
+  AttendanceDayType,
+  AttendanceRecord,
+  AttendanceStatus,
+  SelectableAttendanceStatus
+} from '../../types';
+import {
+  calculateAttendanceStats,
+  calculateDailyEarnedSalary,
+  isSalaryConfigured,
+  resolveAttendanceDayType,
+  resolveAttendanceRecordSalary
+} from '../../utils/calculations';
+import { formatCurrency, formatHumanDate, getIstTodayString } from '../../utils/formatters';
 import { EmptyState } from '../common/EmptyState';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { sanitizeDatabaseErrorMessage } from '../../utils/authValidation';
@@ -17,14 +22,13 @@ import {
   ActionIconButton,
   INPUT_CLASS,
   LABEL_CLASS,
-  MONO_INPUT_CLASS,
-  MetricCard,
   Modal,
   PRIMARY_BUTTON_CLASS,
   PageHeader,
   SECONDARY_BUTTON_CLASS,
   SELECT_CLASS,
-  SectionCard
+  SectionCard,
+  SegmentedControl
 } from '../ui';
 
 const STATUS_TEXT_TONE: Record<AttendanceStatus, string> = {
@@ -34,8 +38,26 @@ const STATUS_TEXT_TONE: Record<AttendanceStatus, string> = {
   Holiday: 'text-[#0071e3]'
 };
 
+const DAY_TYPE_OPTIONS: { id: AttendanceDayType; label: string }[] = [
+  { id: 'full_day', label: 'Full Day' },
+  { id: 'half_day', label: 'Half Day' }
+];
+
+function formatAttendanceStatusLabel(rec: AttendanceRecord): string {
+  if (rec.status === 'Present') {
+    return resolveAttendanceDayType(rec) === 'half_day' ? 'Present · Half Day' : 'Present · Full Day';
+  }
+  if (rec.status === 'Leave') {
+    return 'Leave (Legacy)';
+  }
+  return rec.status;
+}
+
 export const WorkView: React.FC = () => {
   const data = useXOSData();
+  const salaryConfig = data.settings.salaryConfig;
+  const currency = data.settings.currency;
+  const salaryConfigured = isSalaryConfigured(salaryConfig);
 
   const todayStr = getIstTodayString();
   const [currentYear, setCurrentYear] = useState(() => Number(todayStr.slice(0, 4)));
@@ -53,23 +75,19 @@ export const WorkView: React.FC = () => {
   const [formError, setFormError] = useState<string | null>(null);
 
   const [date, setDate] = useState(todayStr);
-  const [status, setStatus] = useState<AttendanceStatus>('Present');
-  const [checkInTime, setCheckInTime] = useState('');
-  const [checkOutTime, setCheckOutTime] = useState('');
-  const [breakDurationMinutes, setBreakDurationMinutes] = useState('');
+  const [status, setStatus] = useState<SelectableAttendanceStatus>('Present');
+  const [dayType, setDayType] = useState<AttendanceDayType>('full_day');
   const [notes, setNotes] = useState('');
 
   const currentMonthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
-  const monthName = new Date(currentYear, currentMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const monthName = new Date(currentYear, currentMonth, 1).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric'
+  });
 
   const monthlyStats = useMemo(
-    () =>
-      calculateAttendanceStats(
-        data.attendance,
-        currentMonthStr,
-        data.settings.salaryConfig.standardWorkingHours
-      ),
-    [data.attendance, currentMonthStr, data.settings.salaryConfig.standardWorkingHours]
+    () => calculateAttendanceStats(data.attendance, currentMonthStr),
+    [data.attendance, currentMonthStr]
   );
 
   const attendanceByDate = useMemo(
@@ -82,6 +100,20 @@ export const WorkView: React.FC = () => {
     [data.attendance]
   );
 
+  const applyRecordToForm = (existing: AttendanceRecord | null, targetDate: string) => {
+    setEditingRecord(existing);
+    setDate(targetDate);
+    if (existing) {
+      setStatus(existing.status === 'Leave' ? 'Absent' : existing.status);
+      setDayType(resolveAttendanceDayType(existing));
+      setNotes(existing.notes || '');
+    } else {
+      setStatus('Present');
+      setDayType('full_day');
+      setNotes('');
+    }
+  };
+
   const openLogModalForDate = (dStr: string) => {
     const currentIstToday = getIstTodayString();
     if (dStr > currentIstToday) {
@@ -91,26 +123,7 @@ export const WorkView: React.FC = () => {
     setPageError(null);
     setFormError(null);
     setIsSubmitting(false);
-    const existing = attendanceByDate.get(dStr);
-    if (existing) {
-      setEditingRecord(existing);
-      setDate(existing.date);
-      setStatus(existing.status);
-      setCheckInTime(existing.checkInTime || '');
-      setCheckOutTime(existing.checkOutTime || '');
-      setBreakDurationMinutes(
-        typeof existing.breakDurationMinutes === 'number' ? String(existing.breakDurationMinutes) : ''
-      );
-      setNotes(existing.notes || '');
-    } else {
-      setEditingRecord(null);
-      setDate(dStr);
-      setStatus('Present');
-      setCheckInTime('');
-      setCheckOutTime('');
-      setBreakDurationMinutes('');
-      setNotes('');
-    }
+    applyRecordToForm(attendanceByDate.get(dStr) || null, dStr);
     setIsModalOpen(true);
   };
 
@@ -132,6 +145,19 @@ export const WorkView: React.FC = () => {
     }
   };
 
+  const effectiveDailyRate =
+    typeof editingRecord?.dailyBaseSalary === 'number'
+      ? editingRecord.dailyBaseSalary
+      : salaryConfig.dailyBaseSalary;
+
+  const previewEarned = useMemo(
+    () =>
+      calculateDailyEarnedSalary(status, dayType, {
+        dailyBaseSalary: effectiveDailyRate
+      }).dailyEarnedSalary,
+    [status, dayType, effectiveDailyRate]
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmittingRef.current || isSubmitting) return;
@@ -139,25 +165,6 @@ export const WorkView: React.FC = () => {
     if (date > currentIstToday) {
       setFormError('Attendance cannot be logged for future dates.');
       return;
-    }
-    let hours = 0;
-    const rawBreak = breakDurationMinutes.trim();
-    const parsedBreak = status === 'Present' ? (rawBreak === '' ? 0 : Number(rawBreak)) : 0;
-    if (status === 'Present') {
-      if (!checkInTime || !checkOutTime) {
-        setFormError('Please enter both Check-In and Check-Out times.');
-        return;
-      }
-      if (!Number.isFinite(parsedBreak) || parsedBreak < 0) {
-        setFormError('Break duration must be zero or a positive number.');
-        return;
-      }
-      const shiftMins = getShiftSpanMinutes(checkInTime, checkOutTime);
-      if (parsedBreak >= shiftMins) {
-        setFormError('Break duration must be shorter than total shift duration.');
-        return;
-      }
-      hours = calculateWorkingHours(checkInTime, checkOutTime, parsedBreak);
     }
 
     const targetExisting = attendanceByDate.get(date) || null;
@@ -169,17 +176,10 @@ export const WorkView: React.FC = () => {
         id: targetExisting?.id,
         date,
         status,
-        checkInTime: status === 'Present' ? checkInTime : undefined,
-        checkOutTime: status === 'Present' ? checkOutTime : undefined,
-        breakDurationMinutes: status === 'Present' ? parsedBreak : 0,
-        calculatedHours: hours,
+        dayType: status === 'Present' ? dayType : undefined,
         dailyBaseSalary: targetExisting?.dailyBaseSalary,
-        addonSalary: targetExisting?.addonSalary,
-        addonEnabled: targetExisting?.addonEnabled,
-        extraHourRate: targetExisting?.extraHourRate,
-        overtimeEnabled: targetExisting?.overtimeEnabled,
-        salaryOverrideEnabled: status === 'Present' ? targetExisting?.salaryOverrideEnabled : false,
-        salaryOverrideAmount: status === 'Present' ? targetExisting?.salaryOverrideAmount : undefined,
+        salaryOverrideEnabled: false,
+        salaryOverrideAmount: undefined,
         notes: notes.trim()
       });
 
@@ -225,7 +225,7 @@ export const WorkView: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Work & Attendance"
-        description="Log daily shifts, track working hours, and review monthly schedules."
+        description="Mark daily attendance as Present (Full Day or Half Day), Absent, or Holiday."
         actions={
           <button
             onClick={() => openLogModalForDate(todayStr)}
@@ -254,7 +254,7 @@ export const WorkView: React.FC = () => {
         </div>
       )}
 
-      {/* Today Check-In & Monthly Counters Stage */}
+      {/* Today & Monthly Counters Stage */}
       <section aria-label="Attendance Summary" className="rounded-3xl bg-[#f5f5f7] p-4 sm:p-5">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
           <div className="lg:col-span-4 rounded-2xl p-5 bg-white border border-black/[0.06] flex flex-col justify-between gap-3">
@@ -265,18 +265,16 @@ export const WorkView: React.FC = () => {
               {todayRecord ? (
                 <>
                   <div className={`text-xl font-semibold tracking-tight ${STATUS_TEXT_TONE[todayRecord.status]}`}>
-                    {todayRecord.status}
+                    {formatAttendanceStatusLabel(todayRecord)}
                   </div>
-                  {todayRecord.status === 'Present' && (
-                    <p className="text-xs text-[#6e6e73] font-mono tabular-nums">
-                      {todayRecord.checkInTime} – {todayRecord.checkOutTime} · {todayRecord.calculatedHours}h
-                    </p>
-                  )}
+                  <p className="text-xs text-[#6e6e73] font-mono tabular-nums">
+                    Earned: {formatCurrency(resolveAttendanceRecordSalary(todayRecord, salaryConfig).earnedSalary, currency)}
+                  </p>
                 </>
               ) : (
                 <>
                   <div className="text-lg font-semibold text-[#1d1d1f]">Not marked</div>
-                  <p className="text-xs text-[#6e6e73]">Record today&apos;s shift details.</p>
+                  <p className="text-xs text-[#6e6e73]">Mark today as Present, Absent, or Holiday.</p>
                 </>
               )}
             </div>
@@ -286,41 +284,43 @@ export const WorkView: React.FC = () => {
               type="button"
               className="w-full min-h-[40px] py-2 px-3.5 bg-[#1d1d1f] hover:bg-black text-white text-xs font-medium rounded-full transition-colors cursor-pointer"
             >
-              {todayRecord ? 'Edit Today' : 'Log Today'}
+              {todayRecord ? 'Edit Today' : 'Mark Today'}
             </button>
           </div>
 
           <div className="lg:col-span-8 rounded-2xl bg-white border border-black/[0.06] grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-black/[0.06] overflow-hidden">
             <div className="p-4 sm:p-5 flex flex-col justify-between gap-1">
-              <span className="text-xs font-medium text-[#6e6e73]">Working Days</span>
+              <span className="text-xs font-medium text-[#6e6e73]">Full Days</span>
               <div className="text-2xl font-semibold font-mono tabular-nums text-[#1d1d1f]">
-                {monthlyStats.presentDays}
+                {monthlyStats.fullDays}
               </div>
-              <span className="text-[11px] text-[#86868b]">Present in {monthName}</span>
+              <span className="text-[11px] text-[#86868b]">100% daily salary</span>
             </div>
 
             <div className="p-4 sm:p-5 flex flex-col justify-between gap-1">
-              <span className="text-xs font-medium text-[#6e6e73]">Total Hours</span>
+              <span className="text-xs font-medium text-[#6e6e73]">Half Days</span>
               <div className="text-2xl font-semibold font-mono tabular-nums text-[#1d1d1f]">
-                {monthlyStats.totalHours}h
+                {monthlyStats.halfDays}
               </div>
-              <span className="text-[11px] text-[#86868b]">Recorded work time</span>
+              <span className="text-[11px] text-[#86868b]">50% daily salary</span>
             </div>
 
             <div className="p-4 sm:p-5 flex flex-col justify-between gap-1">
-              <span className="text-xs font-medium text-[#6e6e73]">Leaves</span>
+              <span className="text-xs font-medium text-[#6e6e73]">Absent</span>
               <div className="text-2xl font-semibold font-mono tabular-nums text-[#1d1d1f]">
-                {monthlyStats.leaveDays}
+                {monthlyStats.absentDays}
               </div>
-              <span className="text-[11px] text-[#86868b]">Time-off days</span>
+              <span className="text-[11px] text-[#86868b]">
+                {monthlyStats.leaveDays > 0 ? `+ ${monthlyStats.leaveDays} legacy leave` : 'Unpaid absent days'}
+              </span>
             </div>
 
             <div className="p-4 sm:p-5 flex flex-col justify-between gap-1">
-              <span className="text-xs font-medium text-[#6e6e73]">Off / Absent</span>
+              <span className="text-xs font-medium text-[#6e6e73]">Holidays</span>
               <div className="text-2xl font-semibold font-mono tabular-nums text-[#1d1d1f]">
-                {monthlyStats.absentDays} / {monthlyStats.holidayDays}
+                {monthlyStats.holidayDays}
               </div>
-              <span className="text-[11px] text-[#86868b]">Absent / Holidays</span>
+              <span className="text-[11px] text-[#86868b]">{monthName}</span>
             </div>
           </div>
         </div>
@@ -370,6 +370,14 @@ export const WorkView: React.FC = () => {
             const isToday = dStr === todayStr;
             const isFuture = dStr > todayStr;
 
+            const calendarLabel = rec
+              ? rec.status === 'Present'
+                ? resolveAttendanceDayType(rec) === 'half_day'
+                  ? 'Half Day'
+                  : 'Full Day'
+                : rec.status
+              : '';
+
             return (
               <button
                 key={dStr}
@@ -392,7 +400,7 @@ export const WorkView: React.FC = () => {
 
                 {rec ? (
                   <span className={`text-[9px] sm:text-[10px] font-medium block truncate ${STATUS_TEXT_TONE[rec.status]}`}>
-                    {rec.status}
+                    {calendarLabel}
                   </span>
                 ) : (
                   <span className="hidden sm:block text-[10px] text-[#86868b] opacity-0 hover:opacity-100">
@@ -411,52 +419,61 @@ export const WorkView: React.FC = () => {
           icon={CalendarCheck}
           iconName="attendance"
           title="No attendance records yet"
-          description="Log daily check-in times to automatically track total hours, leaves, and salary earnings."
-          actionLabel="Log Today's Attendance"
+          description="Mark daily attendance as Present (Full Day or Half Day), Absent, or Holiday to track your monthly salary."
+          actionLabel="Mark Today's Attendance"
           onAction={() => openLogModalForDate(todayStr)}
         />
       ) : (
         <>
           {/* Mobile List */}
           <div className="md:hidden divide-y divide-black/[0.06] bg-white rounded-2xl border border-black/[0.08] overflow-hidden">
-            {sortedAttendance.map((rec) => (
-              <div key={rec.id} className="cv-auto p-4 space-y-2">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="font-mono font-medium text-sm text-[#1d1d1f] tabular-nums">
-                    {formatHumanDate(rec.date)}
-                  </span>
-                  <span className={`text-xs font-medium ${STATUS_TEXT_TONE[rec.status]}`}>
-                    {rec.status}
-                  </span>
-                </div>
+            {sortedAttendance.map((rec) => {
+              const resolved = resolveAttendanceRecordSalary(rec, salaryConfig);
+              return (
+                <div key={rec.id} className="cv-auto p-4 space-y-2">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="font-mono font-medium text-sm text-[#1d1d1f] tabular-nums">
+                      {formatHumanDate(rec.date)}
+                    </span>
+                    <span className={`text-xs font-medium ${STATUS_TEXT_TONE[rec.status]}`}>
+                      {formatAttendanceStatusLabel(rec)}
+                    </span>
+                  </div>
 
-                <div className="flex items-center justify-between text-xs text-[#6e6e73] font-mono tabular-nums">
-                  <span>{rec.checkInTime && rec.checkOutTime ? `${rec.checkInTime} – ${rec.checkOutTime}` : 'Shift open'}</span>
-                  <span className="font-semibold text-[#1d1d1f]">
-                    {rec.status === 'Present' && typeof rec.calculatedHours === 'number' ? `${rec.calculatedHours}h` : '—'}
-                  </span>
-                </div>
+                  <div className="flex items-center justify-between text-xs text-[#6e6e73] font-mono tabular-nums">
+                    <span>
+                      {rec.status === 'Present'
+                        ? resolved.dayType === 'half_day'
+                          ? '50% daily pay'
+                          : '100% daily pay'
+                        : 'Unpaid day'}
+                    </span>
+                    <span className="font-semibold text-[#1d1d1f]">
+                      {formatCurrency(resolved.earnedSalary, currency)}
+                    </span>
+                  </div>
 
-                {rec.notes && (
-                  <p className="text-xs text-[#6e6e73] leading-relaxed">{rec.notes}</p>
-                )}
+                  {rec.notes && (
+                    <p className="text-xs text-[#6e6e73] leading-relaxed">{rec.notes}</p>
+                  )}
 
-                <div className="flex items-center justify-end gap-1 -mr-1 pt-1">
-                  <ActionIconButton
-                    icon={Edit3}
-                    label="Edit attendance"
-                    variant="edit"
-                    onClick={() => openLogModalForDate(rec.date)}
-                  />
-                  <ActionIconButton
-                    icon={Trash2}
-                    label="Delete attendance"
-                    variant="delete"
-                    onClick={() => handleDelete(rec.id)}
-                  />
+                  <div className="flex items-center justify-end gap-1 -mr-1 pt-1">
+                    <ActionIconButton
+                      icon={Edit3}
+                      label="Edit attendance"
+                      variant="edit"
+                      onClick={() => openLogModalForDate(rec.date)}
+                    />
+                    <ActionIconButton
+                      icon={Trash2}
+                      label="Delete attendance"
+                      variant="delete"
+                      onClick={() => handleDelete(rec.id)}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Desktop Table */}
@@ -466,48 +483,55 @@ export const WorkView: React.FC = () => {
                 <tr className="bg-[#fbfbfd] border-b border-black/[0.06] text-[11px] font-medium text-[#6e6e73]">
                   <th className="py-3 px-4">Date</th>
                   <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Check-In / Out</th>
-                  <th className="py-3 px-4 text-center">Hours</th>
+                  <th className="py-3 px-4">Day Type</th>
+                  <th className="py-3 px-4 text-right">Earned</th>
                   <th className="py-3 px-4">Notes</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/[0.06] text-[13px] text-[#1d1d1f]">
-                {sortedAttendance.map((rec) => (
-                  <tr key={rec.id} className="hover:bg-[#f5f5f7]/60 transition-colors">
-                    <td className="py-3 px-4 font-mono font-medium text-[#1d1d1f] tabular-nums">
-                      {formatHumanDate(rec.date)}
-                    </td>
-                    <td className={`py-3 px-4 font-medium ${STATUS_TEXT_TONE[rec.status]}`}>
-                      {rec.status}
-                    </td>
-                    <td className="py-3 px-4 font-mono text-xs text-[#6e6e73] tabular-nums">
-                      {rec.checkInTime && rec.checkOutTime ? `${rec.checkInTime} – ${rec.checkOutTime}` : '—'}
-                    </td>
-                    <td className="py-3 px-4 text-center font-mono font-semibold text-[#1d1d1f] tabular-nums">
-                      {rec.status === 'Present' && typeof rec.calculatedHours === 'number' ? `${rec.calculatedHours}h` : '—'}
-                    </td>
-                    <td className="py-3 px-4 text-[#6e6e73]">
-                      {rec.notes || '—'}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <div className="inline-flex items-center justify-end gap-0.5">
-                        <ActionIconButton
-                          icon={Edit3}
-                          label="Edit attendance"
-                          variant="edit"
-                          onClick={() => openLogModalForDate(rec.date)}
-                        />
-                        <ActionIconButton
-                          icon={Trash2}
-                          label="Delete attendance"
-                          variant="delete"
-                          onClick={() => handleDelete(rec.id)}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {sortedAttendance.map((rec) => {
+                  const resolved = resolveAttendanceRecordSalary(rec, salaryConfig);
+                  return (
+                    <tr key={rec.id} className="hover:bg-[#f5f5f7]/60 transition-colors">
+                      <td className="py-3 px-4 font-mono font-medium text-[#1d1d1f] tabular-nums">
+                        {formatHumanDate(rec.date)}
+                      </td>
+                      <td className={`py-3 px-4 font-medium ${STATUS_TEXT_TONE[rec.status]}`}>
+                        {rec.status === 'Leave' ? 'Leave (Legacy)' : rec.status}
+                      </td>
+                      <td className="py-3 px-4 text-[#6e6e73]">
+                        {rec.status === 'Present'
+                          ? resolved.dayType === 'half_day'
+                            ? 'Half Day'
+                            : 'Full Day'
+                          : '—'}
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono font-semibold text-[#1d1d1f] tabular-nums">
+                        {formatCurrency(resolved.earnedSalary, currency)}
+                      </td>
+                      <td className="py-3 px-4 text-[#6e6e73]">
+                        {rec.notes || '—'}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <div className="inline-flex items-center justify-end gap-0.5">
+                          <ActionIconButton
+                            icon={Edit3}
+                            label="Edit attendance"
+                            variant="edit"
+                            onClick={() => openLogModalForDate(rec.date)}
+                          />
+                          <ActionIconButton
+                            icon={Trash2}
+                            label="Delete attendance"
+                            variant="delete"
+                            onClick={() => handleDelete(rec.id)}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </SectionCard>
@@ -520,8 +544,8 @@ export const WorkView: React.FC = () => {
         onClose={() => { if (!isSubmitting) setIsModalOpen(false); }}
         disableClose={isSubmitting}
         maxWidth="md"
-        title={editingRecord ? 'Edit Attendance Record' : 'Log Attendance'}
-        subtitle="Record daily shift status and working hours."
+        title={editingRecord ? 'Edit Attendance Record' : 'Mark Attendance'}
+        subtitle="Select attendance status and day type."
         footer={
           <>
             <button
@@ -551,6 +575,12 @@ export const WorkView: React.FC = () => {
             </div>
           )}
 
+          {editingRecord?.status === 'Leave' && (
+            <div className="p-3 bg-[#fefce8] border border-[#a16207]/20 text-[#854d0e] text-xs rounded-xl">
+              Legacy Leave record — saving will update this entry to Present, Absent, or Holiday.
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
               <label className={LABEL_CLASS}>Date</label>
@@ -561,26 +591,7 @@ export const WorkView: React.FC = () => {
                 value={date}
                 onChange={(e) => {
                   const nextDate = e.target.value;
-                  setDate(nextDate);
-                  const existingForDate = attendanceByDate.get(nextDate) || null;
-                  setEditingRecord(existingForDate);
-                  if (existingForDate) {
-                    setStatus(existingForDate.status);
-                    setCheckInTime(existingForDate.checkInTime || '');
-                    setCheckOutTime(existingForDate.checkOutTime || '');
-                    setBreakDurationMinutes(
-                      typeof existingForDate.breakDurationMinutes === 'number'
-                        ? String(existingForDate.breakDurationMinutes)
-                        : ''
-                    );
-                    setNotes(existingForDate.notes || '');
-                  } else {
-                    setStatus('Present');
-                    setCheckInTime('');
-                    setCheckOutTime('');
-                    setBreakDurationMinutes('');
-                    setNotes('');
-                  }
+                  applyRecordToForm(attendanceByDate.get(nextDate) || null, nextDate);
                 }}
                 className={INPUT_CLASS}
               />
@@ -590,62 +601,46 @@ export const WorkView: React.FC = () => {
               <label className={LABEL_CLASS}>Status</label>
               <select
                 value={status}
-                onChange={(e) => setStatus(e.target.value as AttendanceStatus)}
+                onChange={(e) => setStatus(e.target.value as SelectableAttendanceStatus)}
                 className={SELECT_CLASS}
               >
                 <option value="Present">Present</option>
                 <option value="Absent">Absent</option>
-                <option value="Leave">Leave</option>
                 <option value="Holiday">Holiday</option>
               </select>
             </div>
           </div>
 
           {status === 'Present' && (
-            <div className="space-y-3 p-3.5 bg-[#f5f5f7] rounded-2xl">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                <div className="min-w-0">
-                  <label className={LABEL_CLASS}>Check-In</label>
-                  <input
-                    type="time"
-                    value={checkInTime}
-                    onChange={(e) => setCheckInTime(e.target.value)}
-                    className={MONO_INPUT_CLASS}
-                  />
-                </div>
-                <div className="min-w-0">
-                  <label className={LABEL_CLASS}>Check-Out</label>
-                  <input
-                    type="time"
-                    value={checkOutTime}
-                    onChange={(e) => setCheckOutTime(e.target.value)}
-                    className={MONO_INPUT_CLASS}
-                  />
-                </div>
-                <div className="min-w-0">
-                  <label className={LABEL_CLASS}>Break (min)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={breakDurationMinutes}
-                    onChange={(e) => setBreakDurationMinutes(e.target.value)}
-                    className={MONO_INPUT_CLASS}
-                  />
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#6e6e73]">
-                <span>
-                  {!checkInTime || !checkOutTime
-                    ? 'Enter check-in and check-out times to calculate hours'
-                    : isOvernightShift(checkInTime, checkOutTime)
-                      ? `Overnight shift (+1 day) · Net: ${calculateWorkingHours(checkInTime, checkOutTime, Math.max(0, parseInt(breakDurationMinutes, 10) || 0))}h`
-                      : `Net working hours: ${calculateWorkingHours(checkInTime, checkOutTime, Math.max(0, parseInt(breakDurationMinutes, 10) || 0))}h`}
+            <div className="space-y-2.5 p-3.5 bg-[#f5f5f7] rounded-2xl">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-[#6e6e73]">Day Type</span>
+                <span className="text-xs font-mono font-semibold text-[#1d1d1f] tabular-nums">
+                  {salaryConfigured || typeof effectiveDailyRate === 'number'
+                    ? formatCurrency(previewEarned, currency)
+                    : 'Set Daily Salary in Settings'}
                 </span>
-                {editingRecord?.extraHours !== undefined && (
-                  <span>Saved extra hours stay preserved unless hours change</span>
-                )}
               </div>
+              <SegmentedControl
+                options={DAY_TYPE_OPTIONS}
+                value={dayType}
+                onChange={setDayType}
+                ariaLabel="Attendance day type"
+                fullWidth
+                size="md"
+              />
+              <p className="text-[11px] text-[#6e6e73]">
+                {dayType === 'full_day' ? 'Full Day earns 100% of daily salary.' : 'Half Day earns 50% of daily salary.'}
+              </p>
+            </div>
+          )}
+
+          {status !== 'Present' && (
+            <div className="p-3 bg-[#f5f5f7] rounded-xl text-xs text-[#6e6e73] flex items-center justify-between">
+              <span>Earned for {status}</span>
+              <span className="font-mono font-semibold text-[#1d1d1f] tabular-nums">
+                {formatCurrency(0, currency)}
+              </span>
             </div>
           )}
 
@@ -653,7 +648,7 @@ export const WorkView: React.FC = () => {
             <label className={LABEL_CLASS}>Notes</label>
             <input
               type="text"
-              placeholder="e.g. Worked on client release"
+              placeholder="Optional note"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className={INPUT_CLASS}
@@ -665,7 +660,7 @@ export const WorkView: React.FC = () => {
       <ConfirmDialog
         isOpen={deleteTargetId !== null}
         title="Delete Attendance Record"
-        message="Are you sure you want to delete this attendance entry? Working hours and stats will be recalculated."
+        message="Are you sure you want to delete this attendance entry? Monthly salary and attendance totals will update automatically."
         confirmLabel="Delete Record"
         isLoading={isDeleting}
         error={deleteError}
