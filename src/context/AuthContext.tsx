@@ -9,6 +9,8 @@ import { repository } from '../services/repository';
 import { apiOptimization } from '../services/apiClient';
 import {
   clearAuthUrlParams,
+  getValidatedOAuthRedirectUrl,
+  isSafeExternalUrl,
   normalizeAuthEmail,
   sanitizeAuthErrorMessage
 } from '../utils/authValidation';
@@ -21,6 +23,7 @@ export interface AuthContextType {
   isConfigured: boolean;
   isPasswordRecovery: boolean;
   loginWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
+  loginWithGoogle: () => Promise<{ error: string | null }>;
   signUpWithEmail: (email: string, password: string, fullName: string) => Promise<{ error: string | null; needsEmailVerification?: boolean }>;
   loginWithMagicLink: (email: string) => Promise<{ error: string | null }>;
   resendVerificationEmail: (email: string) => Promise<{ error: string | null }>;
@@ -46,15 +49,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const completedUserIdRef = useRef<string | null>(null);
   const mountedRef = useRef<boolean>(true);
 
-  // Apply auth email & fallback display name AFTER DB hydration without overwriting persisted profile
+  // Apply auth email & fallback display name/avatar AFTER DB hydration without overwriting persisted profile
   const applyAuthProfileFallback = useCallback((u: User) => {
     const currentSettings = repository.getSettings();
+    const meta = u.user_metadata || {};
+    const metaDisplayName =
+      typeof meta.display_name === 'string' ? meta.display_name.trim() : '';
+    const metaFullName =
+      typeof meta.full_name === 'string' ? meta.full_name.trim() : '';
+    const metaName =
+      typeof meta.name === 'string' ? meta.name.trim() : '';
     const fallbackName =
-      u.user_metadata?.display_name || u.user_metadata?.full_name || u.email?.split('@')[0] || 'XOS User';
+      metaDisplayName || metaFullName || metaName || u.email?.split('@')[0] || 'XOS User';
     const email = u.email || '';
     const nextName = currentSettings.profile.name || fallbackName;
+    const fallbackAvatar =
+      isSafeExternalUrl(meta.avatar_url) || isSafeExternalUrl(meta.picture);
+    const nextAvatarUrl = currentSettings.profile.avatarUrl || fallbackAvatar;
 
-    if (currentSettings.profile.name === nextName && currentSettings.profile.email === email) {
+    if (
+      currentSettings.profile.name === nextName &&
+      currentSettings.profile.email === email &&
+      currentSettings.profile.avatarUrl === nextAvatarUrl
+    ) {
       return;
     }
 
@@ -63,7 +80,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       profile: {
         ...currentSettings.profile,
         name: nextName,
-        email
+        email,
+        avatarUrl: nextAvatarUrl
       }
     });
   }, []);
@@ -244,6 +262,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
   }, [ensureUserHydrated]);
+
+  const loginWithGoogle = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      return {
+        error: 'Supabase credentials are not yet configured in environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).'
+      };
+    }
+
+    return apiOptimization.coalesce('auth:oauth:google', async () => {
+      try {
+        const redirectTo = getValidatedOAuthRedirectUrl();
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo,
+            queryParams: {
+              prompt: 'select_account'
+            }
+          }
+        });
+
+        if (error) {
+          return { error: sanitizeAuthErrorMessage(error) };
+        }
+
+        if (!data?.url) {
+          return { error: 'Unable to start Google sign-in. Please verify OAuth configuration and try again.' };
+        }
+
+        return { error: null };
+      } catch (err) {
+        return { error: sanitizeAuthErrorMessage(err) || 'Unable to connect to Google sign-in.' };
+      }
+    });
+  }, []);
 
   const signUpWithEmail = useCallback(async (email: string, password: string, fullName: string) => {
     if (!isSupabaseConfigured) {
@@ -495,6 +548,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isConfigured: isSupabaseConfigured,
     isPasswordRecovery,
     loginWithPassword,
+    loginWithGoogle,
     signUpWithEmail,
     loginWithMagicLink,
     resendVerificationEmail,
@@ -512,6 +566,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initError,
     isPasswordRecovery,
     loginWithPassword,
+    loginWithGoogle,
     signUpWithEmail,
     loginWithMagicLink,
     resendVerificationEmail,

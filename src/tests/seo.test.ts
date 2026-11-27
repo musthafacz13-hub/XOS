@@ -111,6 +111,20 @@ function runSeoTests() {
 
   assert((welcomeSrc.match(/<h1\b/g) || []).length === 1, 'WelcomeView contains exactly one H1');
   assert(welcomeSrc.includes('href="/signup"') && welcomeSrc.includes('href="/login"'), 'WelcomeView exposes crawlable <a> nav links');
+  assert(
+    welcomeSrc.includes("href: '#overview'") &&
+      welcomeSrc.includes("href: '#features'") &&
+      welcomeSrc.includes("href: '#jarvis'") &&
+      welcomeSrc.includes("href: '#privacy'") &&
+      welcomeSrc.includes('https://github.com/musthafacz13-hub/XOS'),
+    'WelcomeView exposes section anchors and GitHub repository link'
+  );
+  assert(
+    !/Live Architecture|Unified Ledger|IST Precision|Payout Ready|overtime|Private by architecture|storage policies/i.test(
+      welcomeSrc
+    ),
+    'WelcomeView removes fake workspace cards and obsolete claims'
+  );
   assert(authLayoutSrc.includes('<h1') && authLayoutSrc.includes('<motion.main'), 'AuthLayout uses semantic main landmark and H1');
   assert(logoSrc.includes('width={px}') && logoSrc.includes('height={px}') && logoSrc.includes('alt={alt}'), 'XOSLogo sets explicit width, height, and alt');
 
@@ -127,7 +141,19 @@ function runSeoTests() {
   const distIndex = fs.readFileSync(path.join(distDir, 'index.html'), 'utf8');
   assert(distIndex.includes('<html lang="en">'), 'dist/index.html specifies lang="en"');
   assert((distIndex.match(/<h1\b/gi) || []).length === 1, 'Prerendered dist/index.html contains exactly one H1');
-  assert(distIndex.includes('Order your life. Master your time.'), 'Prerendered dist/index.html contains hero H1 copy');
+  assert(distIndex.includes('Your finances. Your work. One clear picture.'), 'Prerendered dist/index.html contains hero H1 copy');
+  assert(
+    distIndex.includes('href="#overview"') &&
+      distIndex.includes('href="#features"') &&
+      distIndex.includes('href="#jarvis"') &&
+      distIndex.includes('href="#privacy"') &&
+      distIndex.includes('https://github.com/musthafacz13-hub/XOS'),
+    'dist/index.html fallback exposes matching section anchors and GitHub repository link'
+  );
+  assert(
+    !/overtime|payout calculations/i.test(distIndex),
+    'dist/index.html contains zero obsolete overtime/payout claims'
+  );
   assert(distIndex.includes('<meta property="og:image:width" content="1200"'), 'dist/index.html sets 1200px OG image width');
   assert(distIndex.includes('<meta name="twitter:card" content="summary_large_image"'), 'dist/index.html uses summary_large_image');
 

@@ -205,7 +205,7 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
       // 6. Interrupted, stripped, or empty callback URL: fail safely without reusing a pre-existing session
       clearAuthUrlParams();
       if (active) {
-        setErrorMessage('This authentication link is incomplete, expired, or has already been used. Please request a new link.');
+        setErrorMessage('This sign-in callback is incomplete, expired, or has already been used. Please try signing in again.');
       }
     };
 
@@ -230,7 +230,7 @@ export const AuthCallbackView: React.FC<AuthCallbackViewProps> = ({
 
             <div className="space-y-1">
               <h3 className="font-semibold text-sm text-[#1d1d1f]">
-                Authentication link could not be verified
+                Authentication could not be verified
               </h3>
               <p className="text-xs text-[#6e6e73] leading-relaxed font-normal">
                 {errorMessage}

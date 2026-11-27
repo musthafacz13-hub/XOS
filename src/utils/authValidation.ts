@@ -157,6 +157,40 @@ export function sanitizeAuthErrorMessage(err: unknown): string {
   if (lower.includes('otp_expired') || lower.includes('token has expired') || lower.includes('invalid or has expired')) {
     return 'This verification or reset link has expired. Please request a new one.';
   }
+  if (
+    lower.includes('access_denied') ||
+    lower.includes('user denied') ||
+    lower.includes('consent_required') ||
+    lower.includes('cancelled') ||
+    lower.includes('canceled')
+  ) {
+    return 'Google sign-in was cancelled. You can try again or use another sign-in method.';
+  }
+  if (
+    lower.includes('unsupported provider') ||
+    lower.includes('provider is not enabled') ||
+    lower.includes('provider_disabled')
+  ) {
+    return 'Google sign-in is not currently enabled. Please sign in with your email and password or Magic Link.';
+  }
+  if (
+    lower.includes('bad_oauth_state') ||
+    lower.includes('invalid_oauth_state') ||
+    lower.includes('oauth_state') ||
+    lower.includes('flow_state_not_found') ||
+    lower.includes('flow_state_expired') ||
+    lower.includes('code verifier') ||
+    lower.includes('code_verifier') ||
+    lower.includes('both auth code and code verifier')
+  ) {
+    return 'Your Google sign-in session expired or could not be verified. Please start Google sign-in again.';
+  }
+  if (lower.includes('bad_oauth_callback') || lower.includes('oauth_callback')) {
+    return 'Google authentication could not be completed. Please try again.';
+  }
+  if (lower.includes('identity_already_exists') || lower.includes('manual_linking')) {
+    return 'Unable to complete Google sign-in with this account automatically. Please sign in with your existing method or link Google in account settings.';
+  }
   if (lower.includes('rate limit') || lower.includes('over_email_send_rate_limit') || lower.includes('over_request_rate_limit')) {
     return 'Too many attempts. Please wait a moment before trying again.';
   }
@@ -166,6 +200,76 @@ export function sanitizeAuthErrorMessage(err: unknown): string {
   }
 
   return msg;
+}
+
+export const PRODUCTION_OAUTH_ORIGIN = 'https://xos-chi.vercel.app';
+export const PRODUCTION_OAUTH_CALLBACK_URL = `${PRODUCTION_OAUTH_ORIGIN}/auth/callback`;
+
+/**
+ * Resolves a strict, allowlisted /auth/callback redirect URL for Supabase Auth.
+ * Defaults to https://xos-chi.vercel.app/auth/callback in production and rejects
+ * untrusted origins or user-controlled redirect query parameters.
+ */
+export function getValidatedOAuthRedirectUrl(candidateOrigin?: string): string {
+  const rawOrigin =
+    candidateOrigin ??
+    (typeof window !== 'undefined' && window.location?.origin && window.location.origin !== 'null'
+      ? window.location.origin
+      : '');
+
+  if (!rawOrigin) {
+    return PRODUCTION_OAUTH_CALLBACK_URL;
+  }
+
+  try {
+    const parsed = new URL(rawOrigin);
+    if (parsed.username || parsed.password) {
+      return PRODUCTION_OAUTH_CALLBACK_URL;
+    }
+
+    const hostname = parsed.hostname.toLowerCase();
+    const isLocalDev =
+      parsed.protocol === 'http:' && (hostname === 'localhost' || hostname === '127.0.0.1');
+
+    if (isLocalDev) {
+      return `${parsed.origin}/auth/callback`;
+    }
+
+    if (parsed.protocol !== 'https:') {
+      return PRODUCTION_OAUTH_CALLBACK_URL;
+    }
+
+    const configuredSiteUrl =
+      (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SITE_URL) ||
+      (typeof process !== 'undefined' ? process.env?.VITE_SITE_URL : '') ||
+      '';
+
+    let configuredOrigin = '';
+    if (configuredSiteUrl) {
+      try {
+        const siteParsed = new URL(configuredSiteUrl);
+        if (siteParsed.protocol === 'https:') {
+          configuredOrigin = siteParsed.origin;
+        }
+      } catch {
+        // Ignore invalid configured VITE_SITE_URL
+      }
+    }
+
+    const isAllowedHttpsOrigin =
+      parsed.origin === PRODUCTION_OAUTH_ORIGIN ||
+      (Boolean(configuredOrigin) && parsed.origin === configuredOrigin) ||
+      hostname.endsWith('.vercel.app') ||
+      hostname.endsWith('.run.app');
+
+    if (isAllowedHttpsOrigin) {
+      return `${parsed.origin}/auth/callback`;
+    }
+  } catch {
+    // Fall back to canonical production callback URL
+  }
+
+  return PRODUCTION_OAUTH_CALLBACK_URL;
 }
 
 /**
@@ -186,7 +290,7 @@ export function clearAuthUrlParams(): void {
       changed = true;
     }
 
-    const authQueryKeys = ['code', 'type', 'token_hash', 'error', 'error_code', 'error_description'];
+    const authQueryKeys = ['code', 'type', 'token_hash', 'state', 'error', 'error_code', 'error_description'];
     for (const key of authQueryKeys) {
       if (url.searchParams.has(key)) {
         url.searchParams.delete(key);

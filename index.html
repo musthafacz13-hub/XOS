@@ -14,23 +14,23 @@
     <link rel="icon" href="/assets/branding/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/branding/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/assets/branding/favicon-16x16.png" />
-    <title>XOS — Personal Finance, Salary, Attendance &amp; Goal Tracker</title>
-    <meta name="description" content="Track daily expenses, income, debt, work attendance, salary calculations, savings, and goals in one private Personal Life Operating System." />
+    <title>XOS — Personal Finance, Attendance &amp; Salary Tracker</title>
+    <meta name="description" content="Track daily expenses, income, debt, work attendance, daily salary, savings, goals, notes, and Jarvis AI insights in one focused personal workspace." />
     <meta name="robots" content="index, follow" />
     <meta property="og:site_name" content="XOS" />
     <meta property="og:locale" content="en_US" />
-    <meta property="og:title" content="XOS — Personal Finance, Salary, Attendance &amp; Goal Tracker" />
-    <meta property="og:description" content="Track daily expenses, income, debt, work attendance, salary calculations, savings, and goals in one private Personal Life Operating System." />
+    <meta property="og:title" content="XOS — Personal Finance, Attendance &amp; Salary Tracker" />
+    <meta property="og:description" content="Track daily expenses, income, debt, work attendance, daily salary, savings, goals, notes, and Jarvis AI insights in one focused personal workspace." />
     <meta property="og:type" content="website" />
     <meta property="og:image" content="/assets/branding/og-cover.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="XOS — Personal Life Operating System for expenses, income, work attendance, salary calculations, savings, and goals" />
+    <meta property="og:image:alt" content="XOS — Personal Finance, Attendance, and Salary Tracker" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="XOS — Personal Finance, Salary, Attendance &amp; Goal Tracker" />
-    <meta name="twitter:description" content="Track daily expenses, income, debt, work attendance, salary calculations, savings, and goals in one private workspace." />
+    <meta name="twitter:title" content="XOS — Personal Finance, Attendance &amp; Salary Tracker" />
+    <meta name="twitter:description" content="Track daily expenses, income, debt, work attendance, daily salary, savings, goals, notes, and Jarvis AI insights in one focused personal workspace." />
     <meta name="twitter:image" content="/assets/branding/og-cover.png" />
-    <meta name="twitter:image:alt" content="XOS — Personal Life Operating System" />
+    <meta name="twitter:image:alt" content="XOS — Personal Finance, Attendance, and Salary Tracker" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -44,28 +44,27 @@
           {
             "@type": "WebSite",
             "name": "XOS",
-            "alternateName": "XOS — Personal Life Operating System",
+            "alternateName": "XOS — Personal Finance, Attendance & Salary Tracker",
             "inLanguage": "en",
-            "description": "Track daily expenses, income, debt, work attendance, salary calculations, savings, and goals in one private Personal Life Operating System."
+            "description": "Track daily expenses, income, debt, work attendance, daily salary, savings, goals, notes, and Jarvis AI insights in one focused personal workspace."
           },
           {
             "@type": "WebApplication",
             "name": "XOS",
-            "alternateName": "XOS — Personal Life Operating System",
+            "alternateName": "XOS — Personal Finance, Attendance & Salary Tracker",
             "applicationCategory": "FinanceApplication",
             "operatingSystem": "Web, iOS, Android",
             "browserRequirements": "Requires JavaScript. Installable as a Progressive Web App.",
             "isAccessibleForFree": true,
             "featureList": [
-              "Daily and recurring expense tracking",
-              "Income streams and cash flow overview",
-              "Debt and partial repayment ledger",
-              "Work attendance logging with overtime tracking",
-              "Automated salary and payout calculations",
-              "Dedicated savings reserves and milestone goal tracking",
-              "Structured PDF reports and JSON backup exports"
+              "Expense, income, and debt tracking",
+              "Work attendance calendar with Present (Full Day or Half Day), Absent, and Holiday statuses",
+              "Attendance-based salary tracking from configured Daily Salary",
+              "Dedicated savings reserves, goal milestones, and personal notes",
+              "Bilingual Jarvis AI insights and confirmation-first draft previews",
+              "Printable PDF reports and JSON workspace backups"
             ],
-            "description": "Track daily expenses, income, debt, work attendance, salary calculations, savings, and goals in one private Personal Life Operating System."
+            "description": "Track daily expenses, income, debt, work attendance, daily salary, savings, goals, notes, and Jarvis AI insights in one focused personal workspace."
           }
         ]
       }
@@ -73,55 +72,141 @@
   </head>
   <body class="bg-white text-[#1d1d1f] antialiased selection:bg-[#0071e3]/15 selection:text-[#1d1d1f]">
     <div id="root">
-      <div class="min-h-screen bg-white text-[#1d1d1f] flex flex-col">
-        <header class="w-full max-w-6xl mx-auto px-6 lg:px-8 h-16 flex items-center justify-between gap-8 border-b border-black/[0.06]">
-          <a href="/" class="flex items-center gap-2.5 whitespace-nowrap shrink-0">
-            <img src="/assets/branding/xos-logo.png" alt="XOS logo" width="32" height="32" loading="eager" fetchpriority="high" decoding="async" class="w-8 h-8 rounded-lg object-contain" />
-            <span class="text-base font-semibold text-[#1d1d1f] tracking-tight">XOS</span>
-          </a>
-          <nav aria-label="Primary actions" class="flex items-center gap-3 shrink-0">
-            <a href="/login" class="px-4 py-2 text-xs font-medium text-[#1d1d1f] rounded-full">Sign in</a>
-            <a href="/signup" class="px-4 py-2 bg-[#0071e3] text-white text-xs font-medium rounded-full">Get started</a>
-          </nav>
+      <div class="min-h-screen min-h-[100dvh] bg-white text-[#1d1d1f] flex flex-col justify-between">
+        <header class="sticky top-0 z-30 w-full liquid-glass border-b border-black/[0.06] pt-[env(safe-area-inset-top,0px)]">
+          <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between gap-4 sm:gap-8">
+            <a href="/" class="inline-flex items-center gap-2.5 shrink-0 whitespace-nowrap rounded-lg">
+              <img src="/assets/branding/xos-logo.png" alt="XOS logo" width="32" height="32" loading="eager" fetchpriority="high" decoding="async" class="w-8 h-8 rounded-xl border border-black/[0.08] p-1 bg-white object-contain" />
+              <span class="text-[17px] font-semibold tracking-[-0.02em] text-[#1d1d1f]">XOS</span>
+            </a>
+            <nav aria-label="Page sections" class="hidden md:flex items-center gap-8 text-[13px] font-medium text-[#6e6e73]">
+              <a href="#overview" class="whitespace-nowrap shrink-0">Overview</a>
+              <a href="#features" class="whitespace-nowrap shrink-0">Features</a>
+              <a href="#jarvis" class="whitespace-nowrap shrink-0">Jarvis AI</a>
+              <a href="#privacy" class="whitespace-nowrap shrink-0">Privacy</a>
+            </nav>
+            <div class="flex items-center gap-2 shrink-0">
+              <a href="/login" class="min-h-[40px] sm:min-h-[36px] px-4 py-1.5 inline-flex items-center justify-center bg-[#0071e3] text-white text-[13px] font-medium rounded-full whitespace-nowrap shrink-0">Sign in</a>
+            </div>
+          </div>
         </header>
-        <main class="flex-1 w-full max-w-5xl mx-auto px-6 lg:px-8 pt-16 pb-20 flex flex-col items-center">
-          <section class="w-full max-w-2xl text-center space-y-5">
-            <h1 class="text-4xl lg:text-[3.75rem] font-semibold tracking-[-0.03em] text-[#1d1d1f] leading-[1.06]">
-              Order your life. Master your time.
+
+        <main class="flex-1">
+          <section id="overview" class="max-w-6xl mx-auto px-5 sm:px-6 lg:px-8 pt-14 sm:pt-24 lg:pt-28 pb-16 sm:pb-24 text-center">
+            <p class="text-[13px] font-semibold tracking-[-0.01em] text-[#0071e3] mb-3.5">XOS</p>
+            <h1 class="text-[clamp(2.25rem,5vw,4rem)] font-semibold tracking-[-0.032em] text-[#1d1d1f] leading-[1.06] max-w-3xl mx-auto">
+              Your finances. Your work. One clear picture.
             </h1>
-            <p class="text-base lg:text-lg text-[#6e6e73] leading-relaxed">
-              Track daily spending, income, debt, work attendance, salary calculations, savings, and personal goals—all in one simple, private workspace.
+            <p class="mt-5 text-base sm:text-[19px] text-[#6e6e73] leading-relaxed max-w-2xl mx-auto">
+              Track expenses, income, debt, work attendance, daily salary, goals, savings, personal notes, and Jarvis AI in one personal workspace.
             </p>
-            <div class="flex flex-wrap items-center justify-center gap-3 pt-2">
-              <a href="/signup" class="px-7 py-3 bg-[#0071e3] text-white text-sm font-medium rounded-full">Get started</a>
-              <a href="/login" class="px-7 py-3 bg-white text-[#1d1d1f] text-sm font-medium rounded-full border border-black/[0.12]">Sign in</a>
+            <div class="mt-9 flex flex-wrap items-center justify-center gap-3.5">
+              <a href="/signup" class="min-h-[48px] px-7 py-3 bg-[#0071e3] text-white text-[15px] font-medium rounded-full inline-flex items-center justify-center whitespace-nowrap">Create account</a>
+              <a href="/login" class="min-h-[48px] px-7 py-3 bg-[#f5f5f7] text-[#1d1d1f] text-[15px] font-medium rounded-full inline-flex items-center justify-center whitespace-nowrap">Sign in</a>
             </div>
           </section>
-          <section class="mt-16 w-full space-y-6">
-            <h2 class="text-2xl font-semibold text-center text-[#1d1d1f]">Personal finance, attendance, and goals working together</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <article class="p-6 rounded-2xl bg-[#f5f5f7] space-y-2">
-                <h3 class="text-sm font-semibold text-[#1d1d1f]">Expenses &amp; Cash Flow</h3>
-                <p class="text-xs text-[#6e6e73] leading-relaxed">Log daily spending by category, track recurring bills, and compare incoming payments against cash outflow.</p>
-              </article>
-              <article class="p-6 rounded-2xl bg-[#f5f5f7] space-y-2">
-                <h3 class="text-sm font-semibold text-[#1d1d1f]">Work &amp; Attendance</h3>
-                <p class="text-xs text-[#6e6e73] leading-relaxed">Record daily check-ins, working hours, overtime, and automated salary calculations accurately.</p>
-              </article>
-              <article class="p-6 rounded-2xl bg-[#f5f5f7] space-y-2">
-                <h3 class="text-sm font-semibold text-[#1d1d1f]">Savings &amp; Reserves</h3>
-                <p class="text-xs text-[#6e6e73] leading-relaxed">Keep dedicated emergency funds and deposits organized separately from everyday spending.</p>
-              </article>
-              <article class="p-6 rounded-2xl bg-[#f5f5f7] space-y-2">
-                <h3 class="text-sm font-semibold text-[#1d1d1f]">Goals &amp; Reports</h3>
-                <p class="text-xs text-[#6e6e73] leading-relaxed">Set milestone goals, track debt repayments, and export structured PDF reports or JSON backups.</p>
-              </article>
+
+          <section id="features" class="bg-[#fbfbfd] border-t border-black/[0.06]">
+            <div class="max-w-6xl mx-auto px-5 sm:px-6 lg:px-8 py-16 sm:py-24">
+              <div class="max-w-2xl mb-12 sm:mb-14">
+                <h2 class="text-2xl sm:text-[40px] font-semibold tracking-[-0.028em] text-[#1d1d1f] leading-[1.1]">
+                  Designed around how you manage money and work.
+                </h2>
+                <p class="mt-3.5 text-base sm:text-[17px] text-[#6e6e73] leading-relaxed">
+                  Four focused parts of XOS built for daily clarity without visual clutter.
+                </p>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-12 gap-5 lg:gap-6">
+                <article class="md:col-span-7 rounded-3xl bg-[#f5f5f7] p-7 sm:p-9 space-y-3">
+                  <p class="text-xs font-semibold text-[#0071e3]">Money</p>
+                  <h3 class="text-xl sm:text-[26px] font-semibold tracking-[-0.02em] text-[#1d1d1f] leading-snug">Expenses, income, and debt in clear view.</h3>
+                  <p class="text-sm text-[#6e6e73] leading-relaxed">Log daily spending and income by category and payment method, and track money owed or receivable with remaining balances.</p>
+                </article>
+                <article class="md:col-span-5 rounded-3xl bg-[#f5f5f7] p-7 sm:p-9 space-y-3">
+                  <p class="text-xs font-semibold text-[#0071e3]">Work</p>
+                  <h3 class="text-xl sm:text-[26px] font-semibold tracking-[-0.02em] text-[#1d1d1f] leading-snug">Attendance and salary, aligned day by day.</h3>
+                  <p class="text-sm text-[#6e6e73] leading-relaxed">Mark each day as Present (Full Day or Half Day), Absent, or Holiday, and calculate monthly earnings from your configured Daily Salary.</p>
+                </article>
+                <article class="md:col-span-5 rounded-3xl bg-[#f5f5f7] p-7 sm:p-9 space-y-3">
+                  <p class="text-xs font-semibold text-[#0071e3]">Goals</p>
+                  <h3 class="text-xl sm:text-[26px] font-semibold tracking-[-0.02em] text-[#1d1d1f] leading-snug">Savings reserves, goals, and notes.</h3>
+                  <p class="text-sm text-[#6e6e73] leading-relaxed">Keep dedicated savings deposits separate from everyday spending, follow goal milestones, and organize searchable personal notes.</p>
+                </article>
+                <article id="jarvis" class="md:col-span-7 rounded-3xl bg-[#1d1d1f] text-white p-7 sm:p-9 space-y-3">
+                  <p class="text-xs font-semibold text-[#2997ff]">Jarvis AI</p>
+                  <h3 class="text-xl sm:text-[26px] font-semibold tracking-[-0.02em] text-white leading-snug">Voice-assisted insights with draft confirmation.</h3>
+                  <p class="text-sm text-white/75 leading-relaxed">Ask questions or dictate entries in English or Malayalam. Jarvis prepares a preview card first so nothing is saved until you confirm.</p>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section id="privacy" class="max-w-6xl mx-auto px-5 sm:px-6 lg:px-8 py-16 sm:py-24 border-t border-black/[0.06]">
+            <div class="max-w-xl mb-12">
+              <h2 class="text-2xl sm:text-4xl font-semibold tracking-[-0.025em] text-[#1d1d1f]">Your data stays scoped to your account.</h2>
+              <p class="mt-3 text-sm sm:text-base text-[#6e6e73] leading-relaxed">Built with authenticated access controls, preview-first AI actions, and portable exports.</p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 lg:gap-10">
+              <div class="space-y-2">
+                <p class="text-sm font-semibold text-[#1d1d1f]">01. Row-level database isolation</p>
+                <p class="text-sm text-[#6e6e73] leading-relaxed">Supabase authentication and PostgreSQL row-level security restrict table queries and writes to your signed-in user ID.</p>
+              </div>
+              <div class="space-y-2">
+                <p class="text-sm font-semibold text-[#1d1d1f]">02. Confirmation before AI writes</p>
+                <p class="text-sm text-[#6e6e73] leading-relaxed">Jarvis AI renders an editable draft preview before saving any expense, income, or attendance entry.</p>
+              </div>
+              <div class="space-y-2">
+                <p class="text-sm font-semibold text-[#1d1d1f]">03. Local PDF &amp; JSON exports</p>
+                <p class="text-sm text-[#6e6e73] leading-relaxed">Generate printable PDF reports locally and export a portable JSON backup of your workspace data.</p>
+              </div>
+            </div>
+            <div class="mt-14 pt-8 border-t border-black/[0.06] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <p class="text-sm text-[#6e6e73]">Start organizing your expenses, attendance, and goals in one place.</p>
+              <a href="/signup" class="min-h-[48px] px-7 py-3 bg-[#0071e3] text-white text-sm font-medium rounded-full inline-flex items-center justify-center whitespace-nowrap">Create account</a>
             </div>
           </section>
         </main>
-        <footer class="w-full max-w-6xl mx-auto px-6 lg:px-8 py-6 border-t border-black/[0.06] flex items-center justify-between text-xs text-[#6e6e73]">
-          <span>XOS — Personal Life Operating System</span>
-          <a href="https://github.com/musthafacz13-hub/XOS" target="_blank" rel="noopener noreferrer" class="font-medium text-[#1d1d1f]">GitHub</a>
+
+        <footer class="bg-[#fbfbfd] border-t border-black/[0.06] pb-[max(1.5rem,env(safe-area-inset-bottom,0px))]">
+          <div class="max-w-6xl mx-auto px-5 sm:px-6 lg:px-8 py-10 sm:py-12">
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-8">
+              <div class="md:col-span-5 space-y-3">
+                <a href="/" class="inline-flex items-center gap-2.5">
+                  <img src="/assets/branding/xos-logo.png" alt="XOS logo" width="24" height="24" loading="lazy" decoding="async" class="w-6 h-6 rounded-lg border border-black/[0.08] p-0.5 bg-white object-contain" />
+                  <span class="text-sm font-semibold text-[#1d1d1f]">XOS</span>
+                </a>
+                <p class="text-xs text-[#6e6e73] max-w-xs leading-relaxed">Personal finance, attendance, and goal tracking in one focused workspace.</p>
+              </div>
+              <div class="md:col-span-7 grid grid-cols-2 sm:grid-cols-3 gap-6 text-xs">
+                <div class="space-y-2">
+                  <p class="font-semibold text-[#1d1d1f]">Product</p>
+                  <ul class="space-y-1 text-[#6e6e73]">
+                    <li><a href="#overview" class="inline-flex items-center min-h-[36px]">Overview</a></li>
+                    <li><a href="#features" class="inline-flex items-center min-h-[36px]">Features</a></li>
+                    <li><a href="#jarvis" class="inline-flex items-center min-h-[36px]">Jarvis AI</a></li>
+                    <li><a href="#privacy" class="inline-flex items-center min-h-[36px]">Privacy</a></li>
+                  </ul>
+                </div>
+                <div class="space-y-2">
+                  <p class="font-semibold text-[#1d1d1f]">Account</p>
+                  <ul class="space-y-1 text-[#6e6e73]">
+                    <li><a href="/login" class="inline-flex items-center min-h-[36px]">Sign in</a></li>
+                    <li><a href="/signup" class="inline-flex items-center min-h-[36px]">Create account</a></li>
+                  </ul>
+                </div>
+                <div class="space-y-2 col-span-2 sm:col-span-1">
+                  <p class="font-semibold text-[#1d1d1f]">Resources</p>
+                  <ul class="space-y-1 text-[#6e6e73]">
+                    <li><a href="https://github.com/musthafacz13-hub/XOS" target="_blank" rel="noopener noreferrer" class="inline-flex items-center min-h-[36px]">GitHub</a></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div class="mt-8 pt-6 border-t border-black/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-[#6e6e73]">
+              <span>© 2026 XOS. All rights reserved.</span>
+              <span>Personal Finance &amp; Work Workspace</span>
+            </div>
+          </div>
         </footer>
       </div>
     </div>

@@ -2,7 +2,7 @@
   "id": "/",
   "name": "XOS",
   "short_name": "XOS",
-  "description": "A private Personal Life Operating System to manage expenses, income, work attendance, salary calculations, savings, and goals in one unified workspace.",
+  "description": "Track daily expenses, income, debt, work attendance, daily salary, savings, goals, and notes in one focused personal workspace.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

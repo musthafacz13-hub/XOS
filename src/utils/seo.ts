@@ -23,9 +23,9 @@ export interface RouteSeoConfig {
 }
 
 export const SITE_NAME = 'XOS';
-export const DEFAULT_PUBLIC_TITLE = 'XOS — Personal Finance, Salary, Attendance & Goal Tracker';
+export const DEFAULT_PUBLIC_TITLE = 'XOS — Personal Finance, Attendance & Salary Tracker';
 export const DEFAULT_PUBLIC_DESCRIPTION =
-  'Track daily expenses, income, debt, work attendance, salary calculations, savings, and goals in one private Personal Life Operating System.';
+  'Track daily expenses, income, debt, work attendance, daily salary, savings, goals, notes, and Jarvis AI insights in one focused personal workspace.';
 export const OG_IMAGE_PATH = '/assets/branding/og-cover.png';
 
 const ROUTE_TO_PATH: Record<Exclude<PublicOrAuthRoute, 'not-found'>, string> = {

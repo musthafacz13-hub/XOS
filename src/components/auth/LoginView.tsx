@@ -1,12 +1,13 @@
 /**
  * XOS Login View
- * Supports password authentication, magic link redirection, forgot password routing,
- * and account creation transitions.
+ * Supports Google OAuth sign-in, password authentication, magic link redirection,
+ * forgot password routing, and account creation transitions.
  */
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { AlertCircle, Eye, EyeOff, Loader2, ArrowRight, Mail, CheckCircle2 } from 'lucide-react';
 import { AuthLayout } from './AuthLayout';
+import { GoogleAuthButton } from './GoogleAuthButton';
 import { useAuth } from '../../context/AuthContext';
 import { tapScale } from '../../utils/motion';
 import { validateLoginInputs, normalizeAuthEmail } from '../../utils/authValidation';
@@ -18,28 +19,74 @@ interface LoginViewProps {
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) => {
-  const { loginWithPassword, isConfigured } = useAuth();
+  const { loginWithPassword, loginWithGoogle, isConfigured } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const mountedRef = useRef(true);
   const isSubmittingRef = useRef(false);
 
+  const isBusy = loading || googleLoading;
+
   useEffect(() => {
     mountedRef.current = true;
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted && mountedRef.current) {
+        isSubmittingRef.current = false;
+        setLoading(false);
+        setGoogleLoading(false);
+      }
+    };
+    window.addEventListener('pageshow', handlePageShow);
     return () => {
       mountedRef.current = false;
+      window.removeEventListener('pageshow', handlePageShow);
     };
   }, []);
 
+  const handleGoogleSignIn = async () => {
+    if (isSubmittingRef.current || isBusy) return;
+
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    isSubmittingRef.current = true;
+    setGoogleLoading(true);
+
+    try {
+      const { error } = await loginWithGoogle();
+      if (!mountedRef.current) return;
+
+      if (error) {
+        setErrorMessage(error);
+        isSubmittingRef.current = false;
+        setGoogleLoading(false);
+      } else {
+        // Redirect underway; reset lock safely if browser remains on page
+        window.setTimeout(() => {
+          if (mountedRef.current) {
+            isSubmittingRef.current = false;
+            setGoogleLoading(false);
+          }
+        }, 8000);
+      }
+    } catch {
+      if (mountedRef.current) {
+        setErrorMessage('Unable to start Google sign-in. Please try again.');
+        isSubmittingRef.current = false;
+        setGoogleLoading(false);
+      }
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmittingRef.current || loading) return;
+    if (isSubmittingRef.current || isBusy) return;
 
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -112,6 +159,24 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
           </div>
         )}
 
+        {/* Google Sign-In */}
+        <GoogleAuthButton
+          label="Continue with Google"
+          loading={googleLoading}
+          disabled={isBusy}
+          onClick={handleGoogleSignIn}
+        />
+
+        {/* Email Divider */}
+        <div className="relative my-3 flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-black/[0.06]" />
+          </div>
+          <span className="relative px-3 bg-white text-[11px] font-medium text-[#86868b]">
+            or continue with email
+          </span>
+        </div>
+
         {/* Email Field */}
         <div className="text-left">
           <label htmlFor="login-email" className={LABEL_CLASS}>
@@ -126,7 +191,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
             spellCheck={false}
             required
             autoComplete="email"
-            disabled={loading}
+            disabled={isBusy}
             placeholder="name@example.com"
             value={email}
             onChange={(e) => {
@@ -145,7 +210,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
             </label>
             <button
               type="button"
-              disabled={loading}
+              disabled={isBusy}
               onClick={() => onNavigate('forgot-password')}
               className="text-xs text-[#0071e3] hover:text-[#0077ed] transition-colors font-medium cursor-pointer disabled:opacity-50 py-0.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]"
             >
@@ -158,7 +223,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
               type={showPassword ? 'text' : 'password'}
               required
               autoComplete="current-password"
-              disabled={loading}
+              disabled={isBusy}
               placeholder="••••••••"
               value={password}
               onChange={(e) => {
@@ -169,7 +234,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
             />
             <button
               type="button"
-              disabled={loading}
+              disabled={isBusy}
               onClick={() => setShowPassword(prev => !prev)}
               className="absolute right-1.5 top-1/2 -translate-y-1/2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]"
               aria-label={showPassword ? 'Hide password' : 'Show password'}
@@ -184,7 +249,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
         <motion.button
           whileTap={tapScale.button}
           type="submit"
-          disabled={loading}
+          disabled={isBusy}
           className={`${ACCENT_BUTTON_CLASS} w-full min-h-[48px] text-sm font-semibold`}
         >
           {loading ? (
@@ -214,7 +279,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
         <div className="space-y-2.5">
           <button
             type="button"
-            disabled={loading}
+            disabled={isBusy}
             onClick={() => onNavigate('magic-link')}
             className={`${SECONDARY_BUTTON_CLASS} w-full min-h-[44px] text-xs`}
           >
@@ -232,10 +297,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, onSuccess }) =
 
         {/* Route to Sign Up */}
         <div className="pt-3 text-center text-xs text-[#6e6e73] border-t border-black/[0.06]">
-          <span>Don't have an account yet? </span>
+          <span>Don&apos;t have an account yet? </span>
           <button
             type="button"
-            disabled={loading}
+            disabled={isBusy}
             onClick={() => onNavigate('signup')}
             className="font-semibold text-[#0071e3] hover:text-[#0077ed] hover:underline cursor-pointer disabled:opacity-50"
           >
